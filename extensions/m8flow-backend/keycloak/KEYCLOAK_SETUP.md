@@ -18,7 +18,7 @@ The `start_keycloak.sh` script automatically starts a Keycloak Docker container 
 ## Usage
 
 ```bash
-cd extensions/m8flow-backend/bin
+cd extensions/m8flow-backend/keycloak
 ./start_keycloak.sh
 ```
 

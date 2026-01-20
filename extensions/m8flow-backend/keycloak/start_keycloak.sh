@@ -26,6 +26,12 @@ script_dir="$(
   pwd -P
 )"
 
+# Calculate repo root (4 levels up from keycloak directory: keycloak -> m8flow-backend -> extensions -> repo root)
+repo_root="${script_dir}/../../../../"
+
+# Debug log path (relative to repo root)
+debug_log_path="${repo_root}/.cursor/debug.log"
+
 # Realm export file paths
 identity_realm_file="${script_dir}/realm_exports/identity-realm-export.json"
 tenant_realm_file="${script_dir}/realm_exports/tenant-realm-export.json"
@@ -142,7 +148,7 @@ function get_admin_token() {
   local token_response
   
   # #region agent log
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:entry\",\"message\":\"Token request starting\",\"data\":{\"token_url\":\"$token_url\",\"username\":\"$keycloak_admin_user\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:entry\",\"message\":\"Token request starting\",\"data\":{\"token_url\":\"$token_url\",\"username\":\"$keycloak_admin_user\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   echo ":: Obtaining admin access token..." >&2
@@ -153,7 +159,7 @@ function get_admin_token() {
   
   # #region agent log
   local response_preview=$(echo "$token_response" | head -c 200)
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:after_curl\",\"message\":\"Token response received\",\"data\":{\"curl_exit_code\":$curl_exit_code,\"response_preview\":\"$response_preview\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:after_curl\",\"message\":\"Token response received\",\"data\":{\"curl_exit_code\":$curl_exit_code,\"response_preview\":\"$response_preview\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   if [[ $curl_exit_code -ne 0 ]]; then
@@ -165,7 +171,7 @@ function get_admin_token() {
   local token_preview="${token:0:20}..."
   
   # #region agent log
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:token_extracted\",\"message\":\"Token extraction result\",\"data\":{\"token_length\":${#token},\"token_preview\":\"$token_preview\",\"is_empty\":$([ -z "$token" ] && echo true || echo false)},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"start_keycloak.sh:get_admin_token:token_extracted\",\"message\":\"Token extraction result\",\"data\":{\"token_length\":${#token},\"token_preview\":\"$token_preview\",\"is_empty\":$([ -z "$token" ] && echo true || echo false)},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   if [[ -z "$token" || "$token" == "null" ]]; then
@@ -186,7 +192,7 @@ function realm_exists() {
   
   # #region agent log
   local token_preview="${admin_token:0:20}..."
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\",\"location\":\"start_keycloak.sh:realm_exists:entry\",\"message\":\"Checking realm existence\",\"data\":{\"realm_name\":\"$realm_name\",\"check_url\":\"$check_url\",\"token_preview\":\"$token_preview\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\",\"location\":\"start_keycloak.sh:realm_exists:entry\",\"message\":\"Checking realm existence\",\"data\":{\"realm_name\":\"$realm_name\",\"check_url\":\"$check_url\",\"token_preview\":\"$token_preview\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   response_body=$(curl -s -w "\n%{http_code}" -X GET "$check_url" \
@@ -196,7 +202,7 @@ function realm_exists() {
   
   # #region agent log
   local body_preview=$(echo "$response_body" | head -c 200)
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\",\"location\":\"start_keycloak.sh:realm_exists:after_curl\",\"message\":\"Realm check response\",\"data\":{\"http_code\":\"$http_code\",\"response_body_preview\":\"$body_preview\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\",\"location\":\"start_keycloak.sh:realm_exists:after_curl\",\"message\":\"Realm check response\",\"data\":{\"http_code\":\"$http_code\",\"response_body_preview\":\"$body_preview\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   if [[ "$http_code" == "200" ]]; then
@@ -238,7 +244,7 @@ function import_realm() {
   # #region agent log
   local token_preview="${admin_token:0:20}..."
   local file_size=$(stat -f%z "$realm_file" 2>/dev/null || stat -c%s "$realm_file" 2>/dev/null || echo "unknown")
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\",\"location\":\"start_keycloak.sh:import_realm:before_curl\",\"message\":\"About to import realm\",\"data\":{\"realm_name\":\"$realm_name\",\"import_url\":\"$import_url\",\"file_size\":\"$file_size\",\"token_preview\":\"$token_preview\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\",\"location\":\"start_keycloak.sh:import_realm:before_curl\",\"message\":\"About to import realm\",\"data\":{\"realm_name\":\"$realm_name\",\"import_url\":\"$import_url\",\"file_size\":\"$file_size\",\"token_preview\":\"$token_preview\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   response=$(curl -s -w "\n%{http_code}" -X POST "$import_url" \
@@ -251,7 +257,7 @@ function import_realm() {
   
   # #region agent log
   local body_preview=$(echo "$response_body" | head -c 500)
-  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\",\"location\":\"start_keycloak.sh:import_realm:after_curl\",\"message\":\"Import response received\",\"data\":{\"http_code\":\"$http_code\",\"response_body_preview\":\"$body_preview\"},\"timestamp\":$(date +%s%3N)}" >> /Users/aot/Development/AOT/m8Flow/vinaayakh-m8flow/.cursor/debug.log
+  echo "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\",\"location\":\"start_keycloak.sh:import_realm:after_curl\",\"message\":\"Import response received\",\"data\":{\"http_code\":\"$http_code\",\"response_body_preview\":\"$body_preview\"},\"timestamp\":$(date +%s%3N)}" >> "$debug_log_path"
   # #endregion
   
   if [[ "$http_code" == "201" ]]; then
