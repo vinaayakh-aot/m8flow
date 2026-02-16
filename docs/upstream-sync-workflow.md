@@ -49,7 +49,7 @@ These are automatically granted via `GITHUB_TOKEN`.
 - Any changes to files in `spiffworkflow-frontend/`
 
 ❌ **Excluded:**
-- Root-level files (README.md, docker-compose.yml, etc.)
+- Root-level files (README.md, docker compose files e.g. docker/*.yml, etc.)
 - `.github/` directory changes
 - `docs/` directory changes
 - Any other directories outside backend/frontend

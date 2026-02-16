@@ -4,7 +4,7 @@ This is a **standalone application** that extends and overrides components from 
 
 ## Overview
 
-`extensions/frontend` is a complete, runnable application that:
+`extensions/m8flow-frontend` is a complete, runnable application that:
 - **Runs independently** with its own build configuration and entry point
 - **Imports from core** via Vite aliases (`@spiffworkflow-frontend`)
 - **Overrides components** by providing files with the same path structure
@@ -13,7 +13,7 @@ This is a **standalone application** that extends and overrides components from 
 ## Architecture
 
 ```
-extensions/frontend/
+extensions/m8flow-frontend/
 ├── package.json              # Standalone package with dependencies
 ├── vite.config.ts            # Vite config with aliases to spiffworkflow-frontend
 ├── tsconfig.json             # TypeScript config with path mappings
@@ -39,7 +39,7 @@ extensions/frontend/
 ### 1. Install Dependencies
 
 ```bash
-cd extensions/frontend
+cd extensions/m8flow-frontend
 npm install
 ```
 
@@ -69,7 +69,7 @@ When multitenant mode is enabled, the app shows a tenant selection page as the d
 
 **Environment variable**
 
-- **Env variable:** `MULTI_TENANT_ON=true` or `MULTI_TENANT_ON=false` (default: false if unset). The extensions frontend start script passes it to Vite as `VITE_MULTI_TENANT_ON`.
+- **Env variable:** `MULTI_TENANT_ON=true` or `MULTI_TENANT_ON=false` (default: false if unset). The m8flow frontend start script passes it to Vite as `VITE_MULTI_TENANT_ON`.
 - **Runtime (optional):** set `window.spiffworkflowFrontendJsenv.MULTI_TENANT_ON = 'true'` in `index.html` or server-injected script to enable without a rebuild.
 
 **Example:**
@@ -129,16 +129,16 @@ The Vite plugin (`vite-plugin-override-resolver.ts`) intercepts **ALL imports** 
 
 1. **Core-to-core imports** (e.g., `SideNav.tsx` imports `./SpiffLogo`):
    - Resolver intercepts the import
-   - Checks if `extensions/frontend/src/components/SpiffLogo.tsx` exists
+   - Checks if `extensions/m8flow-frontend/src/components/SpiffLogo.tsx` exists
    - If yes: uses your override
    - If no: uses core file
 
 2. **Extension imports** (e.g., `./components/SpiffLogo`):
-   - First checks: `extensions/frontend/src/components/SpiffLogo.tsx`
+   - First checks: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
    - Falls back to: `spiffworkflow-frontend/src/components/SpiffLogo.tsx`
 
 3. **Alias imports** (e.g., `@spiffworkflow-frontend/components/SpiffLogo`):
-   - First checks for override in: `extensions/frontend/src/components/SpiffLogo.tsx`
+   - First checks for override in: `extensions/m8flow-frontend/src/components/SpiffLogo.tsx`
    - Falls back to: `spiffworkflow-frontend/src/components/SpiffLogo.tsx`
 
 **Key benefit**: You only need to override the specific component you want to change. No need to override parent components in the import chain.
@@ -343,7 +343,7 @@ Full TypeScript support is available:
 
 ## Development Workflow
 
-1. **Start Extension App**: `cd extensions/frontend && npm start`
+1. **Start Extension App**: `cd extensions/m8flow-frontend && npm start`
 2. **Create Override**: Add file in `src/components/ComponentName.tsx`
 3. **Import in App**: Import using relative path (override takes precedence)
 4. **Access Core**: Import from `@spiffworkflow-frontend` when needed
