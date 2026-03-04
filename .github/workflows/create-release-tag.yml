@@ -78,7 +78,7 @@ jobs:
               # Always increment patch
               NEXT_PATCH=$((PATCH + 1))
               if [[ "${{ inputs.release_type }}" == "release-candidate" ]]; then
-                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc0" >> $GITHUB_OUTPUT
+                echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc" >> $GITHUB_OUTPUT
               else
                 echo "tag=v${MAJOR}.${MINOR}.${NEXT_PATCH}" >> $GITHUB_OUTPUT
               fi
