@@ -104,6 +104,12 @@ jobs:
       CONNECTOR_PROXY_TASK_DEF_FAMILY: ${{ secrets.CONNECTOR_PROXY_TASK_DEF_FAMILY }}
       CONNECTOR_PROXY_CONTAINER_NAME: ${{ secrets.CONNECTOR_PROXY_CONTAINER_NAME }}
       CONNECTOR_PROXY_SERVICE_NAME: ${{ secrets.CONNECTOR_PROXY_SERVICE_NAME }}
+      CELERY_WORKER_TASK_DEF_FAMILY: ${{ secrets.CELERY_WORKER_TASK_DEF_FAMILY }}
+      CELERY_WORKER_SERVICE_NAME: ${{ secrets.CELERY_WORKER_SERVICE_NAME }}
+      CELERY_FLOWER_TASK_DEF_FAMILY: ${{ secrets.CELERY_FLOWER_TASK_DEF_FAMILY }}
+      CELERY_FLOWER_SERVICE_NAME: ${{ secrets.CELERY_FLOWER_SERVICE_NAME }}
+      NATS_CONSUMER_TASK_DEF_FAMILY: ${{ secrets.NATS_CONSUMER_TASK_DEF_FAMILY }}
+      NATS_CONSUMER_SERVICE_NAME: ${{ secrets.NATS_CONSUMER_SERVICE_NAME }}
     steps:
       - name: Validate required environment variables
         shell: bash
@@ -123,6 +129,12 @@ jobs:
             CONNECTOR_PROXY_TASK_DEF_FAMILY
             CONNECTOR_PROXY_CONTAINER_NAME
             CONNECTOR_PROXY_SERVICE_NAME
+            CELERY_WORKER_TASK_DEF_FAMILY
+            CELERY_WORKER_SERVICE_NAME
+            CELERY_FLOWER_TASK_DEF_FAMILY
+            CELERY_FLOWER_SERVICE_NAME
+            NATS_CONSUMER_TASK_DEF_FAMILY
+            NATS_CONSUMER_SERVICE_NAME
           )
 
           missing=()
@@ -211,6 +223,57 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           force-new-deployment: true
 
+      # Celery worker (container name uses underscore per Terraform ecs.tf)
+      - name: Render celery worker task definition
+        id: render-celery-worker
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.CELERY_WORKER_TASK_DEF_FAMILY }}
+          container-name: celery_worker
+          image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
+
+      - name: Deploy celery worker to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-celery-worker.outputs.task-definition }}
+          service: ${{ env.CELERY_WORKER_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # Celery Flower
+      - name: Render celery flower task definition
+        id: render-celery-flower
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.CELERY_FLOWER_TASK_DEF_FAMILY }}
+          container-name: celery_flower
+          image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
+
+      - name: Deploy celery flower to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-celery-flower.outputs.task-definition }}
+          service: ${{ env.CELERY_FLOWER_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
+      # NATS consumer
+      - name: Render nats consumer task definition
+        id: render-nats-consumer
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.NATS_CONSUMER_TASK_DEF_FAMILY }}
+          container-name: nats-consumer
+          image: ${{ env.IMAGE_BASE }}-backend:${{ inputs.image_tag }}
+
+      - name: Deploy nats consumer to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-nats-consumer.outputs.task-definition }}
+          service: ${{ env.NATS_CONSUMER_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          force-new-deployment: true
+
   summary:
     name: Deployment Summary
     needs: [validate, deploy]
@@ -233,7 +296,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [[ "$DEPLOY_STATUS" == "success" ]]; then
-            echo ":white_check_mark: All components deployed successfully to **${ENV}** with tag \`${TAG}\`." >> $GITHUB_STEP_SUMMARY
+            echo ":white_check_mark: Services deployed successfully to **${ENV}** with tag \`${TAG}\` (backend, frontend, keycloak, connector-proxy, celery-worker, celery-flower, nats-consumer)." >> $GITHUB_STEP_SUMMARY
           else
-            echo ":x: One or more components failed to deploy to **${ENV}**. Check individual job logs above for details." >> $GITHUB_STEP_SUMMARY
+            echo ":x: Deployment to **${ENV}** did not complete successfully. Check deploy job logs." >> $GITHUB_STEP_SUMMARY
           fi

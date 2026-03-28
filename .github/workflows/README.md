@@ -63,14 +63,33 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 
 ### `deploy-aws.yml`
 
-**Purpose:** Deploys the four app services to ECS (DEV or QA).
+**Purpose:** Deploys **seven** ECS services to AWS for GitHub Environments **DEV** or **QA**: backend, frontend, keycloak, connector-proxy, Celery worker, Celery Flower, and NATS consumer. Each run renders a new task definition revision with the requested image tag and deploys it with `force-new-deployment`. Cluster, service, and task-definition family names come from **environment secrets** (set them to match your Terraform outputs, e.g. in **m8flow-deployment** `terraform/aws/ecs.tf`).
 
 **Triggers:** Manual (`workflow_dispatch`).
 
-**Inputs:**
-- `environment` — `DEV` or `QA`
-- `image_tag` — Docker image tag to deploy (e.g. `1.2.3-rc`)
+**Repository variable (all environments):**
+- `AWS_REGION` — e.g. `us-east-2`
 
+**Environment secrets (per `DEV` / `QA`):**
+- `AWS_ROLE_ARN` — IAM role ARN for OIDC (`configure-aws-credentials`)
+- `ECS_CLUSTER` — ECS cluster name
+- Per service (task definition family, ECS service name, and container name for render):
+  - `BACKEND_TASK_DEF_FAMILY`, `BACKEND_SERVICE_NAME`, `BACKEND_CONTAINER_NAME`
+  - `FRONTEND_TASK_DEF_FAMILY`, `FRONTEND_SERVICE_NAME`, `FRONTEND_CONTAINER_NAME`
+  - `KEYCLOAK_TASK_DEF_FAMILY`, `KEYCLOAK_SERVICE_NAME`, `KEYCLOAK_CONTAINER_NAME`
+  - `CONNECTOR_PROXY_TASK_DEF_FAMILY`, `CONNECTOR_PROXY_SERVICE_NAME`, `CONNECTOR_PROXY_CONTAINER_NAME`
+- Backend-image services (task family and service only; container names are fixed in the workflow: `celery_worker`, `celery_flower`, `nats-consumer`):
+  - `CELERY_WORKER_TASK_DEF_FAMILY`, `CELERY_WORKER_SERVICE_NAME`
+  - `CELERY_FLOWER_TASK_DEF_FAMILY`, `CELERY_FLOWER_SERVICE_NAME`
+  - `NATS_CONSUMER_TASK_DEF_FAMILY`, `NATS_CONSUMER_SERVICE_NAME`
+
+**Images:** `m8flow-backend`, `m8flow-frontend`, `m8flow-keycloak`, and `m8flow-connector-proxy` on Docker Hub (`docker.io/m8flow/m8flow-<component>:<image_tag>`). Celery worker, Celery Flower, and NATS consumer use the **same backend image** as the main backend service.
+
+**Inputs:**
+- `environment` — `DEV` or `QA` (selects the GitHub Environment and its secrets)
+- `image_tag` — tag to deploy (must exist on Docker Hub for the four verified repos)
+
+**Operational note:** Phased Terraform rollout and service naming examples for QA are described in `m8flow-deployment/terraform/aws/docs/aws_deployment.md`.
 
 ---
 

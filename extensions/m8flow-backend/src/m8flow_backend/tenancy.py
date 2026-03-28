@@ -23,9 +23,7 @@ TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenan
 # prefix + each path so both prefixed and unprefixed deployments work.
 _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
-# Include both prefixed and unprefixed paths so we match regardless of
-# SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
-TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+_BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
     "/v1.0/ping",
@@ -49,6 +47,27 @@ TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
     "/v1.0/m8flow/tenants",
     "/m8flow/tenants",
+)
+
+
+# When a WSGI path prefix is set (e.g. "/api"), the middleware receives the full
+# path including the prefix ("/api/v1.0/ping"), so a plain match against the base
+# list ("/v1.0/ping") would fail. This function adds the prefixed variants alongside
+# the originals so exempt-path matching works in both prefixed and non-prefixed deployments.
+def _merge_wsgi_exempt_prefixes(
+    base: tuple[str, ...], wsgi_prefix: str
+) -> tuple[str, ...]:
+    """Append ``wsgi_prefix + path`` for each base path when WSGI prefix is set (e.g. ``/api`` + ``/v1.0/ping``)."""
+    wsgi = wsgi_prefix.strip().rstrip("/")
+    if not wsgi:
+        return base
+    return base + tuple(f"{wsgi}{p}" for p in base)
+
+
+# Include both prefixed and unprefixed paths so we match regardless of
+# SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = _merge_wsgi_exempt_prefixes(
+    _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES, _WSGI_PATH_PREFIX
 )
 
 # Path suffixes for pre-login tenant selection (no tenant context required). Also included in
