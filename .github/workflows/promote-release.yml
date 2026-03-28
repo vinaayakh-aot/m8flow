@@ -1,0 +1,165 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "RC tag to promote (e.g. 1.2.3-rc)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: docker.io
+  IMAGE_REPOSITORY: m8flow
+  PROJECT: m8flow
+  COMPONENTS: '["backend", "frontend", "keycloak", "connector-proxy"]'
+
+jobs:
+  validate:
+    name: Validate & Verify RC Images
+    runs-on: ubuntu-latest
+    outputs:
+      rc_tag: ${{ steps.tags.outputs.rc_tag }}
+      release_tag: ${{ steps.tags.outputs.release_tag }}
+      components: ${{ env.COMPONENTS }}
+    steps:
+      - name: Validate tag format
+        run: |
+          RC_TAG="${{ inputs.rc_tag }}"
+          if [[ ! "$RC_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc$ ]]; then
+            echo "::error::Invalid tag format: '$RC_TAG'. Expected X.Y.Z-rc (e.g. 1.2.3-rc)"
+            exit 1
+          fi
+
+      - name: Derive release tag
+        id: tags
+        run: |
+          RC_TAG="${{ inputs.rc_tag }}"
+          RELEASE_TAG="${RC_TAG%-rc}"
+          echo "rc_tag=${RC_TAG}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "RC tag:      ${RC_TAG}"
+          echo "Release tag: ${RELEASE_TAG}"
+
+      - name: Setup regctl
+        uses: regclient/actions/regctl-installer@v0.1.0
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | regctl registry login ${{ env.REGISTRY }} -u "$DOCKERHUB_USERNAME" --pass-stdin
+
+      - name: Verify RC images exist on Docker Hub
+        env:
+          RC_TAG: ${{ steps.tags.outputs.rc_tag }}
+        run: |
+          COMPONENTS=$(echo '${{ env.COMPONENTS }}' | tr -d '[]"' | tr ',' ' ')
+          MISSING=0
+          for COMPONENT in $COMPONENTS; do
+            FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${COMPONENT}:${RC_TAG}"
+            echo -n "Checking ${FULL_IMAGE} ... "
+            if regctl image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
+              echo "found"
+            else
+              echo "::error::Image not found: ${FULL_IMAGE}"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [[ $MISSING -gt 0 ]]; then
+            echo "::error::${MISSING} RC image(s) missing from Docker Hub. Aborting promotion."
+            exit 1
+          fi
+
+      - name: Check for existing release tags (warn only)
+        env:
+          RELEASE_TAG: ${{ steps.tags.outputs.release_tag }}
+        run: |
+          COMPONENTS=$(echo '${{ env.COMPONENTS }}' | tr -d '[]"' | tr ',' ' ')
+          for COMPONENT in $COMPONENTS; do
+            FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${COMPONENT}:${RELEASE_TAG}"
+            if regctl image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
+              echo "::warning::Release tag already exists and will be overwritten: ${FULL_IMAGE}"
+            fi
+          done
+
+  promote:
+    name: Promote ${{ matrix.component }}
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: ${{ fromJson(needs.validate.outputs.components) }}
+    steps:
+      - name: Setup regctl
+        uses: regclient/actions/regctl-installer@v0.1.0
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | regctl registry login ${{ env.REGISTRY }} -u "$DOCKERHUB_USERNAME" --pass-stdin
+
+      - name: Copy image (server-side retag)
+        env:
+          RC_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.validate.outputs.rc_tag }}
+          RELEASE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.validate.outputs.release_tag }}
+        run: |
+          echo "Promoting: ${RC_IMAGE} → ${RELEASE_IMAGE}"
+          regctl image copy "${RC_IMAGE}" "${RELEASE_IMAGE}"
+
+      - name: Get release image digest
+        id: digest
+        env:
+          RELEASE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}/${{ env.PROJECT }}-${{ matrix.component }}:${{ needs.validate.outputs.release_tag }}
+        run: |
+          DIGEST=$(regctl image digest "${RELEASE_IMAGE}")
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+          echo "${DIGEST}" > digest.txt
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.component }}
+          path: digest.txt
+          retention-days: 1
+
+  summary:
+    name: Promotion Summary
+    needs: [validate, promote]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all digests
+        uses: actions/download-artifact@v4
+        with:
+          path: digests
+          pattern: digest-*
+          merge-multiple: false
+
+      - name: Write job summary
+        env:
+          RC_TAG: ${{ needs.validate.outputs.rc_tag }}
+          RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
+        run: |
+          echo "### Promotion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **RC tag** | \`${RC_TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release tag** | \`${RELEASE_TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Promoted by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Promoted at** | $(date -u +'%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Images" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Release Tag | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+          for f in digests/digest-*/digest.txt; do
+            COMPONENT=$(basename $(dirname "$f") | sed 's/digest-//')
+            DIGEST=$(cat "$f")
+            echo "| \`$COMPONENT\` | \`${RELEASE_TAG}\` | \`${DIGEST}\` |" >> $GITHUB_STEP_SUMMARY
+          done

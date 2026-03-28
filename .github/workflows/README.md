@@ -61,6 +61,25 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 
 ---
 
+### `promote-release.yml`
+
+**Purpose:** Promotes an RC Docker image to a final release tag on Docker Hub without rebuilding. Copies `X.Y.Z-rc` → `X.Y.Z` server-side (no layer download) for all four components.
+
+**Triggers:** Manual (`workflow_dispatch`).
+
+**Inputs:**
+- `rc_tag` — The existing RC tag to promote (e.g. `1.2.3-rc`)
+
+**What it does:**
+1. Validates the tag format (`X.Y.Z-rc`)
+2. Verifies all four RC images exist on Docker Hub (fails if any are missing)
+3. Warns if the release tag already exists (allows re-promotion)
+4. Server-side copies each image from `rc_tag` to the derived release tag (strips `-rc`)
+
+**Result:** Both `1.2.3-rc` and `1.2.3` exist on Docker Hub pointing to the same image digest.
+
+---
+
 ### `deploy-aws.yml`
 
 **Purpose:** Deploys the four app services to ECS (DEV or QA).
