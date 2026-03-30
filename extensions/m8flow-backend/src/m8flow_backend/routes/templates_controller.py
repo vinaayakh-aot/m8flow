@@ -7,7 +7,7 @@ from flask import Response, jsonify, request, g
 
 from spiffworkflow_backend.exceptions.api_error import ApiError
 
-from m8flow_backend.models.template import TemplateModel
+from m8flow_core.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
 
 

@@ -21,7 +21,7 @@ except ImportError:
     InvalidRequestError = None  # type: ignore[misc, assignment]
 
 from m8flow_backend.canonical_db import get_canonical_db
-from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_core.models.tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,

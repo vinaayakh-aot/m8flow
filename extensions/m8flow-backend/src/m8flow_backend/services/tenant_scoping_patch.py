@@ -10,8 +10,8 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import with_loader_criteria
 
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin
-from m8flow_backend.models.tenant_scoped import TenantScoped
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin
+from m8flow_core.models.tenant_scoped import TenantScoped
 from m8flow_backend.tenancy import (
     DEFAULT_TENANT_ID,
     LOGGER,

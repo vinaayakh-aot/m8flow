@@ -61,7 +61,7 @@ def _clean_env():
 
 
 def _seed_tenants() -> None:
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     now = int(datetime.now(timezone.utc).timestamp())
 
@@ -268,7 +268,7 @@ def test_tenant_override_forbidden() -> None:
 
 
 def test_tenant_context_propagates_to_queries() -> None:
-    from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+    from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
     from m8flow_backend.services import tenant_scoping_patch
 
     tenant_scoping_patch.apply()

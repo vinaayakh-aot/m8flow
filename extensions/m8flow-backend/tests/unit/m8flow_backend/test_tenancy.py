@@ -15,7 +15,7 @@ for path in (extension_src, backend_src):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
+from m8flow_core.models.tenant import M8flowTenantModel  # noqa: E402
 from m8flow_backend.tenancy import create_tenant_if_not_exists  # noqa: E402
 from m8flow_backend.tenancy import path_matches_any_prefix  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402

@@ -12,6 +12,7 @@ fi
 export PYTHONPATH=./spiffworkflow-backend:$PYTHONPATH
 export PYTHONPATH=./spiffworkflow-backend/src:$PYTHONPATH
 export PYTHONPATH=./extensions/m8flow-backend/src:$PYTHONPATH
+export PYTHONPATH=./m8flow-core/src:$PYTHONPATH
 
 env_file="$repo_root/.env"
 if [[ -f "$env_file" ]]; then

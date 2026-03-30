@@ -11,7 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 def _migrations_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "m8flow-backend" / "migrations"
+    # Prefer m8flow-core/migrations (canonical location after extraction).
+    # Fall back to legacy extensions/m8flow-backend/migrations for backwards compatibility.
+    repo_root = Path(__file__).resolve().parents[2]
+    core_migrations = repo_root / "m8flow-core" / "migrations"
+    if core_migrations.is_dir():
+        return core_migrations
+    return repo_root / "extensions" / "m8flow-backend" / "migrations"
 
 
 def _ensure_migrations_importable() -> None:

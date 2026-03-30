@@ -3,10 +3,8 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from sqlalchemy import func
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
+from m8flow_core.db.registry import db, get_base_model
+from m8flow_core.models.audit_mixin import AuditDateTimeMixin
 
 
 class TenantStatus(str, enum.Enum):
@@ -16,7 +14,7 @@ class TenantStatus(str, enum.Enum):
 
 
 @dataclass
-class M8flowTenantModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
+class M8flowTenantModel(get_base_model(), AuditDateTimeMixin):  # type: ignore[misc]
     """SQLAlchemy model for M8flowTenantModel."""
     __tablename__ = "m8flow_tenant"
 

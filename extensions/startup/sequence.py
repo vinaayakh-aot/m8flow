@@ -43,6 +43,18 @@ def _prepare_pre_app_boot() -> tuple[Any, Callable[[], None]]:
     from extensions.startup.import_contracts import import_spiff_db
 
     db = import_spiff_db()
+
+    # Configure m8flow_core with the spiff-arena db instance and base model.
+    # Must happen after import_spiff_db() (POST_BOOTSTRAP) and before any model imports.
+    import m8flow_core
+    from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
+    from m8flow_core.adapters.spiff_arena import SpiffArenaErrorFactory, SpiffArenaAuthzAdapter
+    m8flow_core.configure_db(db, SpiffworkflowBaseDBModel)
+    m8flow_core.configure_adapters(SpiffArenaErrorFactory(), SpiffArenaAuthzAdapter())
+
+    from m8flow_core.auth.adapters.keycloak import KeycloakIdentityProvider
+    m8flow_core.configure_auth_provider(KeycloakIdentityProvider.from_env())
+
     upgrade_m8flow_db = load_migration_runner()
 
     # Identity guard before create_app() (fail fast).

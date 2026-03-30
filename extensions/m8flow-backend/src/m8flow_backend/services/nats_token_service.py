@@ -1,7 +1,7 @@
 from __future__ import annotations
 import secrets
 import string
-from m8flow_backend.models.nats_token import NatsTokenModel
+from m8flow_core.models.nats_token import NatsTokenModel
 from spiffworkflow_backend.models.db import db
 from spiffworkflow_backend.exceptions.api_error import ApiError
 from m8flow_backend.config import nats_token_salt

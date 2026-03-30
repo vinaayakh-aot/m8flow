@@ -20,9 +20,9 @@ from m8flow_backend.services import model_override_patch
 
 model_override_patch.apply()
 
-from m8flow_backend.models.m8flow_tenant import M8flowTenantModel  # noqa: E402
-from m8flow_backend.models.template import TemplateModel, TemplateVisibility  # noqa: E402
-from m8flow_backend.models.process_model_template import ProcessModelTemplateModel  # noqa: E402
+from m8flow_core.models.tenant import M8flowTenantModel  # noqa: E402
+from m8flow_core.models.template import TemplateModel, TemplateVisibility  # noqa: E402
+from m8flow_core.models.process_model_template import ProcessModelTemplateModel  # noqa: E402
 from spiffworkflow_backend.models.db import db  # noqa: E402
 
 import spiffworkflow_backend.load_database_models  # noqa: F401,E402

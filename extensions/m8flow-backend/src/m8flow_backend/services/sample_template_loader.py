@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from spiffworkflow_backend.models.db import db
 
-from m8flow_backend.models.template import TemplateModel, TemplateVisibility
+from m8flow_core.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     file_type_from_filename,

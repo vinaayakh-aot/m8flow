@@ -1,11 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel, db
-from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+
+from m8flow_core.db.registry import db, get_base_model
+from m8flow_core.models.audit_mixin import AuditDateTimeMixin
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+
 
 @dataclass
-class NatsTokenModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel, AuditDateTimeMixin):
+class NatsTokenModel(M8fTenantScopedMixin, TenantScoped, get_base_model(), AuditDateTimeMixin):  # type: ignore[misc]
     """SQLAlchemy model for NATS tokens."""
     __tablename__ = "m8flow_nats_tokens"
 

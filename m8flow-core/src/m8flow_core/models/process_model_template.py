@@ -4,21 +4,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Index
+from sqlalchemy import Index
 from sqlalchemy.orm import relationship
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+from m8flow_core.db.registry import db, get_base_model
+from m8flow_core.models.audit_mixin import AuditDateTimeMixin
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 
 
 @dataclass
-class ProcessModelTemplateModel(M8fTenantScopedMixin, TenantScoped, SpiffworkflowBaseDBModel, AuditDateTimeMixin):
+class ProcessModelTemplateModel(M8fTenantScopedMixin, TenantScoped, get_base_model(), AuditDateTimeMixin):  # type: ignore[misc]
     """Tracks which template a process model was created from.
-    
-    This model stores the provenance information linking a process model
-    to the template (and specific version) it was created from.
+
+    Stores provenance linking a process model to the template (and specific version)
+    it was created from.
     """
 
     __tablename__ = "m8flow_process_model_template"
@@ -31,26 +30,26 @@ class ProcessModelTemplateModel(M8fTenantScopedMixin, TenantScoped, Spiffworkflo
     __allow_unmapped__ = True
 
     id: int = db.Column(db.Integer, primary_key=True)
-    
+
     # The process model identifier (e.g., "my-group/my-model")
     process_model_identifier: str = db.Column(db.String(255), nullable=False, unique=True)
-    
+
     # Reference to the source template
     source_template_id: int = db.Column(
         db.Integer,
         db.ForeignKey("m8flow_templates.id"),
         nullable=False,
     )
-    
+
     # Denormalized template info for quick access and historical record
     # (in case the template is deleted or modified)
     source_template_key: str = db.Column(db.String(255), nullable=False)
     source_template_version: str = db.Column(db.String(50), nullable=False)
     source_template_name: str = db.Column(db.String(255), nullable=False)
-    
+
     # Who created this process model from the template
     created_by: str = db.Column(db.String(255), nullable=False)
-    
+
     # Relationship to the template
     source_template = relationship(
         "TemplateModel",

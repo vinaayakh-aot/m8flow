@@ -13,7 +13,7 @@ from sqlalchemy.orm import validates
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 from m8flow_backend.models.process_instance import ProcessInstanceModel
 from spiffworkflow_backend.models.user import UserModel
 

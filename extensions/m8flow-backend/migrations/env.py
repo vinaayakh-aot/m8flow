@@ -16,12 +16,24 @@ SRC_DIR = M8FLOW_BACKEND_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# Also ensure m8flow-core/src is importable (needed after extraction).
+REPO_ROOT = MIGRATIONS_DIR.parents[2]
+CORE_SRC_DIR = REPO_ROOT / "m8flow-core" / "src"
+if CORE_SRC_DIR.is_dir() and str(CORE_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_SRC_DIR))
+
 from m8flow_backend.services import model_override_patch
 
 model_override_patch.apply()
 
+# Import db and configure m8flow_core BEFORE loading all database models.
+# Loading models triggers the override patch hooks which import m8flow_core models,
+# and those models access db.Column via the _DbProxy — so configure_db must be called first.
+from spiffworkflow_backend.models.db import db, SpiffworkflowBaseDBModel
+import m8flow_core
+m8flow_core.configure_db(db, SpiffworkflowBaseDBModel)
+
 import spiffworkflow_backend.load_database_models  # noqa: F401
-from spiffworkflow_backend.models.db import db
 
 config = context.config
 

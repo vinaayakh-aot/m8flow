@@ -1,25 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
-from sqlalchemy import ForeignKey, UniqueConstraint, Index
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy import UniqueConstraint, Index
+from sqlalchemy.orm import validates
 
-from spiffworkflow_backend.helpers.spiff_enum import SpiffEnum
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
+from m8flow_core.db.registry import db, get_base_model
+from m8flow_core.models.audit_mixin import AuditDateTimeMixin
+from m8flow_core.models.base_enum import M8flowEnum
 
 
-class TemplateVisibility(SpiffEnum):
+class TemplateVisibility(M8flowEnum):
     private = "PRIVATE"
     tenant = "TENANT"
     public = "PUBLIC"
 
 
 @dataclass
-class TemplateModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
+class TemplateModel(get_base_model(), AuditDateTimeMixin):  # type: ignore[misc]
     """Template metadata and version rows (one row per version)."""
 
     __tablename__ = "m8flow_templates"
@@ -63,13 +62,12 @@ class TemplateModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
                 return m_type.value
         except Exception:
             pass
-        
+
         # If not found by name, try to find by value
         for member in TemplateVisibility:
             if member.value == value:
                 return member.value
-        
-        # If neither found, raise error
+
         raise ValueError(f"{self.__class__.__name__}: invalid visibility: {value}")
 
     def is_private(self) -> bool:

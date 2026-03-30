@@ -1,0 +1,42 @@
+[project]
+name = "m8flow-core"
+version = "0.1.0"
+description = "Core domain models, services, tenant context, and pluggable auth for m8flow"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11, <3.13"
+dependencies = [
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+flask = [
+    "flask>=3.0",
+]
+persistence = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+]
+spiff-arena = [
+    "spiffworkflow-backend>=0.0.1",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-flask>=1.3",
+    "flask>=3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/m8flow_core"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "migrations/",
+    "README.md",
+    "pyproject.toml",
+]

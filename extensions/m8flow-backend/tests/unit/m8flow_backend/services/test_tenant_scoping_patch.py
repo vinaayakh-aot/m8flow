@@ -2,7 +2,7 @@
 
 from flask import Flask, g
 
-from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_core.models.tenant import M8flowTenantModel
 from m8flow_backend.models.message_model import MessageModel
 from m8flow_backend.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_backend.services import tenant_scoping_patch

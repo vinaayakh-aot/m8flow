@@ -22,7 +22,7 @@ from spiffworkflow_backend.services.authorization_service import AuthorizationSe
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 
 from m8flow_backend.tenancy import create_tenant_if_not_exists
-from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+from m8flow_core.models.tenant import M8flowTenantModel
 from spiffworkflow_backend.models.db import db
 from flask import request, g
 

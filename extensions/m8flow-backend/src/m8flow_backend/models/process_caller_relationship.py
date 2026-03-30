@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 
 
 class CalledProcessNotFoundError(Exception):

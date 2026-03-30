@@ -1,7 +1,7 @@
 # extensions/startup/model_identity.py
 def assert_model_identity() -> None:
     from spiffworkflow_backend.models.db import db, SpiffworkflowBaseDBModel
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     assert hasattr(M8flowTenantModel, "__table__"), (
         "M8flowTenantModel is not mapped yet (no __table__). "

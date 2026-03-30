@@ -1,11 +1,11 @@
-from spiffworkflow_backend.models.db import db
+from m8flow_core.db.registry import db
 
 
 class TenantScoped:
-    """Helper class for TenantScoped."""
+    """Abstract marker for tenant-scoped models."""
     __abstract__ = True
 
 
 class M8fTenantScopedMixin:
-    """Mixin for M8fTenantScopedMixin behavior."""
+    """Mixin that adds a foreign key to m8flow_tenant for multi-tenant data isolation."""
     m8f_tenant_id = db.Column(db.String(255), db.ForeignKey("m8flow_tenant.id"), nullable=False, index=True)

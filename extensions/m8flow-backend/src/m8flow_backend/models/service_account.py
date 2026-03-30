@@ -10,7 +10,7 @@ from sqlalchemy.orm import relationship
 
 from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
 from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
+from m8flow_core.models.tenant_scoped import M8fTenantScopedMixin, TenantScoped
 
 # this is designed to be used for the "service" column on the user table, which is designed to hold
 # information about which authentiation system is used to authenticate this user.
