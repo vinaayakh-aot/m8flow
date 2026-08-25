@@ -382,11 +382,12 @@ export async function deleteProcessModel(
 
 /**
  * One operation within a connector group, as m8flow_backend's
- * connectors_controller.connectors_grouped returns it. `parameters` is
- * always `[]` today — the backend doesn't describe per-operation parameter
- * schemas yet (only connector-level `configFields`, used for the Connectors
- * "Configure" form's secrets, not this). Kept on the type anyway since
- * ServiceTaskOperatorSelect (bpmn-js-spiffworkflow) reads it when present.
+ * connectors_controller.connectors_grouped returns it. `parameters` comes
+ * from the connector proxy's `/v1/commands` catalog (via the host
+ * ServiceTaskRegistry) — distinct from connector-level `configFields`, used
+ * for the Connectors "Configure" form's secrets. Read by
+ * ServiceTaskOperatorSelect (bpmn-js-spiffworkflow) to render each service
+ * task operator's parameter inputs.
  */
 export type ConnectorOperation = {
   id: string;

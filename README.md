@@ -59,7 +59,7 @@ By default, the stack publishes **6840–6852** on your machine (configured in [
 | 6841 | `m8flow-frontend` (UI) |
 | 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
 | 6843 | `m8flow-db` (PostgreSQL) |
-| 6844 | `m8flow-connector-proxy` |
+| 6844 | `m8flow-node-wire-proxy` |
 | 6846 / 6847 | `minio` (API / console) |
 | 6848 | `redis` |
 | 6849 | `keycloak` management/health port on host |
@@ -245,7 +245,8 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 | `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
 | `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 6840 |
 | `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 6841 |
-| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 6844 |
+| `m8flow-node-wire-proxy` | HTTP V2 connector proxy (node-wire `http_generic`) | 6844 |
+| `m8flow-connector-proxy` | Legacy Spiff connector proxy (profile `legacy-connector-proxy`) | 6845 when enabled |
 | `m8flow-celery-worker` | Celery background task worker | — |
 | `m8flow-celery-flower` | Celery monitoring UI | 6850 |
 | `m8flow-nats-consumer` | NATS event consumer | — |

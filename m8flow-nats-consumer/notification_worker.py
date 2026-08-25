@@ -172,7 +172,10 @@ async def main() -> None:
 
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app
+    # asgi_app may be the Flask app itself, or a WSGI/ASGI middleware stack
+    # wrapping it (each layer exposing the next via `.app`) — unwrap until we
+    # reach an object with app_context() instead of assuming a fixed depth.
+    flask_app = asgi_app
     while not hasattr(flask_app, "app_context"):
         flask_app = flask_app.app
 

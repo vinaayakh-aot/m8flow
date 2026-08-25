@@ -258,3 +258,112 @@ textarea.bio-properties-panel-input.auto-resize {
 .spiffworkflow-properties-panel-button:hover {
   text-decoration: underline;
 }
+
+/**
+ * Service Task "Node-Wire Connectors" tabs — `Connector Panel Variations.
+ * dc.html`'s "1C · Tabs" variation (Action / Config / Parameters, underlined
+ * active tab, muted-pill badge on Parameters). Rendered by
+ * `serviceTaskConnectorPanel.ts`, which replaces bpmn-js-spiffworkflow's own
+ * flat `service_task_properties` group entries — this file only supplies
+ * the tab-strip chrome those entries render into, same --color-* token
+ * convention as the rest of this file (the mockup's own hardcoded
+ * `--aot-sky-blue`/`--text-muted`/`--surface-sunken` aren't available at
+ * runtime here, unlike in the standalone mockup's own design-system bundle).
+ */
+.m8flow-service-task-tabs {
+  display: flex;
+  gap: 18px;
+  margin: 0 0 14px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.m8flow-service-task-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.m8flow-service-task-tab.active {
+  color: var(--color-info);
+  border-bottom-color: var(--color-info);
+}
+
+.m8flow-service-task-tab-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--color-muted-foreground);
+  background: var(--color-background);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
+.m8flow-service-task-tab.active .m8flow-service-task-tab-badge {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+}
+
+.m8flow-service-task-tab-panel {
+  margin: 0;
+}
+
+.m8flow-service-task-config-connector {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: inline-block;
+  margin: 0 0 10px;
+}
+
+.m8flow-service-task-config-note {
+  margin: 0;
+}
+
+/* Parameters tab — "1A · Stacked cards"' param list: one bordered card, each
+   parameter a row (mono name above its input) separated by a top border.
+   The mockup's card also repeats a "Parameters" header + count inside the
+   card; omitted here since the tab strip above already shows both. */
+.m8flow-service-task-params-card {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 4px 14px;
+}
+
+.m8flow-service-task-param-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.m8flow-service-task-param-row:first-child {
+  border-top: none;
+}
+
+.m8flow-service-task-param-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin-bottom: 6px;
+}
+
+/* TextFieldEntry's own .bio-properties-panel-entry wrapper carries the
+   panel-wide 12px bottom margin (see rule near the top of this file) — the
+   row above already supplies its own 10px/10px vertical rhythm via padding,
+   so that margin would just add extra dead space between rows. */
+.m8flow-service-task-param-row .bio-properties-panel-entry {
+  margin: 0;
+}

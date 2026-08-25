@@ -1,20 +1,10 @@
 /**
- * PROTOTYPE — Isolated BPMN package first mount (throwaway stub).
- * Defaults so the package looks right if the host sets no tokens.
- * Host may override any --color-* on an ancestor or on .m8flow-bpmn.
+ * --color-* fallback tokens used throughout this file now live in
+ * theme-defaults.css (scoped to :root, not .m8flow-bpmn — see that file's
+ * own comment for why). modeler.css imports it ahead of this file, so it's
+ * always in scope by the time these rules run. Host may still override any
+ * --color-* on :root, an ancestor, or .m8flow-bpmn itself.
  */
-.m8flow-bpmn {
-  --color-background: #f5f6f7;
-  --color-foreground: #1f2937;
-  --color-border: #e5e7eb;
-  --color-card: #ffffff;
-  --color-info: #2563eb;
-  --color-success: #059669;
-  --color-warning: #d97706;
-  --color-destructive: #dc2626;
-  --color-flow-control: #7c3aed;
-  --color-muted-foreground: #6b7280;
-}
 
 /**
  * Canvas background (mockup: `Process Modeler.dc.html` line ~109) — a

@@ -219,13 +219,23 @@ def _valid_config_fields(
 
 def connectors_grouped() -> flask.wrappers.Response:
     """Return service-task operations grouped by connector with metadata."""
-    from m8flow_backend.secrets import list_connectors
+    from m8flow_backend.secrets import build_host_service_task_registry
 
-    connectors = list_connectors()
-    flat_operations: list[dict[str, Any]] = []
-    for connector in connectors:
-        for command in connector.get("commands") or []:
-            flat_operations.append({"id": f"{connector['name']}/{command}", "parameters": []})
+    # list_connectors() flattens each command down to its bare name, which loses
+    # the parameter definitions the connector proxy's /v1/commands catalog
+    # provides. Read the registry directly so ServiceTaskCommandDefinition.parameters
+    # survives into the per-operation "parameters" list below.
+    registry = build_host_service_task_registry()
+    flat_operations: list[dict[str, Any]] = [
+        {
+            "id": command.operation_id,
+            "parameters": [
+                {"id": parameter.name, "type": parameter.parameter_type or "string"}
+                for parameter in command.parameters
+            ],
+        }
+        for command in registry.list_commands()
+    ]
 
     groups: dict[str, dict[str, Any]] = {}
 

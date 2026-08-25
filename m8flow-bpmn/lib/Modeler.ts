@@ -33,6 +33,7 @@ import {
   fixUnresolvedReferences,
   positionContextPadAboveTarget,
 } from './features/modelerBehaviors';
+import { serviceTaskConnectorPanelModule } from './features/serviceTaskConnectorPanel';
 import { zoomControlsModule } from './features/zoomControls';
 
 /**
@@ -62,6 +63,11 @@ inherits(Modeler, BpmnModeler);
 Modeler.prototype._m8flowModules = [
   spiffworkflow,
   externalFormPropertiesModule,
+  // Must register after `spiffworkflow` — it finds-and-replaces the
+  // `service_task_properties` group spiffworkflow's own provider already
+  // pushed (same "runs later in the getGroups middleware chain" trick
+  // externalFormPropertiesModule uses above).
+  serviceTaskConnectorPanelModule,
   BpmnPropertiesPanelModule,
   BpmnPropertiesProviderModule,
   customPaletteModule,

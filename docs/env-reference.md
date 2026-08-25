@@ -13,7 +13,8 @@ These control what **your machine** listens on when you run [docker/m8flow-docke
 | `KEYCLOAK_PROXY_PORT` | `6842` | Keycloak nginx proxy (host → container 6842) |
 | `KEYCLOAK_MGMT_PORT` | `6849` | Keycloak management / health on host |
 | `POSTGRES_HOST_PORT` | `6843` | `m8flow-db` PostgreSQL on host |
-| `CONNECTOR_PROXY_PORT` | `6844` | Connector proxy |
+| `CONNECTOR_PROXY_PORT` | `6844` | Default `m8flow-node-wire-proxy` (HTTP V2) |
+| `LEGACY_CONNECTOR_PROXY_PORT` | `6845` | Legacy `m8flow-connector-proxy` when using profile `legacy-connector-proxy` |
 | `M8FLOW_NATS_PORT` | `6845` | NATS client port ([m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml)) |
 | `MINIO_API_PORT` | `6846` | MinIO S3 API on host |
 | `MINIO_CONSOLE_PORT` | `6847` | MinIO console on host |

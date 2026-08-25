@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -7,6 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core import api
+from m8flow_bpmn_core.services.connector_proxy_service_tasks import (
+    build_connector_proxy_service_task_registry,
+)
 from m8flow_bpmn_core.services.service_tasks import ServiceTaskRegistry
 from m8flow_backend.models.native import SecretModel
 
@@ -45,8 +49,32 @@ def list_connectors(registry: ServiceTaskRegistry | None = None) -> list[dict[st
     return [{"name": key, "commands": commands} for key, commands in grouped.items()]
 
 
+def connector_proxy_url() -> str | None:
+    """Active connector-proxy base URL, or None when connectors are not configured.
+
+    Prefers ``M8FLOW_BACKEND_CONNECTOR_PROXY_URL``; falls back to the Spiff-mapped
+    name after ``apply_m8flow_env_mapping()``.
+    """
+    raw = (
+        os.environ.get("M8FLOW_BACKEND_CONNECTOR_PROXY_URL")
+        or os.environ.get("SPIFFWORKFLOW_BACKEND_CONNECTOR_PROXY_URL")
+        or ""
+    ).strip()
+    return raw or None
+
+
 def build_host_service_task_registry() -> ServiceTaskRegistry:
-    return ServiceTaskRegistry()
+    """Build the host ServiceTaskRegistry from the configured connector proxy.
+
+    When ``M8FLOW_BACKEND_CONNECTOR_PROXY_URL`` is unset, returns an empty registry
+    (unit tests / hosts without connectors). When set, fetches ``GET /v1/commands``
+    via core's connector-proxy client — failures raise rather than silently emptying
+    the catalog.
+    """
+    base_url = connector_proxy_url()
+    if base_url is None:
+        return ServiceTaskRegistry()
+    return build_connector_proxy_service_task_registry(base_url)
 
 
 def install_registry_at_boot() -> None:

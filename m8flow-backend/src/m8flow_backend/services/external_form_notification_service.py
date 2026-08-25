@@ -28,8 +28,8 @@ LOGGER = logging.getLogger("m8flow.external_forms.notification")
 # Statuses a notification claim may transition from. Deliberately narrower than
 # ACTIONABLE_STATUSES: 'notified' is excluded so a claim can never double-send.
 CLAIMABLE_STATUSES = (
-    ExternalFormRequestStatus.pending.value,
-    ExternalFormRequestStatus.failed.value,
+    ExternalFormRequestStatus.pending,
+    ExternalFormRequestStatus.failed,
 )
 
 # SMTP is configured per-tenant via encrypted tenant secrets, never global
@@ -78,7 +78,7 @@ class ExternalFormNotificationService:
                 ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
             )
             .values(
-                status=ExternalFormRequestStatus.notified.value,
+                status=ExternalFormRequestStatus.notified,
                 notified_at_in_seconds=now,
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at_in_seconds=now,
@@ -97,10 +97,10 @@ class ExternalFormNotificationService:
             sa_update(ExternalFormRequestModel)
             .where(
                 ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.status == ExternalFormRequestStatus.notified.value,
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.notified,
             )
             .values(
-                status=ExternalFormRequestStatus.failed.value,
+                status=ExternalFormRequestStatus.failed,
                 notified_at_in_seconds=None,
                 updated_at_in_seconds=now,
             )

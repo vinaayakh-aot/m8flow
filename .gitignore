@@ -50,3 +50,6 @@ docker/vault/demo/secrets.yml
 pmd-bin-*/
 pmd-dist-*.zip
 pmd*.zip
+
+# Staged node-wire binary wheels (regenerate via m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh)
+m8flow-node-wire-proxy/vendor/wheels/*.whl

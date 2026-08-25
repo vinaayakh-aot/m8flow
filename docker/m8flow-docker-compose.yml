@@ -323,7 +323,7 @@ services:
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "${M8FLOW_BACKEND_UPGRADE_DB:-true}"
-      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-6844}"
+      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-node-wire-proxy:${CONNECTOR_PROXY_PORT:-6844}"
       KEYCLOAK_URL: "http://keycloak-proxy:6842"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
@@ -371,7 +371,7 @@ services:
       OTEL_SERVICE_NAME: m8flow-celery-worker
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
-      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-connector-proxy:${CONNECTOR_PROXY_PORT:-6844}"
+      M8FLOW_BACKEND_CONNECTOR_PROXY_URL: "http://m8flow-node-wire-proxy:${CONNECTOR_PROXY_PORT:-6844}"
       KEYCLOAK_URL: "http://keycloak-proxy:6842"
       M8FLOW_KEYCLOAK_URL: "http://keycloak-proxy:6842"
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
@@ -471,7 +471,35 @@ services:
     depends_on:
       - m8flow-backend
 
+  # Default HTTP V2 connector proxy (node-wire). Old Spiff-based proxy is under
+  # profile `legacy-connector-proxy` and is left in-tree but unused by default.
+  m8flow-node-wire-proxy:
+    container_name: m8flow-node-wire-proxy
+    image: m8flow/m8flow-node-wire-proxy
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: m8flow-node-wire-proxy/Dockerfile
+    env_file: ../.env
+    environment:
+      NW_ALLOWED_CONNECTORS: http_generic
+      CONNECTOR_PROXY_PORT: "${CONNECTOR_PROXY_PORT:-6844}"
+    ports:
+      - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-6844}/liveness || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # Legacy Spiff connector-proxy (SMTP/Slack/etc.). Not started by default —
+  # `docker compose --profile legacy-connector-proxy ... up m8flow-connector-proxy`
   m8flow-connector-proxy:
+    profiles: ["legacy-connector-proxy"]
     container_name: m8flow-connector-proxy
     image: m8flow/m8flow-connector-proxy
     pull_policy: never
@@ -484,8 +512,10 @@ services:
       OTEL_SERVICE_NAME: m8flow-connector-proxy
       M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR: /app/data/email_attachments
       M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR: /app/data/slack_attachments
+      # Avoid colliding with the default node-wire proxy on 6844 when both run.
+      CONNECTOR_PROXY_PORT: "${LEGACY_CONNECTOR_PROXY_PORT:-6845}"
     ports:
-      - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
+      - "${LEGACY_CONNECTOR_PROXY_PORT:-6845}:${LEGACY_CONNECTOR_PROXY_PORT:-6845}/tcp"
     volumes:
       - type: volume
         source: "smtp_attachments"
@@ -499,7 +529,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-6844}/liveness || exit 1",
+          "curl -fsS http://localhost:${LEGACY_CONNECTOR_PROXY_PORT:-6845}/liveness || exit 1",
         ]
       interval: 10s
       timeout: 5s

@@ -15,7 +15,8 @@
   },
   "scripts": {
     "test": "vitest run && vite-node --config vitest.config.ts test/distributions.smoke.mjs",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/patch-bpmn-labels.cjs"
   },
   "dependencies": {
     "@bpmn-io/properties-panel": "3.51.2",

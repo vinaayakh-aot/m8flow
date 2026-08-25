@@ -102,10 +102,13 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      ...m8flowBpmn.resolve.alias,
-    },
+    // Array form, not the plain-object shorthand: m8flowBpmn.resolve.alias
+    // is itself array-form (see m8flow-bpmn/vite/index.js's own comment —
+    // one of its entries needs an exact-match RegExp `find`, which only the
+    // array form supports). Spreading an array into an object literal
+    // (`{...m8flowBpmn.resolve.alias}`) would silently turn it into
+    // numeric-index keys instead of alias entries.
+    alias: [{ find: '@', replacement: path.resolve(__dirname, './src') }, ...m8flowBpmn.resolve.alias],
   },
   optimizeDeps: {
     ...m8flowBpmn.optimizeDeps,
