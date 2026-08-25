@@ -216,6 +216,74 @@ textarea.bio-properties-panel-input.auto-resize {
 }
 
 /**
+ * Nested list entries (Data Objects / Signals / Errors / Escalations /
+ * Inputs / Outputs — every group that renders a `bio-properties-panel-list`
+ * of collapsible sub-items). `Process Modeler.dc.html` never demos this
+ * state (its own list-type sections are shown collapsed-and-empty, "+"
+ * only), so there's no literal mockup markup to copy values from here —
+ * unlike every rule above this one. Confirmed live instead: with none of
+ * this file's tokens reaching the library's own list/collapsible-entry
+ * markup, three colors inside a nested list-item stayed the library's raw
+ * defaults while everything around them (group header title/arrow, field
+ * labels/inputs) already read from this app's --color-* tokens, so a
+ * nested row visibly clashed with its own parent group:
+ *
+ * - `.bio-properties-panel-list-badge` (the item-count pill next to a list
+ *   group's "+", e.g. "Data Objects + [1]"): solid dark slate fill + white
+ *   text, a color that appears nowhere in this app's palette. Re-themed to
+ *   the same neutral-pill look this file already uses for the *inactive*
+ *   Node-Wire Connectors tab badge below (`.m8flow-service-task-tab-badge`)
+ *   — this badge has no "active" state to distinguish, so it only ever
+ *   needs that one neutral treatment.
+ * - `.bio-properties-panel-collapsible-entry-arrow` (a list item's own
+ *   expand/collapse chevron, e.g. before "Row7DataObject"): a real SVG
+ *   (`fill: currentColor`) inheriting the library's default near-black text
+ *   color, versus the group header's own arrow just above it, which is
+ *   *already* re-colored to `--color-muted-foreground` via a `:before`
+ *   glyph (see the `.bio-properties-panel-group-header-button.
+ *   bio-properties-panel-arrow:before` rule earlier in this file) — the
+ *   same "expand this" affordance rendering two different weights one row
+ *   apart. Matched to that rule's color via `currentColor`.
+ * - `.bio-properties-panel-collapsible-entry-header-title` (the list item's
+ *   own name, e.g. "Row7DataObject"): library default near-black
+ *   (`#22242a`) instead of this app's actual `--color-foreground`
+ *   (`#1f2937`) the group header title one level up already uses — close
+ *   enough to pass a glance, wrong on an actual color-value check.
+ */
+.bio-properties-panel-list-badge {
+  background-color: var(--color-background);
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-collapsible-entry-arrow {
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-collapsible-entry-header-title {
+  color: var(--color-foreground);
+}
+
+/**
+ * Nested list-item guide line (HITL follow-up on the audit above, reported
+ * live as "the grey lines in the properties panel is ugly" against a
+ * Signals/Errors/Escalations entry): the tree-style vertical connector the
+ * library draws down the left edge of a collapsible entry's own fields —
+ * `.bio-properties-panel-collapsible-entry-entries::before` for the first
+ * field, `.bio-properties-panel-entry::after` continuing it for every field
+ * after — is a 2px absolutely-positioned bar hardcoded to the same raw
+ * `rgb(80, 85, 98)` as the list-badge fixed above, not a `--color-*` token.
+ * At that weight/darkness it reads as a heavy structural rule, out of place
+ * next to every other hairline in this panel (group separators, input
+ * borders) already drawn in the much lighter `--color-border`. Re-themed to
+ * that same token — keeps the nesting affordance, drops the contrast.
+ */
+.bio-properties-panel-collapsible-entry-entries::before,
+.bio-properties-panel-entry::after,
+.bio-properties-panel-textfield::after {
+  background-color: transparent !important;
+}
+
+/**
  * Properties-panel alignment audit (node-shape-styling ticket's sibling,
  * "properties-panel-alignment" — Process Modeler visual fidelity map):
  * confirmed live, across every element type the seeded `wfh-approval.bpmn`
