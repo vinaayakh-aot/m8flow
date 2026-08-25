@@ -341,7 +341,9 @@ def _resolve_tenant_details() -> dict[str, Optional[str]]:
                     "header_tenant_id": _tenant_from_request_header(),
                 }
     except Exception:
-        pass
+        # Best-effort master-realm login_return detection; on any failure fall
+        # through to normal tenant resolution below instead of failing the request.
+        LOGGER.debug("Failed to check for master-realm login_return short-circuit", exc_info=True)
 
     allow_decode = True
     tenant_from_claim = _tenant_from_jwt_claim_cached(allow_decode=allow_decode)

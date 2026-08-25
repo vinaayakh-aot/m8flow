@@ -17,7 +17,9 @@ def configure_sql_echo(flask_app, db) -> None:
         with flask_app.app_context():
             db.engine.echo = True
     except Exception:
-        pass
+        # SQL echo is a debug convenience only; failing to toggle it must not
+        # block startup.
+        logger.debug("Failed to enable SQLALCHEMY_ECHO on db.engine", exc_info=True)
 
 def configure_templates_dir(flask_app) -> None:
     m8flow_templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")

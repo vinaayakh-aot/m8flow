@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import text
+
+LOGGER = logging.getLogger(__name__)
 
 
 def tenant_id_for_process_instance(engine: Any, process_instance_id: int) -> str | None:
@@ -24,14 +27,16 @@ def cleanup_scoped_session(session: Any) -> None:
         try:
             rollback()
         except Exception:
-            pass
+            # Best-effort teardown between tasks; a failed rollback here still
+            # gets a fresh session via .remove() below.
+            LOGGER.debug("Failed to rollback scoped session during Celery task cleanup", exc_info=True)
 
     remove = getattr(session, "remove", None)
     if callable(remove):
         try:
             remove()
         except Exception:
-            pass
+            LOGGER.debug("Failed to remove scoped session during Celery task cleanup", exc_info=True)
 
 
 def reset_engine_for_worker_process(engine: Any, session: Any) -> None:
@@ -43,4 +48,4 @@ def reset_engine_for_worker_process(engine: Any, session: Any) -> None:
         try:
             dispose()
         except Exception:
-            pass
+            LOGGER.debug("Failed to dispose inherited DB engine connections in Celery worker process", exc_info=True)

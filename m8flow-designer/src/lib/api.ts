@@ -1,4 +1,4 @@
-import { ensureSelectedTenantCookie, getAccessToken } from './auth';
+import { ensureSelectedTenantCookie, getAccessToken, resumeLoginAfterLogout } from './auth';
 
 /**
  * Absolute backend for direct calls; empty string = same-origin Vite proxy.
@@ -55,6 +55,80 @@ async function readServerMessage(response: Response): Promise<string | undefined
   }
 }
 
+// Deduped across concurrent 401s: several in-flight requests hitting an
+// expired access token at once should trigger one /v1.0/refresh call, not
+// one each (same pattern as m8flow-frontend's HttpService). Cleared once
+// that call settles so the next expiry tries again.
+let refreshInFlight: Promise<boolean> | null = null;
+
+function attemptSilentRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${API_BASE_URL}/v1.0/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+// Guards against firing more than one full-page redirect when several
+// requests in flight all end up unauthenticated after a failed/insufficient
+// refresh (e.g. the refresh token itself expired too).
+let redirectingToLogin = false;
+
+function redirectToLoginAfterFailedRefresh(): void {
+  if (redirectingToLogin) {
+    return;
+  }
+  redirectingToLogin = true;
+  resumeLoginAfterLogout();
+}
+
+/**
+ * Shared authenticated fetch — attaches the bearer token, and on a 401
+ * transparently tries POST /v1.0/refresh (see login_controller.py) and
+ * retries the request once with the refreshed access_token cookie before
+ * giving up. This is what makes an expired access token invisible to the
+ * user instead of surfacing as a raw "not_authenticated" error; only when
+ * the refresh itself fails (or the retried request is still 401) does this
+ * fall back to a full Keycloak login redirect. Mirrors m8flow-frontend's
+ * HttpService.withAuthRetry/attemptSilentRefresh.
+ */
+async function fetchWithAuthRetry(
+  path: string,
+  init: RequestInit,
+  alreadyRetried = false,
+): Promise<Response> {
+  const token = getAccessToken();
+  const headers = new Headers(init.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+  if (response.status !== 401) {
+    return response;
+  }
+  if (alreadyRetried) {
+    redirectToLoginAfterFailedRefresh();
+    return response;
+  }
+  const refreshed = await attemptSilentRefresh();
+  if (!refreshed) {
+    redirectToLoginAfterFailedRefresh();
+    return response;
+  }
+  return fetchWithAuthRetry(path, init, true);
+}
+
 /**
  * Shared authenticated fetch (Template modeler map, ticket 01) — attaches
  * the tenant cookie + bearer token the same way apiGet/
@@ -66,16 +140,7 @@ async function readServerMessage(response: Response): Promise<string | undefined
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   ensureSelectedTenantCookie();
-  const token = getAccessToken();
-  const headers = new Headers(init.headers);
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-    credentials: 'include',
-  });
+  const response = await fetchWithAuthRetry(path, init);
   if (!response.ok) {
     throw new ApiError(path, response.status, init.method ?? 'GET', await readServerMessage(response));
   }
@@ -90,14 +155,9 @@ export async function apiGet<T>(path: string): Promise<T> {
   // Home (and most tenant-scoped) routes require m8flow_selected_tenant; designer
   // has no tenant-picker for regular users, so finalize from the JWT claim.
   ensureSelectedTenantCookie();
-  const token = getAccessToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
+    headers: { Accept: 'application/json' },
   });
   if (!response.ok) {
     throw new ApiError(path, response.status);
@@ -304,15 +364,8 @@ export async function fetchProcessModelFileContent(
   tenantId?: string | null,
 ): Promise<string> {
   ensureSelectedTenantCookie();
-  const token = getAccessToken();
   const path = processModelFilePath(modifiedId, fileName, tenantId);
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'GET',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-  });
+  const response = await fetchWithAuthRetry(path, { method: 'GET' });
   if (!response.ok) {
     throw new ApiError(path, response.status);
   }
@@ -333,15 +386,10 @@ export async function saveProcessModelFileContent(
   tenantId?: string | null,
 ): Promise<ProcessModelFileSaveResult> {
   ensureSelectedTenantCookie();
-  const token = getAccessToken();
   const path = processModelFilePath(modifiedId, fileName, tenantId);
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
+    headers: { 'Content-Type': 'application/octet-stream' },
     body: content,
   });
   if (!response.ok) {

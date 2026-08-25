@@ -772,6 +772,11 @@ class TemplateService:
                     try:
                         return cls.get_file_content(template, fname)
                     except ApiError:
+                        # File listed in metadata but unreadable (e.g. removed
+                        # from storage out of band); try the next bpmn entry.
+                        logger.debug(
+                            "Skipping unreadable bpmn file %s for template %s", fname, template.id, exc_info=True
+                        )
                         continue
         return None
 
@@ -891,7 +896,16 @@ class TemplateService:
                 file_name,
             )
         except Exception:
-            pass
+            # The DB row is already committed above, so the template is gone
+            # either way; a failed storage delete just orphans the file, so
+            # log it at warning (not debug) so it can be cleaned up manually.
+            logger.warning(
+                "Failed to delete storage file %s for removed template %s (tenant=%s)",
+                file_name,
+                target_template.template_key,
+                target_template.m8f_tenant_id,
+                exc_info=True,
+            )
 
         return target_template
 

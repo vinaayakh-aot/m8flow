@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend import workflow
+
+LOGGER = logging.getLogger(__name__)
 
 UNSUPPORTED_CONSTRUCTS = (
     "callActivity",
@@ -89,7 +92,14 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
             capture_output=True,
         )
     except OSError:
-        pass
+        # Best-effort git commit of the deletion; the model directory is
+        # already removed from disk above regardless of git's exit status.
+        LOGGER.debug(
+            "Failed to commit process model deletion to git (root=%s, model=%s)",
+            root,
+            process_model_identifier,
+            exc_info=True,
+        )
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
@@ -303,6 +313,9 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
         try:
             stat = path.stat()
         except OSError:
+            # File removed/renamed between iterdir() and stat(); skip it
+            # rather than fail the whole listing for a benign race.
+            LOGGER.debug("Skipping unstat-able file %s while listing process model files", path, exc_info=True)
             continue
         files.append(
             {

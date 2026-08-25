@@ -271,7 +271,10 @@ def _sync_groups_from_token(
     try:
         session.expire(user, ["groups"])
     except Exception:
-        pass
+        # Best-effort cache invalidation only; group membership was already
+        # persisted above, so a stale in-memory `user.groups` is a minor
+        # inconsistency for this request, not a failed sync.
+        logger.debug("Failed to expire cached user.groups after group sync", exc_info=True)
 
 
 def _ref_tokens(membership: Membership) -> set[str]:

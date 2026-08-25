@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from m8flow_bpmn_core.models.base import Base as CoreBase
 from m8flow_backend.models.host_base import HostBase
+
+LOGGER = logging.getLogger(__name__)
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
@@ -44,7 +47,9 @@ def current_session() -> Session:
             g.db_session = session
             return session
     except RuntimeError:
-        pass
+        # Called outside any Flask app/request context (e.g. a script or
+        # background job) - expected, fall through to a fresh session below.
+        LOGGER.debug("current_session() called outside Flask app context; using a new session", exc_info=True)
     return get_session_factory()()
 
 

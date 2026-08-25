@@ -32,6 +32,9 @@ def _tenant_scoped_table_names(engine: Any) -> list[str]:
         try:
             column_names = {column["name"] for column in inspector.get_columns(table_name)}
         except Exception:
+            # A table we can't introspect can't be tenant-scoped-filtered
+            # either; skip it rather than abort the whole reconciliation scan.
+            logger.debug("Failed to inspect columns for table %s during shared-realm bootstrap", table_name, exc_info=True)
             continue
         if "m8f_tenant_id" in column_names:
             table_names.append(table_name)

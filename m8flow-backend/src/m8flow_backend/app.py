@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import logging
 import os
 
-from flask import Flask, g, jsonify
+from flask import Flask, g
 from flask_cors import CORS
 
 from m8flow_backend.authorization import install_default_policy
 from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
-from m8flow_backend.errors import ApiError
+from m8flow_backend.observability.request_context import install_request_id_middleware
 from m8flow_backend.routes.openapi import register_openapi_routes
 from m8flow_backend.secrets import install_registry_at_boot
+from m8flow_backend.startup.error_handlers import register_error_handlers
 from m8flow_backend.startup.logging_setup import harden_logging
+from m8flow_backend.startup.process_error_guard import install_process_level_error_guards
+from m8flow_backend.startup.telemetry_setup import install_telemetry
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.startup.env_var_mapper import apply_m8flow_env_mapping
 from m8flow_backend.startup.routes import register_root_route
@@ -26,6 +30,8 @@ _DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _cors_origins() -> list[str]:
@@ -47,6 +53,7 @@ def _cors_origins() -> list[str]:
 
 
 def create_app() -> Flask:
+    install_process_level_error_guards()
     apply_m8flow_env_mapping()
     harden_logging()
     install_default_policy()
@@ -64,6 +71,9 @@ def create_app() -> Flask:
         supports_credentials=True,
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+    install_request_id_middleware(app)
+    install_telemetry(app)
+    register_error_handlers(app)
 
     env = (os.environ.get("M8FLOW_BACKEND_ENV") or os.environ.get("SPIFFWORKFLOW_BACKEND_ENV") or "").strip()
     if env in {"unit_testing", "testing"} or os.environ.get("M8FLOW_CREATE_ALL_SCHEMA") == "1":
@@ -85,8 +95,21 @@ def create_app() -> Flask:
                 session.commit()
             else:
                 session.rollback()
+        except Exception:
+            # A failed commit/rollback here happens after the response body has
+            # already been built, so it can never reach an @app.errorhandler.
+            # Log it explicitly (Grafana-visible) and fall back to rollback so a
+            # half-committed session is never left open, then still close below.
+            LOGGER.exception("Failed to finalize request-scoped DB session (commit=%s)", exc is None)
+            try:
+                session.rollback()
+            except Exception:
+                LOGGER.exception("Rollback after failed session finalize also failed")
         finally:
-            session.close()
+            try:
+                session.close()
+            except Exception:
+                LOGGER.exception("Failed to close request-scoped DB session")
 
     install_auth_middleware(app)
     register_openapi_routes(app)
@@ -95,10 +118,6 @@ def create_app() -> Flask:
 
     register_v1_routes(app)
     register_root_route(app)
-
-    @app.errorhandler(ApiError)
-    def _handle_api_error(error: ApiError):
-        return jsonify({"error_code": error.error_code, "message": error.message}), error.status_code
 
     return app
 
