@@ -127,12 +127,21 @@
  * functions of element type/size and live in `shapeTreatment.ts` instead
  * of here — they're the parts with a documented history of hard-won,
  * live-debugged bugs (style-vs-attribute reads, off-by-one tail slices,
- * label-color coupling), and pure functions are the ones jsdom's lack of
- * SVG support doesn't block from being unit-tested (see
- * `test/shapeTreatment.test.ts`). This file stays the DOM-effecting half:
- * given bpmn-js's already-drawn children and a `ShapeSpec` describing what
- * to draw next, it's the only place that actually queries/mutates/creates
- * real SVG nodes.
+ * label-color coupling), and no DOM at all is needed to unit-test them
+ * (see `test/shapeTreatment.test.ts`). This file stays the DOM-effecting
+ * half: given bpmn-js's already-drawn children and a `ShapeSpec`
+ * describing what to draw next, it's the only place that actually
+ * queries/mutates/creates real SVG nodes.
+ *
+ * The DOM-mutation functions below (`recolorTaskIcon`,
+ * `recolorOuterStroke`, `recolorContainerStrokes`, `applyTaskShadow`,
+ * `roundGatewayCorners`, `ensureLaneDotPattern`) are exported and directly
+ * unit-tested against hand-built SVG fixtures (`test/customRenderer.test.ts`)
+ * — jsdom can construct a plain `<rect style="...">` tree even though it
+ * can't run diagram-js's full canvas/layout pipeline, so the exact
+ * style-vs-attribute bug class documented above (`recolorTaskIcon`'s and
+ * `recolorContainerStrokes`'s own comments) is now a regression a test
+ * catches, not something that ships silently until found live again.
  */
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 import { append as svgAppend, attr as svgAttr, create as svgCreate } from 'tiny-svg';
@@ -251,7 +260,7 @@ const DOT_PATTERN_RADIUS = 1.1;
  * never the root `<svg>` itself, so the pattern only needs creating once
  * per diagram lifetime, not once per render call.
  */
-function ensureLaneDotPattern(rootSvg: SVGElement | null): string {
+export function ensureLaneDotPattern(rootSvg: SVGElement | null): string {
   if (!rootSvg) return 'none';
 
   if (rootSvg.querySelector(`#${DOT_PATTERN_ID}`)) {
@@ -289,7 +298,7 @@ function ensureLaneDotPattern(rootSvg: SVGElement | null): string {
  * (pure lookups, tested there); this is the DOM-reading half that actually
  * finds and repaints those already-drawn children.
  */
-function recolorTaskIcon(parentGfx: SVGElement, elementType: string) {
+export function recolorTaskIcon(parentGfx: SVGElement, elementType: string) {
   const tailCount = ICON_TAIL_COUNT[elementType];
   if (!tailCount) return;
   const color = ICON_COLOR_BY_TYPE[elementType] ?? SYSTEM_COLOR;
@@ -339,7 +348,7 @@ function recolorTaskIcon(parentGfx: SVGElement, elementType: string) {
  * label text (and, for typed start/end events, any event-type icon) never
  * gets touched, so it keeps bpmn-js's own default dark color.
  */
-function recolorOuterStroke(parentGfx: SVGElement, color: string) {
+export function recolorOuterStroke(parentGfx: SVGElement, color: string) {
   const outer = parentGfx.firstElementChild as SVGElement | null;
   if (outer) {
     svgAttr(outer, 'stroke', color);
@@ -357,7 +366,7 @@ function recolorOuterStroke(parentGfx: SVGElement, color: string) {
  * existing inline style to fight with here, so a direct `.style.filter`
  * write is the simplest correct approach.
  */
-function applyTaskShadow(parentGfx: SVGElement) {
+export function applyTaskShadow(parentGfx: SVGElement) {
   const outer = parentGfx.firstElementChild as SVGElement | null;
   if (outer) {
     outer.style.filter = TASK_SHADOW;
@@ -376,7 +385,7 @@ function applyTaskShadow(parentGfx: SVGElement) {
  * softening at this diamond's small size without redrawing the shape's
  * geometry from scratch.
  */
-function roundGatewayCorners(parentGfx: SVGElement) {
+export function roundGatewayCorners(parentGfx: SVGElement) {
   const diamond = parentGfx.firstElementChild as SVGElement | null;
   if (diamond) {
     svgAttr(diamond, 'stroke-linejoin', 'round');
@@ -411,7 +420,7 @@ function roundGatewayCorners(parentGfx: SVGElement) {
  * 03's task-box recolor work in the first place) — only the read-based
  * gate here was the bug.
  */
-function recolorContainerStrokes(parentGfx: SVGElement, color: string) {
+export function recolorContainerStrokes(parentGfx: SVGElement, color: string) {
   Array.from(parentGfx.children).forEach((child) => {
     if (child.tagName.toLowerCase() === 'text') return;
     svgAttr(child as SVGElement, 'stroke', color);
