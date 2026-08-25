@@ -11,7 +11,7 @@ export default function HomePage() {
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7">
-        <h1 className="text-[32px] font-semibold tracking-tight">Home</h1>
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">Home</h1>
       </div>
       <div className="flex flex-col gap-8">
         <HomeStatsGrid tenantId={scopedTenantId} showTotalTenants={isSuperAdmin} />

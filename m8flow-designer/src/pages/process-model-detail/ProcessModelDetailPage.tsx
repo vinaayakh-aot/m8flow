@@ -133,7 +133,7 @@ function ShellHeader() {
       >
         ← All processes
       </Link>
-      <h1 className="text-[32px] font-semibold tracking-tight">Process model</h1>
+      <h1 className="font-display text-[32px] font-semibold tracking-tight">Process model</h1>
     </div>
   );
 }

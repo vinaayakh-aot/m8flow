@@ -165,7 +165,7 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
           >
             ← All processes
           </Link>
-          <h1 className="text-[32px] font-semibold tracking-tight break-words text-foreground">
+          <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
         </div>

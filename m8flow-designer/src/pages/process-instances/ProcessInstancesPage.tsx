@@ -138,7 +138,7 @@ export default function ProcessInstancesPage() {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">
-          <h1 className="text-[32px] font-semibold tracking-tight">Process Instances</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">Process Instances</h1>
         </div>
         <Card variant="bordered" className="max-w-lg p-6">
           <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>

@@ -148,7 +148,7 @@ export function ProcessesModelsList({
     <>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Processes</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">Processes</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {/* "Browse groups" removed — the "Showing [scope] ▾" pill below opens

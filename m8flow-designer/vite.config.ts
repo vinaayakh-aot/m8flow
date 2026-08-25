@@ -11,17 +11,19 @@ const m8flowBpmn = m8flowBpmnVitePlugin();
 
 /**
  * Break the HTML → CSS → font critical-request chain Lighthouse reports on
- * the production preview: Geist latin is discovered only after the
- * render-blocking stylesheet parses its @font-face. Preloading the hashed
- * woff2 from index.html lets the browser start that download in parallel
- * with CSS. Only the latin file is preloaded — latin-ext is unicode-range
- * gated and must not compete with LCP. Same-origin assets, so no
- * preconnect (Lighthouse also reported no preconnect candidates).
+ * the production preview: the body/UI font (Poppins Regular — see
+ * src/styles/aot-fonts.css) is discovered only after the render-blocking
+ * stylesheet parses its @font-face. Preloading the hashed woff2 from
+ * index.html lets the browser start that download in parallel with CSS.
+ * Only the default weight/style is preloaded — the other Poppins weights,
+ * Aron, and JetBrains Mono aren't needed for first paint and must not
+ * compete with LCP. Same-origin assets, so no preconnect (Lighthouse also
+ * reported no preconnect candidates).
  */
-function preloadGeistLatinPlugin(): Plugin {
+function preloadBodyFontPlugin(): Plugin {
   let base = '/';
   return {
-    name: 'preload-geist-latin',
+    name: 'preload-body-font',
     configResolved(config) {
       base = config.base;
     },
@@ -33,8 +35,7 @@ function preloadGeistLatinPlugin(): Plugin {
           (item) =>
             item.type === 'asset' &&
             item.fileName.endsWith('.woff2') &&
-            /geist-latin-wght-normal/.test(item.fileName) &&
-            !item.fileName.includes('latin-ext'),
+            /Poppins-Regular/.test(item.fileName),
         );
         if (!font || font.type !== 'asset') return html;
         const href = `${base}${font.fileName}`.replace(/\/{2,}/g, '/');
@@ -71,7 +72,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     ...m8flowBpmn.plugins,
-    preloadGeistLatinPlugin(),
+    preloadBodyFontPlugin(),
     shouldAnalyze &&
       visualizer({
         filename: 'dist/stats.html',
