@@ -18,6 +18,8 @@ import { is } from 'bpmn-js/lib/util/ModelUtil';
 // @ts-expect-error missing type declarations
 import { SpiffExtensionTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionTextInput';
 
+import { insertGroupAfter } from './propertiesPanelGroups';
+
 const LOW_PRIORITY = 500;
 
 export const EXTERNAL_FORM_URL_PROP = 'externalFormUrl';
@@ -37,12 +39,7 @@ export function ExternalFormPropertiesProvider(
     return function (groups: any[]) {
       if (is(element, 'bpmn:UserTask')) {
         const group = createExternalFormGroup(element, translate, moddle, commandStack);
-        const anchorIndex = groups.findIndex((g) => g && g.id === JSON_SCHEMA_GROUP_ID);
-        if (anchorIndex === -1) {
-          groups.push(group);
-        } else {
-          groups.splice(anchorIndex + 1, 0, group);
-        }
+        insertGroupAfter(groups, group, JSON_SCHEMA_GROUP_ID);
       }
       return groups;
     };

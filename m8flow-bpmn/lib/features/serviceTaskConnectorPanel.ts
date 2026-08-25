@@ -47,7 +47,6 @@
  * resolve to the same Preact instance the panel itself uses.
  */
 import { h } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 // @ts-expect-error missing type declarations
 import { TextFieldEntry } from '@bpmn-io/properties-panel';
@@ -55,6 +54,9 @@ import { TextFieldEntry } from '@bpmn-io/properties-panel';
 import { useService } from 'bpmn-js-properties-panel';
 // @ts-expect-error missing type declarations
 import { ServiceTaskOperatorSelect, ServiceTaskParameterArray, ServiceTaskResultTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionServiceProperties';
+
+import { createElementScopedTabStore, useElementScopedTab } from './elementScopedTabState';
+import { replaceOrAppendGroup } from './propertiesPanelGroups';
 
 const LOW_PRIORITY = 500;
 const SERVICE_TASK_GROUP_ID = 'service_task_properties';
@@ -64,31 +66,22 @@ const SERVICE_TASK_OPERATOR_ELEMENT_NAME = 'spiffworkflow:ServiceTaskOperator';
 
 type ServiceTaskTabId = 'action' | 'config' | 'parameters';
 
-// Per-element active-tab store, module-level — same pattern bpmn-js-spiffworkflow's
-// own SpiffExtensionServiceProperties.js already uses for per-element parameter
-// memory (`previouslyUsedServiceTaskParameterValuesHash`). Tab entries are separate
-// preact components (see the Group/Entry render loop this replaces — no per-entry
-// wrapper, so there's no single parent to hold this as local state); a tiny
-// external pub-sub is the simplest way for the tab strip's click handler to notify
-// the sibling content entries to re-render.
-const activeTabByElementId = new Map<string, ServiceTaskTabId>();
-const tabChangeListeners = new Set<() => void>();
+// Per-element active-tab store — same pattern bpmn-js-spiffworkflow's own
+// SpiffExtensionServiceProperties.js already uses for per-element parameter
+// memory (`previouslyUsedServiceTaskParameterValuesHash`). Tab entries are
+// separate preact components (see the Group/Entry render loop this
+// replaces — no per-entry wrapper, so there's no single parent to hold
+// this as local state); `elementScopedTabState.ts` is the shared pub-sub
+// that lets the tab strip's click handler notify the sibling content
+// entries to re-render.
+const serviceTaskTabStore = createElementScopedTabStore<ServiceTaskTabId>('action');
 
 function setActiveServiceTaskTab(elementId: string, tab: ServiceTaskTabId): void {
-  activeTabByElementId.set(elementId, tab);
-  tabChangeListeners.forEach((listener) => listener());
+  serviceTaskTabStore.setActiveTab(elementId, tab);
 }
 
 function useActiveServiceTaskTab(elementId: string): ServiceTaskTabId {
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    const listener = () => forceUpdate((n: number) => n + 1);
-    tabChangeListeners.add(listener);
-    return () => {
-      tabChangeListeners.delete(listener);
-    };
-  }, []);
-  return activeTabByElementId.get(elementId) ?? 'action';
+  return useElementScopedTab(serviceTaskTabStore, elementId);
 }
 
 function getServiceTaskOperatorModdleElement(element: any): any {
@@ -305,16 +298,11 @@ export function ServiceTaskConnectorPanelProvider(
         return groups;
       }
       const tabbedGroup = createServiceTaskConnectorGroup(element, translate, moddle, commandStack);
-      const existingIndex = groups.findIndex((g) => g && g.id === SERVICE_TASK_GROUP_ID);
-      if (existingIndex === -1) {
-        groups.push(tabbedGroup);
-      } else {
-        // Replace in place (not filter+push) so the group keeps its original
-        // position — between "Instructions" and "Input/Output Management",
-        // matching bpmn-js-spiffworkflow's own createServiceGroup ordering.
-        groups.splice(existingIndex, 1, tabbedGroup);
-      }
-      return groups;
+      // Replace in place (see propertiesPanelGroups.ts) so the group keeps
+      // its original position — between "Instructions" and "Input/Output
+      // Management", matching bpmn-js-spiffworkflow's own createServiceGroup
+      // ordering — rather than moving to the end of the list.
+      return replaceOrAppendGroup(groups, tabbedGroup);
     };
   };
   propertiesPanel.registerProvider(LOW_PRIORITY, this);

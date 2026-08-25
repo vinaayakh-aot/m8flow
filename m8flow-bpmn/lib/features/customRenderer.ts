@@ -80,8 +80,9 @@
  * common style. Schedule is different to the rest of the events. Schedule
  * looks better"): every typed event, of any kind (Start/End/Intermediate/
  * Boundary) and any event-definition type, now draws through
- * `drawUnifiedEventIcon` — a single ring, filled `--color-card`, stroked
- * in its own operation-group color, exactly matching the look Timer
+ * `buildUnifiedEventIconSpecs` (`shapeTreatment.ts`) — a single ring,
+ * filled `--color-card`, stroked in its own operation-group color, exactly
+ * matching the look Timer
  * ("Schedule") already had. Previously only Timer collapsed to one
  * colored ring; every other typed event kept bpmn-js's own stock ring(s)
  * (single for Start/End, double for Intermediate/Boundary) recolored
@@ -120,11 +121,50 @@
  * boundary-event-sourced flows are a real, meaningful place to use one
  * (every other dashed line already in this file — Association, Group,
  * Message Flow — is a stock bpmn-js default, not a customization).
+ *
+ * **What lives where**: the color palette, tail-slice/icon lookup tables,
+ * and every icon's geometry (path-string math, ring radii) are pure
+ * functions of element type/size and live in `shapeTreatment.ts` instead
+ * of here — they're the parts with a documented history of hard-won,
+ * live-debugged bugs (style-vs-attribute reads, off-by-one tail slices,
+ * label-color coupling), and pure functions are the ones jsdom's lack of
+ * SVG support doesn't block from being unit-tested (see
+ * `test/shapeTreatment.test.ts`). This file stays the DOM-effecting half:
+ * given bpmn-js's already-drawn children and a `ShapeSpec` describing what
+ * to draw next, it's the only place that actually queries/mutates/creates
+ * real SVG nodes.
  */
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 import { append as svgAppend, attr as svgAttr, create as svgCreate } from 'tiny-svg';
 
+import {
+  buildCustomTaskSubtypeIconSpec,
+  buildExclusiveGatewayMarkerSpec,
+  buildGatewayMarkerSpec,
+  buildUnifiedEventIconSpecs,
+  CUSTOM_TASK_ICON_TAIL_COUNT,
+  getEventDefinitionType,
+  ICON_COLOR_BY_TYPE,
+  ICON_TAIL_COUNT,
+  SYSTEM_COLOR,
+  type ShapeSpec,
+} from './shapeTreatment';
+
 const HIGH_PRIORITY = 2000;
+
+/**
+ * The only place a `ShapeSpec` from `shapeTreatment.ts` becomes a real SVG
+ * node — the DOM-effecting half of the split described at the top of this
+ * file's own module doc: `shapeTreatment.ts` decides *what* to draw (pure,
+ * unit-tested without a DOM); this executes it.
+ */
+function appendSpec(parentGfx: SVGElement, spec: ShapeSpec): void {
+  svgAppend(parentGfx, svgCreate(spec.tag, spec.attrs));
+}
+
+function appendSpecs(parentGfx: SVGElement, specs: ShapeSpec[]): void {
+  specs.forEach((spec) => appendSpec(parentGfx, spec));
+}
 
 // Reuses the app's own theme tokens (src/styles/index.css) rather than the
 // mockup's raw --aot-gunmetal/--aot-sky-blue/--status-success names, same
@@ -148,13 +188,6 @@ const END_EVENT_STROKE = 'var(--color-success)';
 // color, is the differentiator here.
 const EXCEPTION_FLOW_DASH = '4,4';
 
-// Operation-group color palette — see the top-of-file comment for the full
-// rationale (color-wheel spread, WCAG 1.4.11 contrast checks, "don't rely
-// on color alone" via distinct glyph shapes per group).
-const SYSTEM_COLOR = 'var(--color-info)'; // every task/activity icon + system/communication events
-const FLOW_CONTROL_COLOR = 'var(--color-flow-control)'; // gateways + terminate/compensate/conditional/link
-const TIMER_COLOR = 'var(--color-warning)'; // Timer icon only
-const ERROR_COLOR = 'var(--color-destructive)'; // Error icon only
 // Same treatment as a plain start event ring — a boundary event is a
 // (usually interrupting) event attached to an activity, closer in kind to
 // a start/intermediate event than to the task it's attached to. No
@@ -250,389 +283,12 @@ function ensureLaneDotPattern(rootSvg: SVGElement | null): string {
 }
 
 /**
- * bpmn-js's `bpmn:UserTask`/`bpmn:ServiceTask` handlers call
- * `renderTask()` first (box + embedded label + any markers), then append
- * their own type-icon shapes directly afterward — confirmed by reading
- * `BpmnRenderer.js`'s source for both handlers. That makes the icon
- * shapes always the *last* N children appended to the shape's gfx group,
- * regardless of how many box/label/marker children preceded them — the
- * basis for the tail-slice recolor below, instead of a fragile absolute
- * index or an over-eager "recolor anything gray" sweep that would also
- * catch marker icons on other diagrams.
+ * Tail-slice recolor for icon shapes bpmn-js already drew in place (User/
+ * Service Task, Call Activity, Ad-Hoc Sub-Process) — the counts and colors
+ * live in `shapeTreatment.ts`'s `ICON_TAIL_COUNT`/`ICON_COLOR_BY_TYPE`
+ * (pure lookups, tested there); this is the DOM-reading half that actually
+ * finds and repaints those already-drawn children.
  */
-const ICON_TAIL_COUNT: Record<string, number> = {
-  'bpmn:UserTask': 3, // TASK_TYPE_USER_1/2/3 paths
-  'bpmn:ServiceTask': 4, // 2 white cutout circles (left as-is) + 2 gear paths
-  // Call Activity keeps bpmn-js's own "+" collapsed-call marker (a real,
-  // meaningful indicator, not decorative) rather than a custom icon —
-  // task-subtype-styling ticket, decided live: recolor it in place instead
-  // of replacing it, same tail-slice technique as User/ServiceTask.
-  'bpmn:CallActivity': 1,
-  // Container-styling ticket, same "recolor a real structural indicator
-  // in place, don't replace it" decision as Call Activity: AdHocSubProcess
-  // draws exactly one "~" marker after its box+label (confirmed reading
-  // `renderTaskMarkers`/`taskMarkerRenderers.AdhocMarker` — a single
-  // `drawMarker` call) — a genuine icon glyph, colored per
-  // `ICON_COLOR_BY_TYPE` below like every other task-type icon.
-  // `bpmn:SubProcess` itself needs no entry — expanded, non-ad-hoc,
-  // non-loop, non-compensation sub-processes draw *no* marker children at
-  // all (confirmed reading `renderSubProcess`'s own `taskMarkers` call), so
-  // its border-only recolor already falls out of the generic branch with
-  // no extra work. (`bpmn:Transaction`'s own extra inner rect — its
-  // classic "double border" look — is handled separately: it's a border
-  // variant, not an icon, and coloring it like a task icon made the whole
-  // box read as blue.)
-  'bpmn:AdHocSubProcess': 1,
-};
-
-/**
- * Per-type icon color for everything `ICON_TAIL_COUNT` recolors in place —
- * operation-group palette (see top-of-file comment). User Task, Service
- * Task, and Call Activity are all "system" (blue) — live user feedback,
- * after an earlier pass gave User/Manual Task their own separate pink
- * "human work" color: seeing every *other* task icon share one color and
- * only Manual Task differ read as an unintentional inconsistency, not a
- * meaningful category, so task-type icons are now uniformly blue
- * regardless of subtype. The Ad-Hoc "~" marker stays "flow control"
- * (violet, alongside the gateways it shares an execution-order concern
- * with) — a genuinely different kind of marker, not a task-type icon.
- */
-const ICON_COLOR_BY_TYPE: Record<string, string> = {
-  'bpmn:UserTask': SYSTEM_COLOR,
-  'bpmn:ServiceTask': SYSTEM_COLOR,
-  'bpmn:CallActivity': SYSTEM_COLOR,
-  'bpmn:AdHocSubProcess': FLOW_CONTROL_COLOR,
-};
-
-/**
- * bpmn-js's own icon-path count per task subtype, read from each
- * handler in `BpmnRenderer.js` (same discipline as every prior custom
- * icon in this file) — the basis for how many trailing children
- * `drawCustomTaskSubtypeIcon` below must strip before drawing its own
- * replacement glyph:
- * - ScriptTask, ManualTask, SendTask: 1 path each.
- * - BusinessRuleTask: 2 paths (header block + header divider).
- * - ReceiveTask: 1 path in the common (non-"instantiate") case — this
- *   map's seed diagram never sets `instantiate`, so the 2-child
- *   (start-circle + path) case isn't handled; flagged, not silently
- *   assumed universal.
- */
-const CUSTOM_TASK_ICON_TAIL_COUNT: Record<string, number> = {
-  'bpmn:ScriptTask': 1,
-  'bpmn:ManualTask': 1,
-  'bpmn:BusinessRuleTask': 2,
-  'bpmn:SendTask': 1,
-  'bpmn:ReceiveTask': 1,
-};
-
-/**
- * Per-type color for the custom task-subtype glyphs (operation-group
- * palette, see top-of-file comment) — Script/Manual/Business-Rule/Send/
- * Receive Task are all "system" (blue), same "every task icon shares one
- * color" fix as `ICON_COLOR_BY_TYPE` above (Manual Task previously stood
- * out in pink; live user feedback confirmed that read as inconsistent).
- */
-const CUSTOM_TASK_ICON_COLOR: Record<string, string> = {
-  'bpmn:ScriptTask': SYSTEM_COLOR,
-  'bpmn:ManualTask': SYSTEM_COLOR,
-  'bpmn:BusinessRuleTask': SYSTEM_COLOR,
-  'bpmn:SendTask': SYSTEM_COLOR,
-  'bpmn:ReceiveTask': SYSTEM_COLOR,
-};
-
-/**
- * Custom task-subtype icons (task-subtype-styling ticket, same "create
- * custom icons for the elements" instruction as the gateway's X and the
- * boundary event's clock) — hand-drawn stroke-only line art in the same
- * ~16x16 top-left icon area bpmn-js's own glyphs occupy, replacing them
- * outright rather than recoloring in place. Script reuses the folded-
- * document motif already established elsewhere in this codebase
- * (`BpmnCanvas.tsx`'s own `SCRIPT_ICON_SVG`, used for the pre/post-script
- * overlay badges) for visual consistency within the app, not just this
- * file.
- */
-function drawCustomTaskSubtypeIcon(parentGfx: SVGElement, elementType: string) {
-  const paths: Record<string, string> = {
-    'bpmn:ScriptTask': 'M8,6 L18,6 L23,11 L23,24 L8,24 Z M18,6 L18,11 L23,11',
-    'bpmn:ManualTask': 'M9,15 L19,15 L19,23 L9,23 Z M11,15 L11,10 M14,15 L14,9 M17,15 L17,10 M9,17 L6,19 L9,21',
-    'bpmn:BusinessRuleTask': 'M7,8 L21,8 L21,22 L7,22 Z M7,13 L21,13 M7,18 L21,18 M14,8 L14,22',
-    'bpmn:SendTask': 'M6,12 L22,5 L15,22 L12,14 Z M12,14 L22,5',
-    'bpmn:ReceiveTask': 'M14,6 L14,17 M9,13 L14,18 L19,13 M6,21 L22,21',
-  };
-  const d = paths[elementType];
-  if (!d) return;
-
-  const path = svgCreate('path', {
-    d,
-    fill: 'none',
-    stroke: CUSTOM_TASK_ICON_COLOR[elementType] ?? SYSTEM_COLOR,
-    strokeWidth: 1.6,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-  });
-  svgAppend(parentGfx, path);
-}
-
-/**
- * Custom gateway-marker icon (gateway-styling ticket — the user's
- * "decision node" complaint, plus the standing "create custom icons for
- * the elements" instruction: this replaces bpmn-js's own stock
- * `PathMap`-derived "X" glyph outright, rather than recoloring it in
- * place the way `recolorTaskIcon` treats task-type icons). Hand-drawn to
- * match the clean stroke-only, round-cap line-art already established by
- * `customPalette.ts`/`diagram-chrome.css`'s own icon set (e.g. the
- * palette's own gateway button icon) — two crossing diagonals sized to
- * ~32% of the gateway's own bounding box, centered, rather than bpmn-js's
- * filled/mitered default.
- */
-function drawCustomExclusiveGatewayMarker(parentGfx: SVGElement, element: any) {
-  const cx = element.width / 2;
-  const cy = element.height / 2;
-  const r = Math.min(element.width, element.height) * 0.16;
-
-  const path = svgCreate('path', {
-    d: `M${cx - r},${cy - r} L${cx + r},${cy + r} M${cx + r},${cy - r} L${cx - r},${cy + r}`,
-    fill: 'none',
-    stroke: FLOW_CONTROL_COLOR,
-    strokeWidth: 2.2,
-    strokeLinecap: 'round',
-  });
-  svgAppend(parentGfx, path);
-}
-
-/**
- * Custom markers for the remaining gateway types (other-gateway-styling
- * ticket, same standing instruction as the exclusive gateway's X above):
- * Parallel gets a `+`, Inclusive an `O` ring, Event-Based a plain ring
- * (our seed diagram never sets `eventGatewayType`, so stock bpmn-js draws
- * only an unornamented inner ring for it too — confirmed reading
- * `BpmnRenderer.js`'s own handler — so a ring is the faithful custom
- * equivalent, not an arbitrary simplification), Complex a 3-line
- * asterisk. All in the same stroke-only, round-cap line-art as every
- * other custom icon in this file.
- */
-function drawCustomGatewayMarker(parentGfx: SVGElement, element: any, kind: string) {
-  const cx = element.width / 2;
-  const cy = element.height / 2;
-  const r = Math.min(element.width, element.height) * 0.16;
-
-  const common = { fill: 'none', stroke: FLOW_CONTROL_COLOR, strokeWidth: 2.2, strokeLinecap: 'round' as const };
-
-  if (kind === 'parallel') {
-    svgAppend(parentGfx, svgCreate('path', { d: `M${cx - r},${cy} L${cx + r},${cy} M${cx},${cy - r} L${cx},${cy + r}`, ...common }));
-  } else if (kind === 'inclusive' || kind === 'eventBased') {
-    svgAppend(parentGfx, svgCreate('circle', { cx, cy, r, fill: 'none', stroke: FLOW_CONTROL_COLOR, strokeWidth: 2.2 }));
-  } else if (kind === 'complex') {
-    const d = [0, 60, 120].flatMap((deg) => {
-      const rad = (deg * Math.PI) / 180;
-      const dx = r * Math.cos(rad);
-      const dy = r * Math.sin(rad);
-      return [`M${cx - dx},${cy - dy}`, `L${cx + dx},${cy + dy}`];
-    }).join(' ');
-    svgAppend(parentGfx, svgCreate('path', { d, ...common }));
-  }
-}
-
-/**
- * Custom timer-boundary-event icon (boundary-event-styling ticket, same
- * "create custom icons for the elements" instruction as the gateway's X).
- * Stock bpmn-js draws a genuinely fussy timer glyph for
- * `bpmn:TimerEventDefinition` — an inner circle, a clock-hands path, *and*
- * 12 individual tick-mark line segments (confirmed by reading
- * `BpmnRenderer.js`'s own `eventIconRenderers['bpmn:TimerEventDefinition']`)
- * — 14 elements just for the icon. Recoloring all 14 in place (the
- * `recolorTaskIcon` tail-slice approach) would have worked, but a
- * from-scratch minimal clock face (one ring, two hands, no tick marks)
- * reads more clearly at the small size boundary events render at, and
- * matches the same clean, sparse line-art already established for the
- * gateway's custom X.
- *
- * Sized to exactly match bpmn-js's own outer-ring radius formula
- * (`Math.round((width + height) / 4)`, read directly from `drawCircle` in
- * `BpmnRenderer.js`) — the same radius `getShapePath`/`getCirclePath`
- * use to crop connection waypoints to this shape's edge. A second HITL
- * follow-up found this the hard way: the first pass's smaller ~34%-sized
- * circle left a visible gap between the clock and its attached sequence
- * flow, because diagram-js still crops connections to the *model's*
- * width/height (unchanged by this renderer) regardless of how small the
- * drawn icon is — only matching that same radius makes the two coincide.
- * Filled `--color-card` (not `none`), also per live feedback — a
- * transparent face let the canvas's own dot-grid background show through
- * the icon, unlike every other opaque event ring already drawn.
- */
-function drawCustomTimerIcon(parentGfx: SVGElement, element: any) {
-  const cx = element.width / 2;
-  const cy = element.height / 2;
-  const r = Math.round((element.width + element.height) / 4);
-
-  const face = svgCreate('circle', {
-    cx,
-    cy,
-    r,
-    fill: 'var(--color-card)',
-    stroke: TIMER_COLOR,
-    strokeWidth: 1.6,
-  });
-  svgAppend(parentGfx, face);
-
-  const hands = svgCreate('path', {
-    d: `M${cx},${cy} L${cx},${cy - r * 0.65} M${cx},${cy} L${cx + r * 0.55},${cy}`,
-    fill: 'none',
-    stroke: TIMER_COLOR,
-    strokeWidth: 1.6,
-    strokeLinecap: 'round',
-  });
-  svgAppend(parentGfx, hands);
-}
-
-/**
- * Typed-event-icon-styling ticket: extends the Timer-only treatment
- * above to the remaining 8 event-definition types (Timer itself already
- * has its own dedicated `drawCustomTimerIcon`, kept as-is). Every event
- * kind draws its ring(s) first, then calls the shared `renderEventIcon`
- * dispatcher for whichever definition the event actually has — so
- * "strip everything after the ring(s), draw a custom glyph instead" is
- * uniform across Start/End/Intermediate/Boundary events regardless of
- * definition type, unlike the gateway/task tickets, which needed a
- * distinct tail-count per *type*. `bpmn:MultipleEventDefinition`/
- * `ParallelMultipleEventDefinition` are permanently out of scope —
- * `bpmn-moddle`'s own schema doesn't define them at all (confirmed in
- * ticket 09).
- */
-function getEventDefinitionType(element: any): string | undefined {
-  const eventDefinitions = element.businessObject?.eventDefinitions ?? [];
-  return eventDefinitions[0]?.$type;
-}
-
-/**
- * Per-event-definition-type color (operation-group palette, see
- * top-of-file comment): Message/Signal/Escalation are "system &
- * communication" (blue — broadcast/notify events read as the same kind of
- * "digital" concern as messaging); Error is its own dedicated "error
- * handling" red; Compensate/Conditional/Link/Terminate are all "flow
- * control" (violet), alongside the gateways — each one redirects,
- * unwinds, or ends the flow rather than doing work or communicating.
- */
-const EVENT_DEFINITION_COLOR: Record<string, string> = {
-  'bpmn:MessageEventDefinition': SYSTEM_COLOR,
-  'bpmn:SignalEventDefinition': SYSTEM_COLOR,
-  'bpmn:EscalationEventDefinition': SYSTEM_COLOR,
-  'bpmn:ErrorEventDefinition': ERROR_COLOR,
-  'bpmn:CompensateEventDefinition': FLOW_CONTROL_COLOR,
-  'bpmn:ConditionalEventDefinition': FLOW_CONTROL_COLOR,
-  'bpmn:LinkEventDefinition': FLOW_CONTROL_COLOR,
-  'bpmn:TerminateEventDefinition': FLOW_CONTROL_COLOR,
-  // Timing — see `drawCustomTimerIcon`, reused directly below rather than
-  // duplicated: this map entry exists for documentation/lookup
-  // completeness, not because the branch below reads it (the clock glyph
-  // hardcodes `TIMER_COLOR` internally).
-  'bpmn:TimerEventDefinition': TIMER_COLOR,
-};
-
-/**
- * Hand-drawn stroke-only glyphs for the 8 non-Timer event-definition
- * types (Timer is handled one level up, by `drawUnifiedEventIcon` below),
- * sized relative to the event's own ring radius `r` (the same
- * `Math.round((width + height) / 4)` formula `drawCustomTimerIcon`
- * established) so they scale consistently whatever the event's actual
- * pixel size. Returns without drawing anything for an unrecognized/
- * out-of-scope type (Multiple) — `drawUnifiedEventIcon` only calls this
- * when it's about to draw something, so an unhandled type intentionally
- * leaves nothing drawn rather than silently guessing.
- */
-function drawCustomEventDefinitionIcon(parentGfx: SVGElement, element: any, defType: string | undefined) {
-  const cx = element.width / 2;
-  const cy = element.height / 2;
-  const r = Math.round((element.width + element.height) / 4);
-  const color = (defType && EVENT_DEFINITION_COLOR[defType]) ?? SYSTEM_COLOR;
-  const common = { fill: 'none', stroke: color, strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-
-  if (defType === 'bpmn:MessageEventDefinition') {
-    const hw = r * 0.55;
-    const hh = r * 0.4;
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx - hw},${cy - hh} L${cx + hw},${cy - hh} L${cx + hw},${cy + hh} L${cx - hw},${cy + hh} Z M${cx - hw},${cy - hh} L${cx},${cy + hh * 0.2} L${cx + hw},${cy - hh}`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:SignalEventDefinition') {
-    const s = r * 0.6;
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx},${cy - s} L${cx + s * 0.87},${cy + s * 0.5} L${cx - s * 0.87},${cy + s * 0.5} Z`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:ErrorEventDefinition') {
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx - r * 0.5},${cy - r * 0.65} L${cx + r * 0.2},${cy - r * 0.05} L${cx - r * 0.15},${cy + r * 0.1} L${cx + r * 0.5},${cy + r * 0.65}`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:EscalationEventDefinition') {
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx - r * 0.5},${cy + r * 0.35} L${cx},${cy - r * 0.5} L${cx + r * 0.5},${cy + r * 0.35} M${cx},${cy - r * 0.5} L${cx},${cy + r * 0.55}`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:CompensateEventDefinition') {
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx + r * 0.05},${cy - r * 0.55} L${cx - r * 0.5},${cy} L${cx + r * 0.05},${cy + r * 0.55} Z M${cx + r * 0.6},${cy - r * 0.55} L${cx + r * 0.05},${cy} L${cx + r * 0.6},${cy + r * 0.55} Z`,
-      fill: color,
-      stroke: color,
-      strokeWidth: 1,
-      strokeLinejoin: 'round',
-    }));
-  } else if (defType === 'bpmn:ConditionalEventDefinition') {
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx - r * 0.55},${cy - r * 0.4} L${cx + r * 0.55},${cy - r * 0.4} M${cx - r * 0.55},${cy} L${cx + r * 0.55},${cy} M${cx - r * 0.55},${cy + r * 0.4} L${cx + r * 0.55},${cy + r * 0.4}`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:LinkEventDefinition') {
-    svgAppend(parentGfx, svgCreate('path', {
-      d: `M${cx - r * 0.55},${cy} L${cx + r * 0.3},${cy} M${cx},${cy - r * 0.4} L${cx + r * 0.55},${cy} L${cx},${cy + r * 0.4}`,
-      ...common,
-    }));
-  } else if (defType === 'bpmn:TerminateEventDefinition') {
-    svgAppend(parentGfx, svgCreate('circle', { cx, cy, r: r * 0.45, fill: color, stroke: 'none' }));
-  }
-}
-
-/**
- * Unified event badge (operation-group color palette, follow-on pass) —
- * live user feedback: "events dont have a common style. Schedule is
- * different to the rest of the events. Schedule looks better." Timer's
- * own look (one ring, filled `--color-card`, stroked in its own color)
- * was both the structural odd-one-out *and* the one users preferred over
- * every other typed event's "stock ring recolored neutral + separately
- * colored icon floating inside" construction. This draws every typed
- * event through the same single-ring badge Timer already used, so ring
- * and icon always share one hue — Timer is still special-cased first
- * since its own glyph (`drawCustomTimerIcon`) draws its *own* ring, and
- * drawing a second generic one first would double up.
- *
- * Callers strip *every* existing child (both rings, for Intermediate/
- * Boundary) before calling this — same "replace outright" pattern as
- * every custom icon in this file.
- */
-function drawUnifiedEventIcon(parentGfx: SVGElement, element: any, defType: string) {
-  if (defType === 'bpmn:TimerEventDefinition') {
-    drawCustomTimerIcon(parentGfx, element);
-    return;
-  }
-
-  const cx = element.width / 2;
-  const cy = element.height / 2;
-  const r = Math.round((element.width + element.height) / 4);
-  const color = EVENT_DEFINITION_COLOR[defType] ?? SYSTEM_COLOR;
-
-  svgAppend(parentGfx, svgCreate('circle', {
-    cx,
-    cy,
-    r,
-    fill: 'var(--color-card)',
-    stroke: color,
-    strokeWidth: 1.6,
-  }));
-
-  drawCustomEventDefinitionIcon(parentGfx, element, defType);
-}
-
 function recolorTaskIcon(parentGfx: SVGElement, elementType: string) {
   const tailCount = ICON_TAIL_COUNT[elementType];
   if (!tailCount) return;
@@ -849,7 +505,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const defType = getEventDefinitionType(element);
     if (defType && defType !== 'bpmn:MultipleEventDefinition') {
       Array.from(parentGfx.children).forEach((child) => parentGfx.removeChild(child));
-      drawUnifiedEventIcon(parentGfx, element, defType);
+      appendSpecs(parentGfx, buildUnifiedEventIconSpecs(element.width, element.height, defType));
     } else {
       recolorOuterStroke(parentGfx, START_EVENT_STROKE);
     }
@@ -860,7 +516,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const defType = getEventDefinitionType(element);
     if (defType && defType !== 'bpmn:MultipleEventDefinition') {
       Array.from(parentGfx.children).forEach((child) => parentGfx.removeChild(child));
-      drawUnifiedEventIcon(parentGfx, element, defType);
+      appendSpecs(parentGfx, buildUnifiedEventIconSpecs(element.width, element.height, defType));
     } else {
       recolorOuterStroke(parentGfx, END_EVENT_STROKE);
     }
@@ -872,7 +528,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const defType = getEventDefinitionType(element);
     if (defType && defType !== 'bpmn:MultipleEventDefinition') {
       Array.from(parentGfx.children).forEach((child) => parentGfx.removeChild(child));
-      drawUnifiedEventIcon(parentGfx, element, defType);
+      appendSpecs(parentGfx, buildUnifiedEventIconSpecs(element.width, element.height, defType));
     } else {
       recolorOuterStroke(parentGfx, BOUNDARY_EVENT_STROKE);
       const innerRing = parentGfx.children[1] as SVGElement | undefined;
@@ -892,7 +548,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const marker = parentGfx.children[1];
     if (marker) {
       parentGfx.removeChild(marker);
-      drawCustomExclusiveGatewayMarker(parentGfx, element);
+      appendSpec(parentGfx, buildExclusiveGatewayMarkerSpec(element.width, element.height));
     }
   } else if (
     is(element, 'bpmn:ParallelGateway') ||
@@ -918,7 +574,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const marker = parentGfx.children[1];
     if (marker) {
       parentGfx.removeChild(marker);
-      drawCustomGatewayMarker(parentGfx, element, kind);
+      appendSpec(parentGfx, buildGatewayMarkerSpec(element.width, element.height, kind));
     }
   } else if (is(element, 'bpmn:BoundaryEvent')) {
     // Same unified treatment as every other event kind above — this also
@@ -931,7 +587,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     const defType = getEventDefinitionType(element);
     if (defType && defType !== 'bpmn:MultipleEventDefinition') {
       Array.from(parentGfx.children).forEach((child) => parentGfx.removeChild(child));
-      drawUnifiedEventIcon(parentGfx, element, defType);
+      appendSpecs(parentGfx, buildUnifiedEventIconSpecs(element.width, element.height, defType));
     } else {
       recolorOuterStroke(parentGfx, BOUNDARY_EVENT_STROKE);
       const innerRing = parentGfx.children[1] as SVGElement | undefined;
@@ -1016,7 +672,8 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     Array.from(parentGfx.children)
       .slice(-tailCount)
       .forEach((child) => parentGfx.removeChild(child));
-    drawCustomTaskSubtypeIcon(parentGfx, element.type);
+    const subtypeIconSpec = buildCustomTaskSubtypeIconSpec(element.type);
+    if (subtypeIconSpec) appendSpec(parentGfx, subtypeIconSpec);
   } else {
     // Generic bpmn:Task (border only, no icon), Call Activity (border +
     // recolor its existing "+" marker in place), User/ServiceTask (border
