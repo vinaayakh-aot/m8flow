@@ -5,11 +5,11 @@ from collections.abc import Mapping
 from flask import g
 from flask import request
 
+from m8flow_backend.authorization import allow_uri
+from m8flow_backend.errors import ApiError
 from m8flow_backend.services.tenant_identity_helpers import tenant_alias_from_payload
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.tenancy import is_super_admin_request
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
 
 
 def _user_has_super_admin_group(user: object | None) -> bool:
@@ -70,7 +70,7 @@ def require_authorized_user(
             status_code=401,
         )
 
-    if AuthorizationService.user_has_permission(user, action, request.path):
+    if allow_uri(user, action, request.path, session=getattr(g, "db_session", None)):
         return user
 
     # Fallback: check group membership directly.
@@ -133,7 +133,7 @@ def _requested_tenant_identifiers(tenant_identifier: str) -> set[str]:
         return set()
 
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from spiffworkflow_backend.models.db import db
+    from m8flow_backend.db import db
 
     tenant = (
         db.session.query(M8flowTenantModel)

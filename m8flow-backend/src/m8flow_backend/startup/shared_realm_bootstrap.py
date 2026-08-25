@@ -6,12 +6,11 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from m8flow_backend.config import default_organization_alias
-from m8flow_backend.config import default_organization_name
-from m8flow_backend.services.keycloak_service import get_organization_by_alias
-from m8flow_backend.services.tenant_vault_provisioning_service import (
-    provision_tenant_vault_identity_if_enabled,
-)
+from m8flow_backend.integrations.auth.keycloak.config import default_organization_alias
+from m8flow_backend.integrations.auth.keycloak.config import default_organization_name
+from m8flow_backend.integrations.auth import get_auth_provider
+from m8flow_backend.integrations.auth.base.models import TenantRef
+from m8flow_backend.db import db
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 
 logger = logging.getLogger(__name__)
@@ -68,13 +67,13 @@ def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str,
 
 
 def _rename_tenant_scoped_groups(db_session: Any, old_tenant_id: str, new_tenant_id: str) -> list[tuple[str, str]]:
-    from spiffworkflow_backend.models.group import GroupModel
+    from m8flow_bpmn_core.models.group import GroupModel
 
     old_prefix = f"{old_tenant_id}:"
     new_prefix = f"{new_tenant_id}:"
     renamed_groups: list[tuple[str, str]] = []
 
-    groups = GroupModel.query.filter(GroupModel.identifier.like(f"{old_prefix}%")).order_by(GroupModel.id).all()
+    groups = db.session.query(GroupModel).filter(GroupModel.identifier.like(f"{old_prefix}%")).order_by(GroupModel.id).all()
     for group in groups:
         old_identifier = group.identifier
         if not isinstance(old_identifier, str) or not old_identifier.startswith(old_prefix):
@@ -88,7 +87,7 @@ def _rename_tenant_scoped_groups(db_session: Any, old_tenant_id: str, new_tenant
         if new_identifier == old_identifier:
             continue
 
-        existing = GroupModel.query.filter(GroupModel.identifier == new_identifier).first()
+        existing = db.session.query(GroupModel).filter(GroupModel.identifier == new_identifier).first()
         if existing is not None and existing.id != group.id:
             logger.warning(
                 "shared_realm_bootstrap: group identifier %s already exists; skipping rename from %s",
@@ -120,7 +119,7 @@ def resolve_default_shared_realm_tenant_id() -> str | None:
     try:
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
-        tenant = M8flowTenantModel.query.filter_by(slug=organization_alias.strip()).first()
+        tenant = db.session.query(M8flowTenantModel).filter_by(slug=organization_alias.strip()).first()
     except Exception:
         return None
 
@@ -150,7 +149,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
     organization_alias = organization_alias.strip()
 
     with flask_app.app_context():
-        from spiffworkflow_backend.models.db import db
+        from m8flow_backend.db import db
 
         if not _m8flow_tenant_table_exists(db.engine):
             logger.info(
@@ -159,7 +158,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
             return
 
         try:
-            organization = get_organization_by_alias(organization_alias)
+            tenant = get_auth_provider().directory_admin.get_tenant(TenantRef(alias=organization_alias))
         except Exception:
             logger.warning(
                 "shared_realm_bootstrap: unable to resolve default organization '%s' from Keycloak",
@@ -168,14 +167,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
             )
             return
 
-        if not isinstance(organization, dict):
-            logger.warning(
-                "shared_realm_bootstrap: default organization '%s' was not returned as a dict",
-                organization_alias,
-            )
-            return
-
-        organization_id = organization.get("id")
+        organization_id = tenant.ref.id
         if not isinstance(organization_id, str) or not organization_id.strip():
             logger.warning(
                 "shared_realm_bootstrap: default organization '%s' has no usable id",
@@ -184,7 +176,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
             return
         organization_id = organization_id.strip()
 
-        organization_name = organization.get("name")
+        organization_name = tenant.display_name
         if not isinstance(organization_name, str) or not organization_name.strip():
             organization_name = default_organization_name()
         organization_name = organization_name.strip()
@@ -192,7 +184,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
         canonical_tenant = db.session.get(M8flowTenantModel, organization_id)
-        legacy_tenant = None if canonical_tenant is not None else M8flowTenantModel.query.filter_by(slug=organization_alias).first()
+        legacy_tenant = None if canonical_tenant is not None else db.session.query(M8flowTenantModel).filter_by(slug=organization_alias).first()
 
         if canonical_tenant is None and legacy_tenant is None:
             create_tenant_if_not_exists(
@@ -200,7 +192,6 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
                 name=organization_name,
                 slug=organization_alias,
             )
-            provision_tenant_vault_identity_if_enabled(organization_id)
             logger.info(
                 "shared_realm_bootstrap: created canonical shared-realm tenant id=%s slug=%s",
                 organization_id,
@@ -237,5 +228,3 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
         if tenant_changed:
             db.session.add(tenant)
             db.session.commit()
-
-        provision_tenant_vault_identity_if_enabled(organization_id)

@@ -3,7 +3,7 @@ from flask import g, request
 from m8flow_backend.services.nats_token_service import NatsTokenService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 from m8flow_backend.tenancy import get_tenant_id
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
 
 # Supported token lifetimes offered in the UI. Omitting the value (or null) means "never expires".
 SECONDS_PER_DAY = 24 * 60 * 60

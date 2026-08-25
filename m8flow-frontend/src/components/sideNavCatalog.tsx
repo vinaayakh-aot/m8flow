@@ -180,10 +180,7 @@ export function buildSideNavCatalog(opts: CatalogOpts): SideNavCatalogEntry[] {
       iconKey: 'storage',
       path: '/monitoring/nats',
       id: NAV_IDS.monitoringNats,
-      // Not superAdminOnly: tenant-admins get the event-history tab, and tenant roles are
-      // not in the JWT, so visibility has to come from the permission grant. The page
-      // hides the broker-wide tabs from non-super-admins itself.
-      permissionRoutes: [targetUris.m8flowNatsEventsPath],
+      superAdminOnly: true,
     });
   }
 

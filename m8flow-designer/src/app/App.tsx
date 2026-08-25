@@ -1,0 +1,120 @@
+import { lazy, Suspense, useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+
+import { ensureSelectedTenantCookie, isLoggedIn, resumeLoginAfterLogout } from '@/lib/auth';
+import { AppShell } from '@/components/layout/AppShell';
+import HomePage from '@/pages/home/HomePage';
+
+// Lazy, not a static import: bpmn-js/dmn-js's raw ESM (no file extensions on
+// their internal imports) fails to resolve under Vitest's Node-based SSR
+// module runner even though it builds/runs fine in a real browser — see
+// .scratch/process-modeler/assets/02-library-integration-recipe.md. A static
+// import here would pull that resolution failure into every test that
+// renders <App/>, not just tests of this route. Also keeps the ~2MB
+// bpmn-js+dmn-js+bpmn-js-spiffworkflow bundle out of the main app chunk.
+const ProcessModelModelerPage = lazy(() => import('@/pages/process-model-modeler/ProcessModelModelerPage'));
+
+// Lazy, same reasoning as ProcessModelModelerPage above minus the Vitest
+// wrinkle (these two have no bpmn-js/dmn-js dependency, so nothing breaks
+// under Vitest either way): a user landing on Home doesn't need either
+// bundled into the main entry chunk yet. See
+// .scratch/m8flow-designer-optimization/issues/05-lazy-load-remaining-routes.md.
+const ProcessesPage = lazy(() => import('@/pages/processes/ProcessesPage'));
+const ProcessModelDetailPage = lazy(() => import('@/pages/process-model-detail/ProcessModelDetailPage'));
+const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'));
+// Lazy, same bpmn-js/dmn-js reasoning as ProcessModelModelerPage above —
+// this page reuses the same DiagramCanvas/BpmnCanvas/DmnCanvas bundle.
+const TemplateModelerPage = lazy(() => import('@/pages/templates/TemplateModelerPage'));
+const ProcessInstancesPage = lazy(() => import('@/pages/process-instances/ProcessInstancesPage'));
+// Lazy, same bpmn-js reasoning as ProcessModelModelerPage/TemplateModelerPage.
+const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/ProcessInstanceDetailPage'));
+
+export default function App() {
+  const loggedIn = isLoggedIn();
+
+  useEffect(() => {
+    if (!loggedIn) {
+      // After logout (or cold visit), go straight to Keycloak. Platform admins
+      // resume master when that was the last realm; prompt=login prevents
+      // leftover SSO from skipping the credential form.
+      resumeLoginAfterLogout();
+      return;
+    }
+    ensureSelectedTenantCookie();
+  }, [loggedIn]);
+
+  if (!loggedIn) {
+    return (
+      <main style={{ fontFamily: 'sans-serif', padding: '3rem', textAlign: 'center' }}>
+        <p>Redirecting to sign in...</p>
+      </main>
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<HomePage />} />
+          <Route
+            path="processes"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading processes…</p>}>
+                <ProcessesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="processes/:processModelId"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process…</p>}>
+                <ProcessModelDetailPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="processes/:processModelId/modeler/:fileName"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading modeler…</p>}>
+                <ProcessModelModelerPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="templates"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading templates…</p>}>
+                <TemplatesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="templates/:templateId"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading template…</p>}>
+                <TemplateModelerPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="process-instances"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process instances…</p>}>
+                <ProcessInstancesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="process-instances/:instanceId"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process instance…</p>}>
+                <ProcessInstanceDetailPage />
+              </Suspense>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}

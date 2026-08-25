@@ -219,9 +219,13 @@ def _valid_config_fields(
 
 def connectors_grouped() -> flask.wrappers.Response:
     """Return service-task operations grouped by connector with metadata."""
-    from spiffworkflow_backend.services.service_task_service import ServiceTaskService
+    from m8flow_backend.secrets import list_connectors
 
-    flat_operations: list[dict[str, Any]] = ServiceTaskService.available_connectors() or []
+    connectors = list_connectors()
+    flat_operations: list[dict[str, Any]] = []
+    for connector in connectors:
+        for command in connector.get("commands") or []:
+            flat_operations.append({"id": f"{connector['name']}/{command}", "parameters": []})
 
     groups: dict[str, dict[str, Any]] = {}
 

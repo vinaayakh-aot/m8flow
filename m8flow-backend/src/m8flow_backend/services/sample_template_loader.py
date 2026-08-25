@@ -14,7 +14,7 @@ import zipfile
 
 from sqlalchemy.exc import IntegrityError
 
-from spiffworkflow_backend.models.db import db
+from m8flow_backend.db import db
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_storage_service import (
@@ -136,7 +136,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                     continue
 
                 existing = (
-                    TemplateModel.query
+                    db.session.query(TemplateModel)
                     .filter_by(template_key=template_key, m8f_tenant_id=tenant_id)
                     .first()
                 )

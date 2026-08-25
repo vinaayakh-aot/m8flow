@@ -1,5 +1,5 @@
 from flask import g
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 

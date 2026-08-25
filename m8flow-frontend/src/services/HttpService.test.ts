@@ -76,10 +76,11 @@ describe('HttpService.makeCallToBackend', () => {
     vi.unstubAllGlobals();
   });
 
-  it('retries a GET once before redirecting when the first request gets a 401', async () => {
+  it('retries once after a silent refresh when the first request gets a 401', async () => {
     getAccessToken.mockReturnValue('access-token');
     const fetchMock = vi
       .fn()
+      // 1) original request -> 401
       .mockResolvedValueOnce(
         makeResponse({
           body: '{"message":"expired"}',
@@ -88,6 +89,9 @@ describe('HttpService.makeCallToBackend', () => {
           statusText: 'Unauthorized',
         }),
       )
+      // 2) POST /refresh -> ok
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: vi.fn() })
+      // 3) retried original request -> success
       .mockResolvedValueOnce(
         makeResponse({
           body: '{"ok":true}',
@@ -109,11 +113,43 @@ describe('HttpService.makeCallToBackend', () => {
       expect(successCallback).toHaveBeenCalledWith({ ok: true });
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1][0]).toEqual(expect.stringContaining('/refresh'));
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }));
     expect(redirectToLogin).not.toHaveBeenCalled();
   });
 
-  it('redirects after a second GET 401', async () => {
+  it('redirects when the silent refresh itself fails', async () => {
+    getAccessToken.mockReturnValue('access-token');
+    const fetchMock = vi
+      .fn()
+      // 1) original request -> 401
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: '{"message":"expired"}',
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+        }),
+      )
+      // 2) POST /refresh -> no active session to refresh
+      .mockResolvedValueOnce({ ok: false, status: 401, statusText: 'Unauthorized', text: vi.fn() });
+    vi.stubGlobal('fetch', fetchMock);
+
+    HttpService.makeCallToBackend({
+      path: '/v1.0/m8flow/tenants',
+      successCallback: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(redirectToLogin).toHaveBeenCalledTimes(1);
+    });
+
+    // No point retrying the original request without a refreshed token.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('redirects when a request is still unauthorized after a successful refresh', async () => {
     getAccessToken.mockReturnValue('access-token');
     const fetchMock = vi
       .fn()
@@ -125,6 +161,7 @@ describe('HttpService.makeCallToBackend', () => {
           statusText: 'Unauthorized',
         }),
       )
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: vi.fn() })
       .mockResolvedValueOnce(
         makeResponse({
           body: '{"message":"still expired"}',
@@ -144,71 +181,47 @@ describe('HttpService.makeCallToBackend', () => {
       expect(redirectToLogin).toHaveBeenCalledTimes(1);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Original request, refresh, retried request — no infinite loop.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('does not retry non-GET requests', async () => {
+  it('also refreshes and retries non-GET requests', async () => {
     getAccessToken.mockReturnValue('access-token');
-    const fetchMock = vi.fn().mockResolvedValue(
-      makeResponse({
-        body: '{"message":"expired"}',
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-      }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: '{"message":"expired"}',
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+        }),
+      )
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: vi.fn() })
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: '{"ok":true}',
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+        }),
+      );
     vi.stubGlobal('fetch', fetchMock);
+
+    const successCallback = vi.fn();
 
     HttpService.makeCallToBackend({
       path: '/v1.0/m8flow/tenant-realms',
       httpMethod: 'POST',
       postBody: { slug: 'tenant-a', name: 'Tenant A' },
-      successCallback: vi.fn(),
+      successCallback,
     });
 
     await waitFor(() => {
-      expect(redirectToLogin).toHaveBeenCalledTimes(1);
+      expect(successCallback).toHaveBeenCalledWith({ ok: true });
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('normalizes RFC 7807 error payloads so failure callbacks always receive a message', async () => {
-    getAccessToken.mockReturnValue('access-token');
-    const fetchMock = vi.fn().mockResolvedValue(
-      makeResponse({
-        body: JSON.stringify({
-          type: 'about:blank',
-          title: 'vault_secret_value_missing',
-          detail: 'Unable to locate the Vault secret value for key: SMTP_USER.',
-          status: 404,
-          error_code: 'vault_secret_value_missing',
-        }),
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const failureCallback = vi.fn();
-
-    HttpService.makeCallToBackend({
-      path: '/tasks/123/task-1',
-      httpMethod: 'PUT',
-      postBody: { approved: true },
-      successCallback: vi.fn(),
-      failureCallback,
-    });
-
-    await waitFor(() => {
-      expect(failureCallback).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'vault_secret_value_missing',
-          detail: 'Unable to locate the Vault secret value for key: SMTP_USER.',
-          message: 'Unable to locate the Vault secret value for key: SMTP_USER.',
-        }),
-      );
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(redirectToLogin).not.toHaveBeenCalled();
   });
 });

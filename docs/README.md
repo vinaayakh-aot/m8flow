@@ -15,6 +15,7 @@ This folder contains project documentation for setup, architecture, and developm
   - [Step 5 - Run a Celery worker](#step-5---run-a-celery-worker)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
+- [n8n-style BPMN designer — implementation spec](n8n-bpmn-designer-spec.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 - [Troubleshooting](#troubleshooting)

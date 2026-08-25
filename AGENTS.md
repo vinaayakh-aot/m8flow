@@ -2,26 +2,19 @@
 
 ## Project Context
 
-This repository is `m8flow`, which extends and customizes SpiffArena through patches and extension code.
-
-The project depends on SpiffArena-related folders that may exist locally for development, but they are not owned by this repository:
-
-- `spiff-arena-common/`
-- `spiffworkflow-backend/`
-- `spiffworkflow-frontend/`
-
-These folders are imported/reference dependencies and must be treated as upstream/vendor code.
+This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
+`m8flow-bpmn-core` as a pinned wheel (`0.1.0` @ `a3d4fd190a384ad06af84f122cad3d8818250c45`).
+Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
+Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
+`spiff-arena-common/`. Recovery pin: `docs/upstream-recovery.md`.
 
 ## Hard Rules
 
-- Do not modify files under:
-  - `spiff-arena-common/`
-  - `spiffworkflow-backend/`
-  - `spiffworkflow-frontend/`
-- Do not create commits that include changes to those folders.
-- Do not reformat, rename, move, or “clean up” files in those folders.
-- If a change appears necessary in upstream SpiffArena code, explain the required change instead of editing it directly.
-- Prefer implementing behavior through M8Flow extension code, patches, wrappers, configuration, or repo-owned modules.
+- Do not import `spiffworkflow` or `spiffworkflow_backend` from `m8flow-backend`.
+- Routes must not call `execute_command` / `execute_query` / `run_due_scheduler_jobs`.
+- Routes must not INSERT into `user` / `group` / `permission_*` / `tenant`.
+- Prefer the eight host modules: `workflow`, `catalog`, `human_task`, `scheduler`,
+  `identity`, `auth`, `authorization`, `secrets`.
 
 ## Repository Ownership
 
@@ -29,10 +22,8 @@ Only modify files that belong to the `m8flow` repository.
 
 Typical safe areas include:
 
-- `extensions/`
-- M8Flow-specific backend code
-- M8Flow-specific frontend code
-- M8Flow-specific patches
+- `m8flow-backend/`
+- `m8flow-frontend/`
 - M8Flow configuration
 - tests owned by this repo
 - documentation owned by this repo
@@ -41,44 +32,11 @@ When unsure whether a file is owned by this repo, stop and explain the uncertain
 
 ## Architecture Guidance
 
-M8Flow is built on top of SpiffArena, not as a fork where upstream folders should be edited directly.
+M8Flow is a host on `m8flow-bpmn-core`, not a SpiffArena fork.
 
-Changes should preserve the patch-based architecture:
-
-- Keep custom behavior isolated in M8Flow-owned extension layers.
-- Avoid coupling new code unnecessarily to upstream internals.
-- Do not duplicate large sections of upstream code unless there is a clear reason.
-- Prefer small, targeted patches over broad rewrites.
-- Preserve compatibility with upstream SpiffArena where practical.
-
-## Upstream Copy / License Boundary
-
-The imported SpiffArena folders (`spiffworkflow-backend/`, `spiffworkflow-frontend/`,
-`spiff-arena-common/`) are LGPL-2.1 and gitignored. The m8flow-owned trees
-(`m8flow-backend/`, `m8flow-frontend/`, `extensions/`, etc.) are Apache-2.0.
-Do not copy upstream source into the Apache-2.0-tracked trees.
-
-- Do not paste upstream file bodies into m8flow-owned files. A frontend override
-  must carry only the tenant/RBAC delta and wrap the upstream component via the
-  override resolver, not fork the whole upstream file.
-- For backend models, preserve the functional contract (column names/types,
-  table names, exported API — these are not copyrightable expression) but
-  re-express the surrounding boilerplate independently (own structure/comments).
-- Never carry over upstream attribution comments (author handles, `sartography/`
-  URLs) or LGPL/GPL license header text into the Apache-2.0 trees.
-- CI enforces this with two complementary gates (see `.github/workflows/ci.yml`):
-  - `bin/check-upstream-copying.py` — raw-line similarity, cross-language and
-    comment-aware, gated against `bin/upstream-copy-baseline.json`.
-  - `bin/check-upstream-cpd.py` — PMD CPD token-level detection that resists
-    reformatting and identifier renaming, gated against
-    `bin/upstream-cpd-baseline.json`.
-  Both block *new* copying and *regressions* of already-flagged files; neither
-  forces an immediate rewrite of pre-existing copies. License/attribution markers
-  are never grandfathered. Job wiring and usage are documented in
-  `.github/workflows/README.md`; the flagged files themselves are listed in
-  the two baseline JSONs.
-- If you intentionally and reviewably change an already-flagged file, regenerate
-  the relevant baseline (`--write-baseline`) and have the diff reviewed.
+- Keep workflow writes behind `m8flow_backend.workflow`.
+- Preserve tenant isolation and RBAC (`allow_uri` + dispatcher `authorize`).
+- Cookie for active tenant is `m8flow_selected_tenant`.
 
 ## Keycloak Login UX
 
@@ -157,4 +115,4 @@ Before finalizing work, summarize:
 - Keep changes focused.
 - Avoid unrelated formatting changes.
 - Do not include generated files unless required.
-- Do not modify imported SpiffArena folders even if they appear in the working tree.
+- Do not reintroduce SpiffArena vendor trees (`spiffworkflow-backend/`, `spiffworkflow-frontend/`, `spiff-arena-common/`).

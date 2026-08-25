@@ -10,25 +10,17 @@ from urllib.parse import unquote
 
 from flask import g, request
 from sqlalchemy import or_
+from sqlalchemy.exc import InvalidRequestError
 
 from m8flow_backend.services.tenant_identity_helpers import authentication_identifier_from_payload
-from m8flow_backend.services.tenant_identity_helpers import _canonical_tenant_id_from_identifiers
 from m8flow_backend.services.tenant_identity_helpers import current_tenant_identifiers
 from m8flow_backend.services.tenant_identity_helpers import extract_realm_from_issuer
 from m8flow_backend.services.tenant_identity_helpers import organization_memberships_from_payload
 from m8flow_backend.services.tenant_identity_helpers import payload_user_belongs_to_tenant
 from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
 from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.services.authentication_service import AuthenticationService
-from spiffworkflow_backend.services.authorization_service import AuthorizationService as _AuthorizationService
-
-try:
-    from sqlalchemy.exc import InvalidRequestError
-except ImportError:
-    InvalidRequestError = None  # type: ignore[misc, assignment]
-
-from m8flow_backend.canonical_db import get_canonical_db
+from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
+from m8flow_backend.errors import ApiError
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.tenancy import (
     SELECTED_TENANT_COOKIE_NAME,
@@ -43,39 +35,68 @@ from m8flow_backend.tenancy import (
 )
 
 LOGGER = logging.getLogger(__name__)
-# Preserve the module-level AuthorizationService seam because several unit tests
-# monkeypatch it directly even though the current runtime flow no longer calls it.
-AuthorizationService = _AuthorizationService
+
+
+class AuthenticationService:
+    @staticmethod
+    def parse_jwt_token(_authentication_identifier, token):
+        from m8flow_backend.auth import decode_auth_token
+
+        return decode_auth_token(token)
+
+    @staticmethod
+    def decode_auth_token(authentication_identifier, token):
+        return AuthenticationService.parse_jwt_token(authentication_identifier, token)
+
+
+class AuthorizationService:
+    pass
+
+
+def get_canonical_db():
+    from flask import g
+
+    session = getattr(g, "db_session", None)
+    return type("DB", (), {"session": session})()
+
+
 TENANT_SELECTION_HEADER_NAME = "x-m8flow-tenant-id"
-MASTER_REALM_IDENTIFIER = "master"
 SUPER_ADMIN_ROLE = "super-admin"
 
 
 def _shared_realm_identifier() -> str:
-    from m8flow_backend.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 
     return shared_realm_name()
 
 
 def _master_realm_identifier() -> str:
-    from m8flow_backend.config import master_realm_name
+    from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 
     return master_realm_name()
 
 
-def _decoded_payload_from_bearer_token_without_verification(token: str | None = None) -> dict[str, Any] | None:
-    """Decode the bearer token payload without signature verification for tenant routing."""
+def _decoded_payload_from_bearer_token(token: str | None = None) -> dict[str, Any] | None:
+    """Return the cryptographically verified bearer-token payload for tenant routing."""
     bearer_token = token or _token_from_request()
     if not bearer_token:
         return None
 
-    try:
-        import jwt
+    cached = getattr(g, "_m8flow_decoded_token", None)
+    cached_raw = getattr(g, "_m8flow_decoded_token_raw", None)
+    if isinstance(cached, dict) and cached_raw == bearer_token:
+        return cached
 
-        payload = jwt.decode(
-            bearer_token,
-            options={"verify_signature": False, "verify_exp": False},
-        )
+    auth_decoded = getattr(g, "decoded_token", None)
+    if isinstance(auth_decoded, dict):
+        g._m8flow_decoded_token = auth_decoded
+        g._m8flow_decoded_token_raw = bearer_token
+        return auth_decoded
+
+    try:
+        from m8flow_backend.auth import decode_auth_token
+
+        payload = decode_auth_token(bearer_token)
     except Exception:
         return None
 
@@ -483,7 +504,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
     if not allow_decode:
         return None
 
-    unverified_decoded = _decoded_payload_from_bearer_token_without_verification(token)
+    unverified_decoded = _decoded_payload_from_bearer_token(token)
     if isinstance(unverified_decoded, dict):
         return _authenticated_tenant_id_from_payload(unverified_decoded)
 
@@ -492,7 +513,7 @@ def _tenant_from_jwt_claim_cached(*, allow_decode: bool) -> Optional[str]:
         return None
 
     try:
-        decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
+        decoded = AuthenticationService.decode_auth_token(authentication_identifier, token)
     except Exception as exc:
         if not getattr(g, "_m8flow_warned_decode_token", False):
             g._m8flow_warned_decode_token = True
@@ -517,13 +538,13 @@ def _decoded_token_cached(*, allow_decode: bool) -> Optional[dict[str, Any]]:
     if not allow_decode:
         return None
 
-    unverified_decoded = _decoded_payload_from_bearer_token_without_verification(token)
+    unverified_decoded = _decoded_payload_from_bearer_token(token)
     if isinstance(unverified_decoded, dict):
         return unverified_decoded
 
     try:
         authentication_identifier = _authentication_identifier() or _master_realm_identifier()
-        decoded = AuthenticationService.parse_jwt_token(authentication_identifier, token)
+        decoded = AuthenticationService.decode_auth_token(authentication_identifier, token)
     except Exception as exc:
         if not getattr(g, "_m8flow_warned_decode_token", False):
             g._m8flow_warned_decode_token = True
@@ -556,7 +577,7 @@ def _is_master_super_admin_request() -> bool:
         return False
 
     realm = extract_realm_from_issuer(decoded.get("iss"))
-    if realm != MASTER_REALM_IDENTIFIER:
+    if realm != master_realm_name():
         return False
 
     realm_access = decoded.get("realm_access")
@@ -626,11 +647,7 @@ def _selected_tenant_from_request() -> Optional[str]:
         return None
     selected_tenant = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(selected_tenant, str) and selected_tenant.strip():
-        normalized_cookie_value = selected_tenant.strip()
-        normalized_selected_tenant = _canonical_tenant_id_from_identifiers(normalized_cookie_value)
-        if normalized_selected_tenant:
-            return normalized_selected_tenant
-        return normalized_cookie_value
+        return selected_tenant.strip()
     return None
 
 

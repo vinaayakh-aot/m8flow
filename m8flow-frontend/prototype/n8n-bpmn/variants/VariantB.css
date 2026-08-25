@@ -1,0 +1,57 @@
+/* PROTOTYPE — throwaway. Variant B-specific chrome. */
+
+.n8n-rail-toggle {
+  position: absolute;
+  top: 16px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  z-index: 21;
+  transition: left 0.15s ease;
+}
+
+.n8n-rail {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: 240px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.n8n-rail-list {
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.n8n-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.n8n-tab {
+  flex: 1;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 6px 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.n8n-tab--active {
+  background: #111827;
+  color: #ffffff;
+}

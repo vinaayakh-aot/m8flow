@@ -128,8 +128,8 @@ Approvers
 
 The main attribute-reading logic is in:
 
-- [keycloak_service.py](../m8flow-backend/src/m8flow_backend/services/keycloak_service.py)
-  - `organization_group_role_names()`
+- [groups.py](../m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/groups.py)
+  - `role_names_from_representation()`
 
 That function does this:
 
@@ -143,8 +143,8 @@ from the attributes, not from the default static mapping.
 
 The corresponding write path is also in:
 
-- [keycloak_service.py](../m8flow-backend/src/m8flow_backend/services/keycloak_service.py)
-  - `set_organization_group_role_names()`
+- [groups.py](../m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/groups.py)
+  - `set_group_role_names()`
 
 That function persists:
 

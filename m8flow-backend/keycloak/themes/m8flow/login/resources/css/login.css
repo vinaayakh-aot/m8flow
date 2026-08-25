@@ -494,7 +494,32 @@
       pointer-events: none;
       opacity: 0.65;
   }
-  
+
+  .m8f-back-to-main-login-action {
+      width: 100%;
+      margin-top: 20px;
+      text-align: center;
+  }
+
+  .m8f-back-to-main-login-link {
+      display: inline-flex;
+      align-items: center;
+      color: var(--pf-global--Color--200);
+      font-size: var(--pf-global--FontSize--sm);
+      text-decoration: none;
+  }
+
+  .m8f-back-to-main-login-link:hover,
+  .m8f-back-to-main-login-link:focus {
+      color: #0099d3;
+      text-decoration: underline;
+  }
+
+  .m8f-back-to-main-login-link[aria-disabled="true"] {
+      pointer-events: none;
+      opacity: 0.65;
+  }
+
   .login-pf-page .login-pf-brand {
       margin-top: 20px;
       max-width: 360px;

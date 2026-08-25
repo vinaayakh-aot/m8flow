@@ -5,7 +5,6 @@ import logging
 import os
 from contextvars import ContextVar, Token
 from collections.abc import Iterable
-from datetime import datetime, timezone
 from typing import Optional, cast
 
 from flask import g, has_request_context, request
@@ -29,9 +28,9 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/.well-known",
     "/favicon.ico",
     "/v1.0/ping",
+    "/v1.0/m8flow/ping",
     "/v1.0/healthy",
     "/v1.0/status",
-    "/v1.0/vault-status",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",
@@ -40,6 +39,7 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/logout",
     "/v1.0/authentication-options",
     "/v1.0/login",
+    "/v1.0/refresh",
     "/v1.0/tenants/check",
     "/v1.0/m8flow/tenant-login-url",
     "/v1.0/m8flow/organization-memberships",
@@ -76,6 +76,18 @@ PUBLIC_PATH_PREFIXES = TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
 TENANT_PUBLIC_PATH_PREFIXES = PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES
 
 _CONTEXT_TENANT_ID: ContextVar[Optional[str]] = ContextVar("m8flow_tenant_id", default=None)
+
+
+class TenantContextFilter(logging.Filter):
+    """Injects tenant id into log records for uvicorn-log.yaml."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        tenant_id = _CONTEXT_TENANT_ID.get()
+        if not tenant_id and has_request_context():
+            tenant_id = getattr(g, "m8flow_tenant_id", None)
+        record.m8flow_tenant_id = tenant_id or "-"
+        return True
+
 
 # "Are we inside a request handler?" (works for ASGI/WSGI alike)
 _REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=False)
@@ -169,7 +181,7 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
         return False
 
     try:
-        from m8flow_backend.config import master_realm_name
+        from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
         from m8flow_backend.services.tenant_identity_helpers import (
             authentication_identifier_from_payload,
             extract_realm_from_issuer,
@@ -179,9 +191,9 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
 
     decoded_token = getattr(g, "_m8flow_decoded_token", None)
     if not isinstance(decoded_token, dict):
+        decoded_token = getattr(g, "decoded_token", None)
+    if not isinstance(decoded_token, dict):
         try:
-            import jwt
-
             token: str | None = getattr(g, "token", None) if isinstance(getattr(g, "token", None), str) else None
             if not token:
                 auth_header = (request.headers.get("Authorization") or "").strip()
@@ -190,10 +202,9 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
             if not token:
                 token = request.cookies.get("access_token")
             if token:
-                payload = jwt.decode(
-                    token,
-                    options={"verify_signature": False, "verify_exp": False},
-                )
+                from m8flow_backend.auth import decode_auth_token
+
+                payload = decode_auth_token(token)
                 if isinstance(payload, dict):
                     decoded_token = payload
                     g._m8flow_decoded_token = payload
@@ -272,10 +283,11 @@ def ensure_tenant_exists(tenant_id: str | None) -> None:
             f"Missing tenant id. Ensure the token contains {TENANT_CLAIM} (or set tenant in request context)."
         )
 
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from spiffworkflow_backend.models.db import db
+    from flask import g
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 
-    tenant = db.session.get(M8flowTenantModel, tenant_id)
+    session = getattr(g, "db_session", None)
+    tenant = session.get(M8flowTenantModel, tenant_id) if session is not None else None
 
     if tenant is None:
         raise RuntimeError(
@@ -298,22 +310,18 @@ def create_tenant_if_not_exists(
     display_name = (name or tenant_id).strip()
     slug_value = (slug or tenant_id).strip()
 
-    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from spiffworkflow_backend.models.db import db
+    from flask import g
+    from m8flow_backend import identity
 
-    if db.session.get(M8flowTenantModel, tenant_id) is not None:
+    session = getattr(g, "db_session", None)
+    if session is None:
+        from m8flow_backend.db import session_scope
+
+        with session_scope() as scoped:
+            identity.ensure_tenant(
+                scoped, tenant_id=tenant_id, name=display_name, slug=slug_value
+            )
+        LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)
         return
-    # slug, created_by, modified_by are NOT NULL; use slug_value for slug, 'system' for audit when no user context
-    now = int(datetime.now(timezone.utc).timestamp())
-    tenant = M8flowTenantModel(
-        id=tenant_id,
-        name=display_name,
-        slug=slug_value,
-        created_by="system",
-        modified_by="system",
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
-    )
-    db.session.add(tenant)
-    db.session.commit()
+    identity.ensure_tenant(session, tenant_id=tenant_id, name=display_name, slug=slug_value)
     LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)

@@ -16,7 +16,7 @@ from urllib.parse import urlunsplit
 from sqlalchemy import or_
 from sqlalchemy import update as sa_update
 
-from spiffworkflow_backend.models.db import db
+from m8flow_backend.db import db
 
 from m8flow_backend.config import notification_max_attempts
 from m8flow_backend.config import notification_sweep_grace_seconds
@@ -180,21 +180,24 @@ class ExternalFormNotificationService:
     def _read_tenant_secret(key: str) -> str | None:
         """Decrypted value of a tenant secret, or None if absent. Relies on the active
         tenant context to scope the lookup (SecretModel is tenant-scoped in m8flow)."""
-        from spiffworkflow_backend.exceptions.api_error import ApiError
-        from spiffworkflow_backend.services.secret_service import SecretService
+        from m8flow_backend.errors import ApiError
+        from m8flow_backend import secrets as SecretService
 
         try:
-            secret = SecretService.get_secret(key)
+            from flask import g
+
+            from m8flow_backend.db import current_session
+
+            secret = SecretService.get_secret(
+                current_session(),
+                tenant_id=getattr(g, "m8flow_tenant_id", "") or "",
+                key=key,
+            )
         except ApiError:
             return None
         if secret is None:
             return None
-        try:
-            value = SecretService._decrypt(secret.value)
-        except Exception as exc:
-            LOGGER.warning("external-form-notify: could not decrypt a tenant secret (%s)", type(exc).__name__)
-            return None
-        value = (value or "").strip()
+        value = (secret.value or "").strip()
         return value or None
 
     @classmethod
@@ -255,7 +258,7 @@ class ExternalFormNotificationService:
     def notify(cls, reference_id: str) -> str:
         """Claim and email one request; returns a status string for logging.
         Safe to call repeatedly and concurrently — the claim makes it idempotent."""
-        row = ExternalFormRequestModel.query.filter_by(reference_id=reference_id).first()
+        row = db.session.query(ExternalFormRequestModel).filter_by(reference_id=reference_id).first()
         if row is None:
             LOGGER.warning("external-form-notify: unknown reference_id presented")
             return "skipped:unknown_reference"
@@ -289,9 +292,9 @@ class ExternalFormNotificationService:
 
         human_task = None
         try:
-            from spiffworkflow_backend.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.human_task import HumanTaskModel
 
-            human_task = HumanTaskModel.query.filter_by(
+            human_task = db.session.query(HumanTaskModel).filter_by(
                 process_instance_id=row.process_instance_id, task_id=row.task_guid
             ).first()
         except Exception:

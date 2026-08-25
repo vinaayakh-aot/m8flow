@@ -8,7 +8,7 @@ from typing import Protocol
 
 from flask import current_app
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
 
 logger = logging.getLogger(__name__)
 

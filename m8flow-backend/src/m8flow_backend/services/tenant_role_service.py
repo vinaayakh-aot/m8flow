@@ -6,30 +6,33 @@ from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from m8flow_backend.services.keycloak_service import (
-    add_organization_member,
-    add_organization_group_member,
-    create_organization_group,
-    delete_organization_group,
-    get_master_admin_token,
-    get_organization_by_id,
-    get_organization_by_alias,
-    get_organization_group_by_id,
-    get_organization_member_by_username,
-    get_organization_member_groups,
-    get_realm_user_by_username,
-    list_organization_group_members,
-    list_organization_groups,
-    organization_group_role_names,
-    rename_organization_group,
-    remove_organization_group_member,
-    remove_organization_member,
-    search_realm_users,
-    search_organization_members,
-    set_organization_group_role_names,
-    shared_realm_name,
+from m8flow_backend.integrations.auth.keycloak.client_auth import (
+    fetch_master_admin_token as get_master_admin_token,
 )
-from m8flow_backend.services.authorization_service_patch import _permission_scope_tenant
+from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+from m8flow_backend.integrations.auth.keycloak.directory import (
+    fetch_user_representation as get_realm_user_by_username,
+    search_user_representations as search_realm_users,
+)
+from m8flow_backend.integrations.auth.keycloak.groups import (
+    fetch_group_representation_by_id as get_organization_group_by_id,
+    fetch_group_representation_by_name as get_organization_group_by_name,
+    fetch_member_group_representations as get_organization_member_groups,
+    list_group_member_representations as list_organization_group_members,
+    list_group_representations as list_organization_groups,
+    role_names_from_representation as organization_group_role_names,
+)
+from m8flow_backend.integrations.auth.keycloak.tenants import (
+    add_member_by_user_id as add_organization_member,
+    fetch_member_representation as get_organization_member_by_username,
+    fetch_organization_representation_by_alias as get_organization_by_alias,
+    fetch_organization_representation_by_id as get_organization_by_id,
+    remove_member_by_user_id as remove_organization_member,
+    search_member_representations as search_organization_members,
+)
+from m8flow_backend.integrations.auth import get_auth_provider
+from m8flow_backend.integrations.auth.base.models import Group, TenantRef
+from contextlib import nullcontext as _permission_scope_tenant
 from m8flow_backend.services.tenant_group_mapping import (
     VALID_TENANT_ROLE_NAMES,
     organization_group_name_candidates_for_tenant_role,
@@ -40,17 +43,24 @@ from m8flow_backend.services.tenant_identity_helpers import (
     upsert_local_shared_realm_member,
 )
 from m8flow_backend.services.tenant_service import TenantService
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.models.user_group_assignment import UserGroupAssignmentModel
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
-from spiffworkflow_backend.services.user_service import UserService
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
+from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_backend import identity
 
 logger = logging.getLogger(__name__)
 
 TENANT_GROUP_NAME_MAX_LENGTH = 64
 TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
 MAX_PARALLEL_KEYCLOAK_LOOKUPS = 8
+
+
+def _directory_admin():
+    return get_auth_provider().directory_admin
+
+
+def _group_for(organization_id: str, group_name: str) -> Group:
+    return Group(identifier=str(group_name).strip(), tenant_ref=TenantRef(id=organization_id))
 
 
 def _normalize_role_name(role_name: str) -> str:
@@ -699,11 +709,11 @@ def _tenant_group_matches_search(
 
 def _tenant_role_group(role_name: str, tenant_id: str) -> Any:
     group_identifier = qualify_group_identifier(role_name, tenant_id=tenant_id)
-    return UserService.find_or_create_group(group_identifier, source_is_open_id=True)
+    return identity.ensure_group(group_identifier, source_is_open_id=True)
 
 
 def _local_assignment_query(user: Any, group: Any, tenant_id: str):
-    query = UserGroupAssignmentModel.query.filter_by(user_id=user.id, group_id=group.id)
+    query = db.session.query(UserGroupAssignmentModel).filter_by(user_id=user.id, group_id=group.id)
     if hasattr(UserGroupAssignmentModel, "m8f_tenant_id"):
         query = query.filter_by(m8f_tenant_id=tenant_id)
     return query
@@ -732,8 +742,8 @@ def _ensure_tenant_yaml_permissions_and_everybody_membership(user: Any, tenant_i
     SpiffWorkflow grants to every signed-in user.  Run the YAML import inside the
     target tenant's permission scope so groups and permissions are tenant-qualified.
     """
-    with _permission_scope_tenant(tenant_id):
-        AuthorizationService.import_permissions_from_yaml_file(user)
+    with _permission_scope_tenant():
+        identity.import_yaml(tenant_id=tenant_id)
 
 
 def _sync_local_role_assignments(user: Any, tenant_id: str, roles: list[str]) -> None:
@@ -755,12 +765,6 @@ def _sync_local_role_assignments(user: Any, tenant_id: str, roles: list[str]) ->
 
     if not added_group_ids and not removed_group_ids:
         return
-
-    UserService.update_human_task_assignments_for_user(
-        user,
-        new_group_ids=added_group_ids,
-        old_group_ids=removed_group_ids,
-    )
 
 
 def _sync_local_member_from_keycloak_member(
@@ -833,7 +837,7 @@ def _clear_local_tenant_assignments(user: Any, tenant_id: str) -> None:
 
     if hasattr(UserGroupAssignmentModel, "m8f_tenant_id"):
         assignments = (
-            UserGroupAssignmentModel.query.filter_by(user_id=user.id)
+            db.session.query(UserGroupAssignmentModel).filter_by(user_id=user.id)
             .filter_by(m8f_tenant_id=tenant_id)
             .all()
         )
@@ -859,17 +863,13 @@ def _clear_local_tenant_assignments(user: Any, tenant_id: str) -> None:
             group_identifiers.add(default_group_identifier)
 
         for group_identifier in sorted(group_identifiers):
-            group = UserService.find_or_create_group(group_identifier, source_is_open_id=True)
+            group = identity.ensure_group(group_identifier, source_is_open_id=True)
             assignment_deleted = _delete_local_assignment(user, group, tenant_id)
             if assignment_deleted:
                 removed_group_ids.add(group.id)
 
     if removed_group_ids:
-        UserService.update_human_task_assignments_for_user(
-            user,
-            new_group_ids=set(),
-            old_group_ids=removed_group_ids,
-        )
+        return
 
 
 def _tenant_member_or_error(organization_id: str, tenant_slug: str, username: str) -> dict[str, Any]:
@@ -1118,7 +1118,11 @@ def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
             status_code=409,
         )
 
-    created_group = create_organization_group(organization_id, normalized_group_name)
+    _directory_admin().create_group(
+        TenantRef(id=organization_id),
+        identifier=normalized_group_name,
+    )
+    created_group = get_organization_group_by_name(organization_id, normalized_group_name)
     serialized_group = _serialize_group(organization_id, created_group)
     if serialized_group is None:
         raise ApiError(
@@ -1172,12 +1176,12 @@ def rename_tenant_group(tenant_id: str, group_name: str, new_group_name: str) ->
             )
         return serialized_group
 
-    renamed_group = rename_organization_group(
-        organization_id,
-        group_id.strip(),
-        normalized_group_name,
-        mapped_role_names=_mapped_roles_for_group(group, organization_id=organization_id),
+    _directory_admin().rename_group(
+        _group_for(organization_id, current_group_name),
+        identifier=normalized_group_name,
+        roles=list(_mapped_roles_for_group(group, organization_id=organization_id)),
     )
+    renamed_group = get_organization_group_by_name(organization_id, normalized_group_name)
 
     group_role_lookup = _organization_group_role_lookup(organization_id)
     _sync_local_members_for_group(
@@ -1243,9 +1247,11 @@ def add_tenant_member(
         add_organization_member(organization_id, user_id.strip())
         member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
 
-    member_id = _tenant_member_id_or_error(member, normalized_username)
     for group_name in validated_group_names:
-        add_organization_group_member(organization_id, group_name, member_id)
+        _directory_admin().add_group_member(
+            _group_for(organization_id, group_name),
+            username=normalized_username,
+        )
 
     _local_user, roles = _sync_local_member_from_keycloak_member(
         tenant,
@@ -1288,9 +1294,11 @@ def add_tenant_group_member(tenant_id: str, username: str, group_name: str) -> d
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     validated_group_names = _validated_group_names(organization_id, [group_name])
     member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
-    member_id = _tenant_member_id_or_error(member, normalized_username)
 
-    add_organization_group_member(organization_id, validated_group_names[0], member_id)
+    _directory_admin().add_group_member(
+        _group_for(organization_id, validated_group_names[0]),
+        username=normalized_username,
+    )
 
     _local_user, roles = _sync_local_member_from_keycloak_member(
         tenant,
@@ -1313,9 +1321,11 @@ def remove_tenant_group_member(tenant_id: str, username: str, group_name: str) -
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     validated_group_names = _validated_group_names(organization_id, [group_name])
     member = _tenant_member_or_error(organization_id, tenant.slug, normalized_username)
-    member_id = _tenant_member_id_or_error(member, normalized_username)
 
-    remove_organization_group_member(organization_id, validated_group_names[0], member_id)
+    _directory_admin().remove_group_member(
+        _group_for(organization_id, validated_group_names[0]),
+        username=normalized_username,
+    )
 
     _local_user, roles = _sync_local_member_from_keycloak_member(
         tenant,
@@ -1338,16 +1348,16 @@ def assign_tenant_group_role(tenant_id: str, group_name: str, role_name: str) ->
             status_code=400,
         )
 
-    updated_group = set_organization_group_role_names(
-        organization_id,
-        group_id.strip(),
-        sorted(
+    _directory_admin().set_group_roles(
+        _group_for(organization_id, group.get("name") or group_name),
+        roles=sorted(
             {
                 *_mapped_roles_for_group(group, organization_id=organization_id),
                 normalized_role_name,
             }
         ),
     )
+    updated_group = get_organization_group_by_name(organization_id, str(group.get("name") or group_name).strip())
 
     group_role_lookup = _organization_group_role_lookup(organization_id)
     _sync_local_members_for_group(
@@ -1383,15 +1393,15 @@ def remove_tenant_group_role(tenant_id: str, group_name: str, role_name: str) ->
             status_code=400,
         )
 
-    updated_group = set_organization_group_role_names(
-        organization_id,
-        group_id.strip(),
-        [
+    _directory_admin().set_group_roles(
+        _group_for(organization_id, group.get("name") or group_name),
+        roles=[
             mapped_role_name
             for mapped_role_name in _mapped_roles_for_group(group, organization_id=organization_id)
             if mapped_role_name != normalized_role_name
         ],
     )
+    updated_group = get_organization_group_by_name(organization_id, str(group.get("name") or group_name).strip())
 
     group_role_lookup = _organization_group_role_lookup(organization_id)
     _sync_local_members_for_group(
@@ -1427,7 +1437,7 @@ def delete_tenant_group(tenant_id: str, group_name: str) -> str:
         )
 
     current_members = list_organization_group_members(organization_id, group_id.strip())
-    delete_organization_group(organization_id, group_id.strip())
+    _directory_admin().delete_group(_group_for(organization_id, group.get("name") or group_name))
 
     group_role_lookup = _organization_group_role_lookup(organization_id)
     for member in current_members:
@@ -1449,12 +1459,11 @@ def assign_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
     normalized_role_name = _normalize_role_name(role_name)
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     member = _tenant_member_or_error(organization_id, tenant.slug, username)
-    member_id = _tenant_member_id_or_error(member, username)
 
-    add_organization_group_member(
-        organization_id,
-        _organization_group_name_for_role_name(normalized_role_name),
-        member_id,
+    _directory_admin().assign_roles(
+        username=username,
+        tenant_ref=TenantRef(id=organization_id),
+        roles=[normalized_role_name],
     )
 
     _local_user, updated_roles = _sync_local_member_from_keycloak_member(
@@ -1473,13 +1482,11 @@ def remove_tenant_role(tenant_id: str, username: str, role_name: str) -> dict[st
     normalized_role_name = _normalize_role_name(role_name)
     tenant, _organization, organization_id = _organization_for_tenant(tenant_id)
     member = _tenant_member_or_error(organization_id, tenant.slug, username)
-    member_id = _tenant_member_id_or_error(member, username)
 
     for organization_group_name in _organization_group_names_for_role_name(normalized_role_name):
-        remove_organization_group_member(
-            organization_id,
-            organization_group_name,
-            member_id,
+        _directory_admin().remove_group_member(
+            _group_for(organization_id, organization_group_name),
+            username=username,
         )
 
     _local_user, updated_roles = _sync_local_member_from_keycloak_member(

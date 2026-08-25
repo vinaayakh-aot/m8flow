@@ -1,0 +1,201 @@
+"""Keycloak realization of ``AuthProvider``.
+
+Session/OIDC + JWKS ``verify_token`` (ticket 03), directory user
+get/search/create/delete (ticket 04), tenant/membership operations
+(ticket 05), group/role mapping (ticket 06), and realm provisioning
+(ticket 07).
+"""
+from __future__ import annotations
+
+from m8flow_backend.integrations.auth.base.capabilities import SupportsDirectoryAdmin, SupportsProvisioning
+from m8flow_backend.integrations.auth.base.errors import TokenInvalid, UserNotFound
+from m8flow_backend.integrations.auth.base.models import Group, Membership, Tenant, TenantRef, TokenSet, User, VerifiedClaims
+from m8flow_backend.integrations.auth.base.provider import AuthProvider
+from m8flow_backend.integrations.auth.keycloak import directory, groups, oidc, tenants
+from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
+from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
+from m8flow_backend.integrations.auth.keycloak.jwks import verify_access_token
+from m8flow_backend.integrations.auth.keycloak.provisioning import KeycloakProvisioning
+
+
+class KeycloakAuthProvider(AuthProvider):
+    """Concrete Keycloak provider."""
+
+    def build_login_url(
+        self,
+        *,
+        redirect_uri: str,
+        state: str,
+        authentication_identifier: str,
+        nonce: str | None = None,
+        prompt: str | None = None,
+    ) -> str:
+        del nonce  # stored by the host in state/cookie; not sent to Keycloak today
+        return oidc.build_authorization_url(
+            realm=authentication_identifier,
+            redirect_uri=redirect_uri,
+            state=state,
+            prompt=prompt,
+        )
+
+    def exchange_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        authentication_identifier: str,
+    ) -> TokenSet:
+        return oidc.exchange_authorization_code(
+            realm=authentication_identifier,
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+
+    def refresh(self, *, refresh_token: str, authentication_identifier: str) -> TokenSet:
+        return oidc.refresh_tokens(realm=authentication_identifier, refresh_token=refresh_token)
+
+    def build_logout_url(
+        self,
+        *,
+        authentication_identifier: str,
+        redirect_uri: str | None = None,
+        id_token_hint: str | None = None,
+    ) -> str:
+        return oidc.build_logout_url(
+            realm=authentication_identifier,
+            redirect_uri=redirect_uri,
+            id_token_hint=id_token_hint,
+        )
+
+    def verify_token(self, token: str) -> VerifiedClaims:
+        payload = verify_access_token(token)
+        try:
+            return verified_claims_from_payload(payload)
+        except ValueError as exc:
+            raise TokenInvalid(str(exc)) from exc
+
+    def master_admin_token(self) -> str:
+        """Master-realm admin token for Keycloak Admin API callers still in services."""
+        return fetch_master_admin_token()
+
+    def password_grant(self, *, realm: str, username: str, password: str) -> dict:
+        return oidc.password_grant(realm=realm, username=username, password=password)
+
+    def get_user(self, *, username: str, authentication_identifier: str) -> User:
+        representation = directory.fetch_user_representation(authentication_identifier, username)
+        if representation is None:
+            raise UserNotFound(username)
+        return directory.user_from_representation(representation)
+
+    def search_users(
+        self,
+        *,
+        query: str,
+        authentication_identifier: str,
+        limit: int = 50,
+    ) -> list[User]:
+        representations = directory.search_user_representations(
+            authentication_identifier,
+            query,
+            max_results=limit,
+        )
+        return [directory.user_from_representation(item) for item in representations]
+
+    def list_memberships(self, *, username: str) -> list[Membership]:
+        return tenants.list_memberships_for_username(username)
+
+    @property
+    def directory_admin(self) -> SupportsDirectoryAdmin:
+        return _KeycloakDirectoryAdmin()
+
+    @property
+    def provisioning(self) -> SupportsProvisioning:
+        return KeycloakProvisioning()
+
+
+class _KeycloakDirectoryAdmin:
+    """Directory mutations: users, tenants, memberships, and groups."""
+
+    def create_user(
+        self,
+        *,
+        username: str,
+        authentication_identifier: str,
+        email: str | None = None,
+        password: str | None = None,
+    ) -> User:
+        return directory.create_user(
+            authentication_identifier,
+            username,
+            password or "",
+            email=email,
+        )
+
+    def delete_user(self, *, username: str, authentication_identifier: str) -> None:
+        directory.delete_user_by_username(authentication_identifier, username)
+
+    def add_member(self, *, username: str, tenant_ref: TenantRef) -> Membership:
+        return tenants.add_member_by_username(tenant_ref, username)
+
+    def remove_member(self, *, username: str, tenant_ref: TenantRef) -> None:
+        tenants.remove_member_by_username(tenant_ref, username)
+
+    def get_member(self, *, username: str, tenant_ref: TenantRef) -> User:
+        return tenants.get_member(tenant_ref, username)
+
+    def list_members(
+        self,
+        *,
+        tenant_ref: TenantRef,
+        query: str = "",
+        limit: int = 50,
+    ) -> list[User]:
+        return tenants.list_members(tenant_ref, query=query, limit=limit)
+
+    def get_tenant(self, tenant_ref: TenantRef) -> Tenant:
+        return tenants.resolve_tenant_ref(tenant_ref)
+
+    def create_tenant(self, *, alias: str, name: str | None = None) -> Tenant:
+        tenant = tenants.create_tenant(alias=alias, name=name)
+        groups.ensure_default_groups(tenant.ref)
+        return tenant
+
+    def update_tenant(self, tenant_ref: TenantRef, *, name: str) -> Tenant:
+        return tenants.update_tenant(tenant_ref, name=name)
+
+    def delete_tenant(self, tenant_ref: TenantRef) -> None:
+        tenants.delete_tenant(tenant_ref)
+
+    def assign_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> Membership:
+        groups.assign_roles(username=username, tenant_ref=tenant_ref, roles=roles)
+        return Membership(tenant_ref=tenant_ref, roles=list(roles), groups=[])
+
+    def list_groups(self, tenant_ref: TenantRef) -> list[Group]:
+        return groups.list_groups(tenant_ref)
+
+    def create_group(self, tenant_ref: TenantRef, *, identifier: str) -> Group:
+        return groups.create_group(tenant_ref, identifier=identifier)
+
+    def delete_group(self, group: Group) -> None:
+        groups.delete_group(group)
+
+    def rename_group(self, group: Group, *, identifier: str, roles: list[str] | None = None) -> Group:
+        return groups.rename_group(group, identifier=identifier, roles=roles)
+
+    def add_group_member(self, group: Group, *, username: str) -> None:
+        groups.add_group_member(group, username=username)
+
+    def remove_group_member(self, group: Group, *, username: str) -> None:
+        groups.remove_group_member(group, username=username)
+
+    def list_group_members(self, group: Group) -> list[User]:
+        return groups.list_group_members(group)
+
+    def set_group_roles(self, group: Group, *, roles: list[str]) -> Group:
+        return groups.set_group_roles(group, roles=roles)
+
+    def roles_for_group(self, group: Group) -> list[str]:
+        return groups.roles_for_group(group)
+
+    def ensure_default_groups(self, tenant_ref: TenantRef) -> list[Group]:
+        return groups.ensure_default_groups(tenant_ref)

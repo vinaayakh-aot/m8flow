@@ -3,7 +3,7 @@ disable_existing_loggers: false
 
 filters:
   tenant_ctx:
-    (): m8flow_backend.services.logging_service_patch.TenantContextFilter
+    (): m8flow_backend.tenancy.TenantContextFilter
 
 formatters:
   default:

@@ -36,9 +36,8 @@ def register_tenant_resolution_after_auth(flask_app) -> None:
         name = getattr(func, "__name__", "") or ""
         return (
             # Unpatched upstream callback registered by create_app()
-            (mod == "spiffworkflow_backend.routes.authentication_controller" and name == "omni_auth")
-            # Patched callback shape (if omni_auth is monkey-patched before registration)
-            or (mod.endswith("authentication_controller_patch") and name == "patched_omni_auth")
+            (mod.endswith("auth") or mod.endswith("m8flow_backend.auth"))
+            and name in {"_authenticate", "install_auth_middleware"}
         )
 
     if None not in flask_app.before_request_funcs:

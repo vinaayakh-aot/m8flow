@@ -7,9 +7,9 @@ from typing import Any
 
 from flask import g
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.models.user import UserModel
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
+from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.models.external_form_request import ACTIONABLE_STATUSES
@@ -52,7 +52,7 @@ class ExternalFormService:
 
         existing_user_ids = {
             row.recipient_user_id
-            for row in ExternalFormRequestModel.query.filter(
+            for row in db.session.query(ExternalFormRequestModel).filter(
                 ExternalFormRequestModel.process_instance_id == process_instance_id,
                 ExternalFormRequestModel.task_guid == task_guid,
                 ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
@@ -99,7 +99,7 @@ class ExternalFormService:
 
     @classmethod
     def _find_request_or_raise(cls, reference_id: str, for_update: bool = False) -> ExternalFormRequestModel:
-        query = ExternalFormRequestModel.query.filter_by(reference_id=reference_id)
+        query = db.session.query(ExternalFormRequestModel).filter_by(reference_id=reference_id)
         if for_update:
             query = query.with_for_update()
         row = query.first()
@@ -135,9 +135,9 @@ class ExternalFormService:
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
 
         try:
-            from spiffworkflow_backend.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.human_task import HumanTaskModel
 
-            human_task = HumanTaskModel.query.filter_by(
+            human_task = db.session.query(HumanTaskModel).filter_by(
                 process_instance_id=row.process_instance_id, task_id=row.task_guid
             ).first()
             if human_task is not None:
@@ -190,7 +190,7 @@ class ExternalFormService:
         db.session.commit()
 
         cls._set_tenant_context(row.m8f_tenant_id)
-        recipient = UserModel.query.filter_by(id=row.recipient_user_id).first()
+        recipient = db.session.query(UserModel).filter_by(id=row.recipient_user_id).first()
         if recipient is None:
             cls._record_failure(row, "Recipient user no longer exists.")
             raise ApiError(
@@ -205,10 +205,25 @@ class ExternalFormService:
 
         try:
             # Imported at call time so house patches that rebind this name are honored.
-            from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
-            from spiffworkflow_backend.routes.process_api_blueprint import _task_submit_shared
+            from m8flow_backend.errors import ApiError as HumanTaskAlreadyCompletedError
+            from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            _task_submit_shared(row.process_instance_id, row.task_guid, form_data)
+            from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+            human_task_row = (
+                db.session.query(HumanTaskModel)
+                .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
+                .first()
+            )
+            if human_task_row is None:
+                raise ApiError("not_found", "Human task not found for this form", 404)
+            _task_submit_shared(
+                db.session,
+                tenant_id=row.m8f_tenant_id,
+                human_task_id=human_task_row.id,
+                user_id=recipient.id,
+                task_payload=form_data,
+            )
         except HumanTaskAlreadyCompletedError:
             # The underlying user task was already completed by another route (e.g. the
             # in-app task page) before this link was submitted. There is nothing left to
@@ -256,7 +271,7 @@ class ExternalFormService:
 
     @classmethod
     def _supersede_siblings(cls, row: ExternalFormRequestModel) -> int:
-        siblings = ExternalFormRequestModel.query.filter(
+        siblings = db.session.query(ExternalFormRequestModel).filter(
             ExternalFormRequestModel.process_instance_id == row.process_instance_id,
             ExternalFormRequestModel.task_guid == row.task_guid,
             ExternalFormRequestModel.id != row.id,

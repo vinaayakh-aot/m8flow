@@ -14,13 +14,13 @@ def _append_csv_value(existing: str | None, value: str) -> str:
 
 
 def _shared_realm_name() -> str:
-    from m8flow_backend.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 
     return shared_realm_name()
 
 
 def _master_realm_name() -> str:
-    from m8flow_backend.config import master_realm_name
+    from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 
     return master_realm_name()
 
@@ -69,7 +69,7 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
 
     template = configs[0]
     try:
-        from m8flow_backend.config import (
+        from m8flow_backend.integrations.auth.keycloak.config import (
             keycloak_public_issuer_base,
             keycloak_url,
             spoke_client_id,
@@ -102,12 +102,17 @@ def ensure_tenant_auth_config(flask_app, tenant: str) -> None:
         logger.info("auth_config_service: added auth config for tenant realm %s", tenant)
 
         try:
-            from m8flow_backend.services.keycloak_service import ensure_backend_redirect_uri_in_keycloak_client
+            from m8flow_backend.config import app_public_base_url
+            from m8flow_backend.integrations.auth import get_auth_provider
+            from m8flow_backend.integrations.auth.base.models import TenantRef
 
-            ensure_backend_redirect_uri_in_keycloak_client(tenant)
+            get_auth_provider().provisioning.ensure_client_redirect_uri(
+                TenantRef(alias=tenant),
+                redirect_uri=app_public_base_url() or "",
+            )
         except Exception as exc:
             logger.debug(
-                "auth_config_service: ensure_backend_redirect_uri_in_keycloak_client for %s: %s",
+                "auth_config_service: ensure_client_redirect_uri for %s: %s",
                 tenant,
                 exc,
             )
@@ -123,7 +128,7 @@ def ensure_master_auth_config(flask_app) -> None:
         return
 
     try:
-        from m8flow_backend.config import keycloak_url, master_client_secret, spoke_client_id
+        from m8flow_backend.integrations.auth.keycloak.config import keycloak_url, master_client_secret, spoke_client_id
 
         realm_uri = f"{keycloak_url().rstrip('/')}/realms/{master_realm}"
         template = copy.deepcopy(configs[0]) if configs else {}

@@ -5,7 +5,8 @@ from urllib.parse import quote
 
 from flask import Response, jsonify, request, g
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
@@ -112,7 +113,7 @@ def template_list():
     tenant_details_by_id: dict[str, dict[str, str]] = {}
     if tenant_ids:
         tenants = (
-            M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids))
+            db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id.in_(tenant_ids))
             .all()
         )
         tenant_details_by_id = {

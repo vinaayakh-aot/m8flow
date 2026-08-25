@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from flask import g, request
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
+from m8flow_backend import identity, workflow
 
 from m8flow_backend.config import nats_events_stream_name
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -127,6 +128,23 @@ def m8flow_trigger() -> tuple:
     provided_stream_name = nats_events_stream_name()
     # Forward the validated raw key to the consumer, preserving existing downstream behavior.
     raw_api_key = request.headers.get("X-M8FLOW-NATS-API-Key")
+
+    session = g.db_session
+    tenant = identity.ensure_tenant(session, tenant_id=tenant_id, slug=tenant_slug)
+    user = identity.ensure_user(
+        session,
+        username=username,
+        service="nats",
+        service_id=username,
+    )
+    identity.ensure_membership(session, user, tenant)
+    workflow.start(
+        session,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        process_model_identifier=process_identifier,
+        submission_metadata=data if isinstance(data, dict) else None,
+    )
 
     try:
         event_data = NatsService.publish_event(

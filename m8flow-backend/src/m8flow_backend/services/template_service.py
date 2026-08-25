@@ -14,13 +14,12 @@ from flask import g
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.models.process_model import ProcessModelInfo
-from spiffworkflow_backend.models.user import UserModel
-from spiffworkflow_backend.routes.process_api_blueprint import _commit_and_push_to_git
-from spiffworkflow_backend.services.process_model_service import ProcessModelService
-from spiffworkflow_backend.services.spec_file_service import SpecFileService
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
+from m8flow_bpmn_core.models.user import UserModel
+from m8flow_backend.catalog import _best_effort_git_commit as _commit_and_push_to_git
+from m8flow_backend import catalog as ProcessModelService
+from m8flow_backend import catalog as SpecFileService
 
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
@@ -68,7 +67,7 @@ class TemplateService:
     def _next_version(cls, template_key: str, tenant_id: str) -> str:
         """Get the next version for a template key within a specific tenant, using V-prefixed versions."""
         # Filter by both template_key AND tenant_id to scope versioning per tenant
-        query = TemplateModel.query.filter_by(
+        query = db.session.query(TemplateModel).filter_by(
             template_key=template_key,
             m8f_tenant_id=tenant_id
         )
@@ -161,7 +160,7 @@ class TemplateService:
         # tenant means the name is already taken, so reject instead of silently versioning.
         # Soft-deleted templates free up their name (is_deleted=False filter).
         if not explicit_version:
-            existing = TemplateModel.query.filter_by(
+            existing = db.session.query(TemplateModel).filter_by(
                 template_key=template_key,
                 m8f_tenant_id=tenant,
                 is_deleted=False,
@@ -251,7 +250,7 @@ class TemplateService:
         page: int = 1,
         per_page: int = 10,
     ) -> tuple[list[TemplateModel], dict]:
-        query = TemplateModel.query
+        query = db.session.query(TemplateModel)
         query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
         if deleted_only:
             query = query.filter(TemplateModel.is_deleted.is_(True))
@@ -363,7 +362,7 @@ class TemplateService:
         include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by key, scoped to tenant."""
-        query = TemplateModel.query.filter_by(template_key=template_key)
+        query = db.session.query(TemplateModel).filter_by(template_key=template_key)
         
         # Filter by tenant to ensure tenant isolation
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
@@ -394,7 +393,7 @@ class TemplateService:
         include_deleted: bool = False,
     ) -> TemplateModel | None:
         """Get template by database ID with visibility checks."""
-        query = TemplateModel.query.filter_by(id=template_id)
+        query = db.session.query(TemplateModel).filter_by(id=template_id)
         if not include_deleted:
             query = query.filter(TemplateModel.is_deleted.is_(False))
         template = query.first()
@@ -452,7 +451,7 @@ class TemplateService:
 
         # Look for existing draft version (unpublished, not deleted)
         existing_draft = (
-            TemplateModel.query
+            db.session.query(TemplateModel)
             .filter_by(
                 template_key=key,
                 m8f_tenant_id=tenant,
@@ -713,7 +712,7 @@ class TemplateService:
                 )
 
         # Remove provenance links per product decision.
-        ProcessModelTemplateModel.query.filter_by(source_template_id=template.id).delete(
+        db.session.query(ProcessModelTemplateModel).filter_by(source_template_id=template.id).delete(
             synchronize_session=False
         )
         db.session.delete(template)
@@ -1070,11 +1069,11 @@ class TemplateService:
             )
 
         # Create the process model
-        process_model_info = ProcessModelInfo(
-            id=full_process_model_id,
-            display_name=display_name,
-            description=description or "",
-        )
+        process_model_info = {
+            "id": full_process_model_id,
+            "display_name": display_name,
+            "description": description or "",
+        }
         ProcessModelService.add_process_model(process_model_info)
 
         # Copy template files to the process model.
@@ -1161,9 +1160,9 @@ class TemplateService:
 
         # Update process model with primary file info
         if primary_file_name:
-            process_model_info.primary_file_name = primary_file_name
+            process_model_info["primary_file_name"] = primary_file_name
         if primary_process_id:
-            process_model_info.primary_process_id = primary_process_id
+            process_model_info["primary_process_id"] = primary_process_id
         ProcessModelService.save_process_model(process_model_info)
 
         # Record the template provenance
@@ -1182,11 +1181,12 @@ class TemplateService:
 
         # Commit to git
         _commit_and_push_to_git(
-            f"User: {username} created process model {full_process_model_id} from template {template.template_key} v{template.version}"
+            ProcessModelService._model_file_path(tenant, full_process_model_id),
+            message=f"User: {username} created process model {full_process_model_id} from template {template.template_key} v{template.version}",
         )
 
         return {
-            "process_model": process_model_info.to_dict(),
+            "process_model": process_model_info,
             "template_info": provenance.serialized(),
         }
 
@@ -1335,7 +1335,7 @@ class TemplateService:
         """
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
 
-        query = ProcessModelTemplateModel.query.filter_by(
+        query = db.session.query(ProcessModelTemplateModel).filter_by(
             process_model_identifier=process_model_identifier
         )
 

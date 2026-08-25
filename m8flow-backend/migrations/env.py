@@ -1,56 +1,26 @@
+from __future__ import annotations
+
 import logging
 import os
-from pathlib import Path
-import sys
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Ensure the migrations/ folder is importable when running Alembic from repo root.
-MIGRATIONS_DIR = Path(__file__).resolve().parent
-if str(MIGRATIONS_DIR) not in sys.path:
-    sys.path.insert(0, str(MIGRATIONS_DIR))
-
-M8FLOW_BACKEND_DIR = MIGRATIONS_DIR.parent
-SRC_DIR = M8FLOW_BACKEND_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
-from m8flow_backend.services import model_override_patch
-
-model_override_patch.apply()
-
-import spiffworkflow_backend.load_database_models  # noqa: F401
-
-# m8flow's own models, which upstream's loader does not cover. Without them the
-# m8flow_tenant table is absent and every m8f_tenant_id foreign key fails to
-# resolve during autogenerate.
-import m8flow_backend.models._timestamps_bootstrap  # noqa: F401
-
-# Alembic does not go through m8flow_backend.startup.patch_registry, so m8flow's
-# additions to upstream's models are configured explicitly here, once the models
-# above are imported. Without it autogenerate sees upstream's bare schema and
-# proposes dropping every m8flow column.
-from m8flow_backend.models import tenant_schema
-
-tenant_schema.configure()
-
-from spiffworkflow_backend.models.db import db
+from m8flow_bpmn_core.models.base import Base as CoreBase
+from m8flow_backend.models.host_base import HostBase
+import m8flow_bpmn_core.models  # noqa: F401
+import m8flow_backend.models.native  # noqa: F401
 
 config = context.config
+target_metadata = [CoreBase.metadata, HostBase.metadata]
 
-# IMPORTANT: Do not call fileConfig(config.config_file_name).
-# Let the app's logging configuration (uvicorn-log.yaml) control formatting.
 for name in ("alembic", "alembic.runtime.migration"):
     lg = logging.getLogger(name)
     lg.handlers = []
     lg.propagate = True
 
-target_metadata = db.Model.metadata
-
 
 def get_url():
-    """Get the database URL from environment variables."""
     url = os.environ.get("M8FLOW_BACKEND_DATABASE_URI") or os.environ.get("M8FLOW_DATABASE_URI")
     if not url:
         raise RuntimeError("Set M8FLOW_BACKEND_DATABASE_URI or M8FLOW_DATABASE_URI for Alembic.")
@@ -58,21 +28,18 @@ def get_url():
 
 
 def run_migrations_online():
-    """Run migrations in 'online' mode."""
     connectable = engine_from_config(
         {"sqlalchemy.url": get_url()},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=target_metadata,
-            version_table="alembic_version_m8flow",  # <-- important
+            target_metadata=CoreBase.metadata,
+            version_table="alembic_version_m8flow",
             compare_type=True,
         )
-
         with context.begin_transaction():
             context.run_migrations()
 

@@ -8,6 +8,8 @@ from typing import Any
 from flask import g
 from flask import has_request_context
 
+from m8flow_backend.db import db
+
 from m8flow_backend.tenancy import TENANT_CLAIM
 from m8flow_backend.tenancy import get_context_tenant_id
 from m8flow_backend.tenancy import is_concrete_tenant_id
@@ -51,36 +53,25 @@ def organization_memberships_from_payload(
     if payload is None:
         return []
 
-    organization_claim = payload.get(ORGANIZATION_CLAIM)
-    if isinstance(organization_claim, Mapping):
-        return [
-            (alias.strip(), details)
-            for alias, details in organization_claim.items()
-            if isinstance(alias, str)
-            and alias.strip()
-            and isinstance(details, Mapping)
-        ]
+    from m8flow_backend.integrations.auth.keycloak.claims import memberships_from_organization_claim
 
-    if isinstance(organization_claim, list):
-        normalized_memberships: list[tuple[str, Mapping[str, Any]]] = []
-        for item in organization_claim:
-            if isinstance(item, str):
-                normalized_alias = item.strip()
-                if normalized_alias:
-                    normalized_memberships.append((normalized_alias, {}))
-                continue
-
-            if not isinstance(item, Mapping):
-                continue
-
-            alias_value = item.get("alias")
-            if isinstance(alias_value, str) and alias_value.strip():
-                details = item if isinstance(item, Mapping) else {}
-                normalized_memberships.append((alias_value.strip(), details))
-
-        return normalized_memberships
-
-    return []
+    memberships = memberships_from_organization_claim(dict(payload))
+    normalized: list[tuple[str, Mapping[str, Any]]] = []
+    for membership in memberships:
+        alias = membership.tenant_ref.alias or membership.tenant_ref.id
+        if not alias:
+            continue
+        normalized.append(
+            (
+                alias,
+                {
+                    "id": membership.tenant_ref.id,
+                    "name": membership.tenant_ref.name,
+                    "groups": membership.groups,
+                },
+            )
+        )
+    return normalized
 
 
 def single_organization_from_payload(
@@ -193,7 +184,7 @@ def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | Non
         from sqlalchemy import or_
 
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from spiffworkflow_backend.models.db import db
+        from flask import g
 
         filters = []
         for normalized_identifier in normalized_identifiers:
@@ -203,7 +194,7 @@ def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | Non
                     M8flowTenantModel.slug == normalized_identifier,
                 )
             )
-        tenant = db.session.query(M8flowTenantModel).filter(or_(*filters)).one_or_none()
+        tenant = g.db_session.query(M8flowTenantModel).filter(or_(*filters)).one_or_none()
     except Exception:
         tenant = None
 
@@ -246,10 +237,10 @@ def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
         from sqlalchemy import or_
 
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from spiffworkflow_backend.models.db import db
+        from flask import g
 
         tenant = (
-            db.session.query(M8flowTenantModel)
+            g.db_session.query(M8flowTenantModel)
             .filter(or_(M8flowTenantModel.id == effective_tenant_id, M8flowTenantModel.slug == effective_tenant_id))
             .one_or_none()
         )
@@ -404,10 +395,10 @@ def local_user_from_payload(payload: Mapping[str, Any] | None) -> Any | None:
         return None
 
     try:
-        from spiffworkflow_backend.models.user import UserModel
+        from m8flow_bpmn_core.models.user import UserModel
 
         return (
-            UserModel.query.filter(UserModel.service == issuer.strip())
+            db.session.query(UserModel).filter(UserModel.service == issuer.strip())
             .filter(UserModel.service_id == subject.strip())
             .first()
         )
@@ -434,8 +425,8 @@ def payload_user_belongs_to_tenant(
 def _shared_realm_service_issuer() -> str | None:
     """Return the configured shared-realm issuer URL used for local user rows."""
     try:
-        from m8flow_backend.config import keycloak_url
-        from m8flow_backend.config import shared_realm_name
+        from m8flow_backend.integrations.auth.keycloak.config import keycloak_url
+        from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 
         return f"{keycloak_url().rstrip('/')}/realms/{shared_realm_name().strip()}"
     except Exception:
@@ -477,7 +468,7 @@ def _refresh_local_shared_realm_user(
     shared_realm_service: str,
 ) -> Any:
     """Refresh a local user row from a shared-realm Keycloak member representation."""
-    from spiffworkflow_backend.models.db import db
+    from flask import g
 
     updated = False
 
@@ -504,8 +495,8 @@ def _refresh_local_shared_realm_user(
         updated = True
 
     if updated:
-        db.session.add(local_user)
-        db.session.commit()
+        g.db_session.add(local_user)
+        g.db_session.commit()
     return local_user
 
 
@@ -528,20 +519,19 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     if not shared_realm_service:
         return None
 
-    from spiffworkflow_backend.models.db import db
-    from spiffworkflow_backend.models.user import UserModel
-    from spiffworkflow_backend.services.user_service import UserService
-
+    from flask import g
+    from m8flow_bpmn_core.models.user import UserModel
+    
     exact_user = (
-        UserModel.query.filter(UserModel.service == shared_realm_service)
+        db.session.query(UserModel).filter(UserModel.service == shared_realm_service)
         .filter(UserModel.service_id == member_id)
         .first()
     )
     if exact_user is not None:
         if exact_user.username != member_username:
             exact_user.username = member_username
-            db.session.add(exact_user)
-            db.session.commit()
+            g.db_session.add(exact_user)
+            g.db_session.commit()
         return _refresh_local_shared_realm_user(
             exact_user,
             member,
@@ -549,7 +539,7 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
             shared_realm_service=shared_realm_service,
         )
 
-    same_username_matches = UserModel.query.filter(UserModel.username == member_username).all()
+    same_username_matches = db.session.query(UserModel).filter(UserModel.username == member_username).all()
     if same_username_matches:
         shared_realm = realm_from_service(shared_realm_service)
         same_username_matches.sort(
@@ -587,15 +577,17 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     if not isinstance(member_email, str):
         member_email = ""
     try:
-        return UserService.create_user(
-            member_username,
-            shared_realm_service,
-            member_id,
+        from m8flow_backend import identity
+
+        return identity.ensure_user(
+            g.db_session,
+            username=member_username,
+            service=shared_realm_service,
+            service_id=member_id,
             email=member_email,
-            display_name=_display_name_from_keycloak_member(member) or "",
         )
     except Exception:
-        fallback_matches = UserModel.query.filter(UserModel.username == member_username).all()
+        fallback_matches = db.session.query(UserModel).filter(UserModel.username == member_username).all()
         if not fallback_matches:
             raise
 
@@ -625,6 +617,15 @@ def upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     return _upsert_local_shared_realm_member(member)
 
 
+def _member_mapping_from_user(user: Any) -> dict[str, Any]:
+    return {
+        "id": user.subject,
+        "username": user.username,
+        "email": user.email,
+        "firstName": user.display_name or "",
+    }
+
+
 def _organization_id_for_tenant(tenant_id: str | None = None) -> str | None:
     """Resolve the active tenant to the Keycloak organization id in the shared realm."""
     effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
@@ -633,30 +634,22 @@ def _organization_id_for_tenant(tenant_id: str | None = None) -> str | None:
 
     tenant_slug = _tenant_slug_for_identifier(effective_tenant_id)
 
-    from m8flow_backend.services.keycloak_service import get_organization_by_alias
-    from m8flow_backend.services.keycloak_service import get_organization_by_id
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.errors import TenantNotFound
+    from m8flow_backend.integrations.auth.base.models import TenantRef
 
-    organization_candidates: list[tuple[str, str]] = []
-    if effective_tenant_id:
-        organization_candidates.append(("id", effective_tenant_id))
-    if tenant_slug:
-        organization_candidates.append(("alias", tenant_slug))
-
-    for lookup_kind, organization_identifier in organization_candidates:
-        if lookup_kind == "id":
-            organization = get_organization_by_id(organization_identifier)
-        else:
-            organization = get_organization_by_alias(organization_identifier)
-
-        if not isinstance(organization, Mapping):
-            continue
-
-        organization_id = organization.get("id")
-        if isinstance(organization_id, str):
-            normalized_organization_id = organization_id.strip()
-            if normalized_organization_id:
-                return normalized_organization_id
-
+    try:
+        tenant = get_auth_provider().directory_admin.get_tenant(
+            TenantRef(
+                id=effective_tenant_id or None,
+                alias=tenant_slug or None,
+            )
+        )
+    except TenantNotFound:
+        return None
+    tenant_id_value = tenant.ref.id
+    if isinstance(tenant_id_value, str) and tenant_id_value.strip():
+        return tenant_id_value.strip()
     return None
 
 
@@ -677,16 +670,21 @@ def _provision_shared_realm_user_for_tenant(username: str, tenant_id: str | None
         return None
 
     try:
-        from m8flow_backend.services.keycloak_service import get_organization_member_by_username
+        from m8flow_backend.integrations.auth import get_auth_provider
+        from m8flow_backend.integrations.auth.base.errors import UserNotFound
+        from m8flow_backend.integrations.auth.base.models import TenantRef
 
         organization_id = _organization_id_for_tenant(effective_tenant_id)
         if not organization_id:
             return None
 
-        member = get_organization_member_by_username(organization_id, normalized_username)
-        if not isinstance(member, Mapping):
-            return None
-        return _upsert_local_shared_realm_member(member)
+        user = get_auth_provider().directory_admin.get_member(
+            username=normalized_username,
+            tenant_ref=TenantRef(id=organization_id),
+        )
+        return _upsert_local_shared_realm_member(_member_mapping_from_user(user))
+    except UserNotFound:
+        return None
     except Exception:
         logger.exception(
             "shared_realm_user_provision_failed: username=%s tenant=%s",
@@ -717,9 +715,9 @@ def find_users_for_current_tenant_by_identifier(username: str, tenant_id: str | 
     workflow/user-group inputs as generic "identifiers", but email is no longer
     used as a local user key in the shared-realm architecture.
     """
-    from spiffworkflow_backend.models.user import UserModel
+    from m8flow_bpmn_core.models.user import UserModel
 
-    matches = UserModel.query.filter(UserModel.username == username).all()
+    matches = db.session.query(UserModel).filter(UserModel.username == username).all()
     tenant_matches = filter_users_for_current_tenant(matches, tenant_id=tenant_id)
     if tenant_matches:
         return tenant_matches
@@ -740,28 +738,33 @@ def find_users_for_current_tenant_by_username_prefix(
     tenant_id: str | None = None,
 ) -> list[Any]:
     """Find users by username prefix within the current tenant."""
-    from spiffworkflow_backend.models.user import UserModel
+    from m8flow_bpmn_core.models.user import UserModel
 
-    matches = UserModel.query.filter(UserModel.username.like(f"{username_prefix}%")).all()  # type: ignore[arg-type]
+    matches = db.session.query(UserModel).filter(UserModel.username.like(f"{username_prefix}%")).all()  # type: ignore[arg-type]
     tenant_matches = filter_users_for_current_tenant(matches, tenant_id=tenant_id)
     normalized_prefix = username_prefix.strip()
     if not normalized_prefix:
         return tenant_matches
 
     try:
-        from m8flow_backend.services.keycloak_service import search_organization_members
+        from m8flow_backend.integrations.auth import get_auth_provider
+        from m8flow_backend.integrations.auth.base.models import TenantRef
 
         organization_id = _organization_id_for_tenant(tenant_id)
         if organization_id:
             seen_user_ids = {getattr(user, "id", None) for user in tenant_matches}
             seen_usernames = {getattr(user, "username", None) for user in tenant_matches}
 
-            for member in search_organization_members(organization_id, normalized_prefix, exact=False):
-                member_username = member.get("username")
+            for user in get_auth_provider().directory_admin.list_members(
+                tenant_ref=TenantRef(id=organization_id),
+                query=normalized_prefix,
+                limit=100,
+            ):
+                member_username = user.username
                 if not isinstance(member_username, str) or not member_username.startswith(normalized_prefix):
                     continue
 
-                local_user = _upsert_local_shared_realm_member(member)
+                local_user = _upsert_local_shared_realm_member(_member_mapping_from_user(user))
                 if local_user is None:
                     continue
 
@@ -859,10 +862,10 @@ def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
         from sqlalchemy import or_
 
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from spiffworkflow_backend.models.db import db
+        from flask import g
 
         tenant = (
-            db.session.query(M8flowTenantModel)
+            g.db_session.query(M8flowTenantModel)
             .filter(
                 or_(
                     M8flowTenantModel.id == effective_tenant_identifier,

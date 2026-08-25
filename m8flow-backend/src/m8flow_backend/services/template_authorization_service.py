@@ -3,8 +3,8 @@ from __future__ import annotations
 from flask import g
 from sqlalchemy import or_, and_
 
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
-from spiffworkflow_backend.models.user import UserModel
+from m8flow_backend.authorization import user_has_permission
+from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 
@@ -45,7 +45,7 @@ class TemplateAuthorizationService:
         if user is None:
             return False
         try:
-            return AuthorizationService.user_has_permission(
+            return user_has_permission(
                 user, permission, "/m8flow/admin/templates"
             )
         except Exception:
@@ -100,7 +100,7 @@ class TemplateAuthorizationService:
 
         # Permission check (Spiff permissions are CRUD: create/read/update/delete).
         try:
-            if AuthorizationService.user_has_permission(user, "update",  "/m8flow/templates"):
+            if user_has_permission(user, "update",  "/m8flow/templates"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates

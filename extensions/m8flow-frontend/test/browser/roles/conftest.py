@@ -22,7 +22,7 @@ from helpers.waiters import wait_for_app_ready
 
 
 def _role_session_page(browser, base_url: str, *, username: str, password: str):
-    """Yield one logged-in page per test module."""
+    """Yield one logged-in page for the full pytest session."""
     ctx = browser.new_context(
         base_url=base_url,
         viewport=VIEWPORT,
@@ -50,9 +50,9 @@ def _role_session_page(browser, base_url: str, *, username: str, password: str):
             ctx.close()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def editor_page(browser, base_url) -> Page:
-    """Module-scoped editor page for role tests."""
+    """Session-scoped editor page for all role tests."""
     creds = ROLE_USERS["editor"]
     yield from _role_session_page(
         browser,
@@ -62,9 +62,9 @@ def editor_page(browser, base_url) -> Page:
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def viewer_page(browser, base_url) -> Page:
-    """Module-scoped viewer page for role tests."""
+    """Session-scoped viewer page for all role tests."""
     creds = ROLE_USERS["viewer"]
     yield from _role_session_page(
         browser,
@@ -74,9 +74,9 @@ def viewer_page(browser, base_url) -> Page:
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def reviewer_page(browser, base_url) -> Page:
-    """Module-scoped reviewer page for role tests."""
+    """Session-scoped reviewer page for all role tests."""
     creds = ROLE_USERS["reviewer"]
     yield from _role_session_page(
         browser,
@@ -86,12 +86,12 @@ def reviewer_page(browser, base_url) -> Page:
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def super_admin_page(browser, base_url) -> Page:
-    """Module-scoped super-admin page for role tests (Platform Sign In).
+    """Session-scoped super-admin page for all role tests (Platform Sign In).
 
     Overrides the root fixture so the roles suite owns every role session and
-    keeps them isolated per file. Logs in via the platform-admin flow.
+    keeps them all session-scoped. Logs in via the platform-admin flow.
     """
     ctx = browser.new_context(
         base_url=base_url,
