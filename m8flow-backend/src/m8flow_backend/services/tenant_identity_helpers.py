@@ -395,12 +395,10 @@ def local_user_from_payload(payload: Mapping[str, Any] | None) -> Any | None:
         return None
 
     try:
-        from m8flow_bpmn_core.models.user import UserModel
+        from m8flow_backend import identity
 
-        return (
-            db.session.query(UserModel).filter(UserModel.service == issuer.strip())
-            .filter(UserModel.service_id == subject.strip())
-            .first()
+        return identity.find_user_by_service_identity(
+            db.session, service=issuer.strip(), service_id=subject.strip()
         )
     except Exception:
         return None
@@ -520,12 +518,10 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
         return None
 
     from flask import g
-    from m8flow_bpmn_core.models.user import UserModel
-    
-    exact_user = (
-        db.session.query(UserModel).filter(UserModel.service == shared_realm_service)
-        .filter(UserModel.service_id == member_id)
-        .first()
+    from m8flow_backend import identity
+
+    exact_user = identity.find_user_by_service_identity(
+        db.session, service=shared_realm_service, service_id=member_id
     )
     if exact_user is not None:
         if exact_user.username != member_username:
@@ -539,7 +535,7 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
             shared_realm_service=shared_realm_service,
         )
 
-    same_username_matches = db.session.query(UserModel).filter(UserModel.username == member_username).all()
+    same_username_matches = identity.find_users_by_username(db.session, member_username)
     if same_username_matches:
         shared_realm = realm_from_service(shared_realm_service)
         same_username_matches.sort(
@@ -577,8 +573,6 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     if not isinstance(member_email, str):
         member_email = ""
     try:
-        from m8flow_backend import identity
-
         return identity.ensure_user(
             g.db_session,
             username=member_username,
@@ -587,7 +581,7 @@ def _upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
             email=member_email,
         )
     except Exception:
-        fallback_matches = db.session.query(UserModel).filter(UserModel.username == member_username).all()
+        fallback_matches = identity.find_users_by_username(db.session, member_username)
         if not fallback_matches:
             raise
 
@@ -715,9 +709,9 @@ def find_users_for_current_tenant_by_identifier(username: str, tenant_id: str | 
     workflow/user-group inputs as generic "identifiers", but email is no longer
     used as a local user key in the shared-realm architecture.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_backend import identity
 
-    matches = db.session.query(UserModel).filter(UserModel.username == username).all()
+    matches = identity.find_users_by_username(db.session, username)
     tenant_matches = filter_users_for_current_tenant(matches, tenant_id=tenant_id)
     if tenant_matches:
         return tenant_matches
@@ -738,9 +732,9 @@ def find_users_for_current_tenant_by_username_prefix(
     tenant_id: str | None = None,
 ) -> list[Any]:
     """Find users by username prefix within the current tenant."""
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_backend import identity
 
-    matches = db.session.query(UserModel).filter(UserModel.username.like(f"{username_prefix}%")).all()  # type: ignore[arg-type]
+    matches = identity.find_users_by_username_prefix(db.session, username_prefix)
     tenant_matches = filter_users_for_current_tenant(matches, tenant_id=tenant_id)
     normalized_prefix = username_prefix.strip()
     if not normalized_prefix:

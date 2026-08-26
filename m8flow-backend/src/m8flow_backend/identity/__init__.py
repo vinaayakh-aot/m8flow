@@ -69,6 +69,25 @@ def ensure_tenant(
     return tenant
 
 
+def find_user_by_service_identity(session: Session, *, service: str, service_id: str) -> UserModel | None:
+    """The one place `(service, service_id)` -> UserModel lookups happen."""
+    return session.scalars(
+        select(UserModel).where(UserModel.service == service, UserModel.service_id == service_id)
+    ).first()
+
+
+def find_users_by_username(session: Session, username: str) -> list[UserModel]:
+    """The one place exact-username -> UserModel lookups happen."""
+    return list(session.scalars(select(UserModel).where(UserModel.username == username)).all())
+
+
+def find_users_by_username_prefix(session: Session, username_prefix: str) -> list[UserModel]:
+    """The one place username-prefix -> UserModel lookups happen."""
+    return list(
+        session.scalars(select(UserModel).where(UserModel.username.like(f"{username_prefix}%"))).all()
+    )
+
+
 def ensure_user(
     session: Session,
     *,
@@ -77,9 +96,7 @@ def ensure_user(
     service_id: str,
     email: str | None = None,
 ) -> UserModel:
-    user = session.scalars(
-        select(UserModel).where(UserModel.service == service, UserModel.service_id == service_id)
-    ).first()
+    user = find_user_by_service_identity(session, service=service, service_id=service_id)
     if user is not None:
         return user
     if username == TIMER_SYSTEM_USERNAME:
