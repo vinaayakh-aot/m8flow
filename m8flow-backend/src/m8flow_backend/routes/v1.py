@@ -15,6 +15,7 @@ from m8flow_backend.authorization import allow_uri
 from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME, get_healthy_response, is_super_admin_request
 
 
@@ -155,30 +156,37 @@ def register_v1_routes(app: Flask) -> None:
         secrets.put_secret(session, tenant_id=tenant_id, key=key, value=body["value"])
         return jsonify({"key": key})
 
-    @app.post("/v1.0/login")
-    def login():
-        session = g.db_session
-        body = request.get_json(force=True)
-        tenant_id = body.get("tenant_id") or request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
-        if not tenant_id:
-            raise ApiError("tenant_required", "tenant_id is required", 400)
-        user = on_login_or_token_enrichment(
-            session,
-            username=body["username"],
-            service=body.get("service") or "local",
-            service_id=body.get("service_id") or body["username"],
-            email=body.get("email"),
-            active_tenant_id=tenant_id,
-        )
-        groups = body.get("groups") or []
-        identity.sync_groups(session, user=user, group_identifiers=groups, tenant_id=tenant_id)
-        token = encode_auth_token(user=user)
-        response = jsonify({"access_token": token, "token_type": "Bearer"})
-        set_selected_tenant_cookie(response, tenant_id)
-        clear_dead_auth_realm_cookie(response)
-        _ = authentication_identifier_for_request()
-        _ = master_realm_name()
-        return response
+    if is_unit_testing_environment():
+        # Test-only: mints a token straight from client-supplied credentials, with no
+        # Keycloak round-trip and no verification of the caller's claimed groups (see
+        # routes/login_controller.py's module docstring for the real, browser-redirect
+        # login flow). Registered only under unit_testing/testing so it can never be
+        # reached — and never grants super-admin from an unauthenticated request — in
+        # a real environment.
+        @app.post("/v1.0/login")
+        def login():
+            session = g.db_session
+            body = request.get_json(force=True)
+            tenant_id = body.get("tenant_id") or request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
+            if not tenant_id:
+                raise ApiError("tenant_required", "tenant_id is required", 400)
+            user = on_login_or_token_enrichment(
+                session,
+                username=body["username"],
+                service=body.get("service") or "local",
+                service_id=body.get("service_id") or body["username"],
+                email=body.get("email"),
+                active_tenant_id=tenant_id,
+            )
+            groups = body.get("groups") or []
+            identity.sync_groups(session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+            token = encode_auth_token(user=user)
+            response = jsonify({"access_token": token, "token_type": "Bearer"})
+            set_selected_tenant_cookie(response, tenant_id)
+            clear_dead_auth_realm_cookie(response)
+            _ = authentication_identifier_for_request()
+            _ = master_realm_name()
+            return response
 
     # Browser-redirect Keycloak login/logout (distinct from the JSON POST /v1.0/login
     # above): a full-page GET on the same path, dispatched separately by method.

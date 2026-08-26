@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import sqlalchemy as sa
@@ -11,16 +10,14 @@ from m8flow_backend.integrations.auth.keycloak.config import default_organizatio
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.models import TenantRef
 from m8flow_backend.db import db
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.tenancy import create_tenant_if_not_exists
 
 logger = logging.getLogger(__name__)
 
-_SKIP_ENVIRONMENTS = {"unit_testing", "testing"}
-
 
 def _should_skip_shared_realm_reconciliation() -> bool:
-    env = (os.environ.get("SPIFFWORKFLOW_BACKEND_ENV") or "").strip().lower()
-    return env in _SKIP_ENVIRONMENTS
+    return is_unit_testing_environment()
 
 
 def _tenant_scoped_table_names(engine: Any) -> list[str]:
