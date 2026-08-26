@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import case, delete, exists, func, or_, select
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core import api
@@ -15,12 +15,6 @@ from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
-from m8flow_backend.models.native import (
-    ExternalFormRequestModel,
-    ProcessInstanceFileDataModel,
-    TaskDraftDataModel,
-    TaskInstructionsForEndUserModel,
-)
 from m8flow_backend.tenancy import is_super_admin_request
 
 
@@ -714,20 +708,6 @@ def run_due(
         )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
-
-
-def cleanup_process_instance_sidecars(session: Session, *, process_instance_id: int) -> None:
-    """These sidecar models store process_instance_id as a plain integer
-    column, not a ForeignKey -- there's no DB-level constraint enforcing
-    cleanup order today. Nothing in this repo calls this function yet.
-    """
-    for model in (
-        ProcessInstanceFileDataModel,
-        TaskDraftDataModel,
-        TaskInstructionsForEndUserModel,
-        ExternalFormRequestModel,
-    ):
-        session.execute(delete(model).where(model.process_instance_id == process_instance_id))
 
 
 def _latest_definition_id(

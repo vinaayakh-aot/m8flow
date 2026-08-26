@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_backend.models.native import (
-    ExternalFormRequestModel,
     TaskDraftDataModel,
     TaskInstructionsForEndUserModel,
     TypeaheadModel,
@@ -93,28 +92,6 @@ def store_end_user_instructions(
     row = TaskInstructionsForEndUserModel(
         process_instance_id=process_instance_id,
         instruction=instruction,
-        m8f_tenant_id=tenant_id,
-    )
-    session.add(row)
-    return row
-
-
-def notify_external_form_on_materialization(
-    session: Session,
-    *,
-    tenant_id: str,
-    process_instance_id: int,
-    human_task_id: int,
-    email: str | None,
-) -> ExternalFormRequestModel | None:
-    """Re-homed from ProcessInstanceProcessor.save onto Human Task materialization."""
-    if not email:
-        return None
-    row = ExternalFormRequestModel(
-        token=f"{process_instance_id}-{human_task_id}",
-        process_instance_id=process_instance_id,
-        human_task_id=human_task_id,
-        email=email,
         m8f_tenant_id=tenant_id,
     )
     session.add(row)

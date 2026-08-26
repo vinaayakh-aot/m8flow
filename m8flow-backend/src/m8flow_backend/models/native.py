@@ -144,18 +144,6 @@ class ProcessModelTemplateModel(HostBase):
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
 
-class ExternalFormRequestModel(HostBase):
-    __tablename__ = "m8flow_external_form_request"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    process_instance_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    human_task_id: Mapped[int | None] = mapped_column(Integer, index=True)
-    email: Mapped[str | None] = mapped_column(String(255))
-    m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
 class M8flowTenantInvitationModel(HostBase):
     __tablename__ = "m8flow_tenant_invitation"
 
