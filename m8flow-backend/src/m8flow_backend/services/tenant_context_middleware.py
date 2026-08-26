@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/services/tenant_context_middleware.py
 from __future__ import annotations
 
 import ast
@@ -138,11 +137,16 @@ def resolve_request_tenant() -> None:
     must call set_canonical_db(db) in their app setup.
 
     Priority:
-      1) JWT claim (m8flow_tenant_id)
-      2) Request tenant header (x-m8flow-tenant-id), validated against the authenticated user
-      3) ContextVar tenant id (e.g. ASGI middleware)
-      4) Selected tenant cookie for shared-realm requests
-      5) No implicit default tenant fallback; exempt/public requests remain global/public.
+      1) For shared-realm, multi-organization tokens: the m8flow_selected_tenant cookie
+         overrides the JWT tenant claim, provided the cookie's tenant matches one of the
+         token's organization memberships (see
+         _selected_tenant_override_for_shared_multi_org_token). This lets a user switch
+         their active tenant without re-authenticating.
+      2) JWT claim (m8flow_tenant_id), when no such cookie override applies
+      3) Request tenant header (x-m8flow-tenant-id), validated against the authenticated user
+      4) ContextVar tenant id (e.g. ASGI middleware)
+      5) Selected tenant cookie for shared-realm requests (non-multi-org / no JWT claim case)
+      6) No implicit default tenant fallback; exempt/public requests remain global/public.
 
     Validation:
       - If g already has a concrete tenant and the request resolves a different tenant -> tenant_override_forbidden
@@ -253,7 +257,7 @@ def resolve_request_tenant() -> None:
             status_code=400,
         )
 
-    # Validate tenant exists in DB (your tests expect this).
+    # Validate tenant exists in DB (tests assert this behavior).
     # Return 503 when DB is not bound so we never proceed with unvalidated tenant id.
     # Flask-SQLAlchemy may raise RuntimeError when model not bound; message check for backward compatibility.
     # InvalidRequestError used when applicable (SQLAlchemy mapping/registry errors).

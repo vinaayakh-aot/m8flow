@@ -199,8 +199,13 @@ def count_active_process_instances(session: Session, *, tenant_id: str | None = 
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # unlike list_instances_for_super_admin's own is_super_admin_request()
     # guard, deliberately not re-checked here (see home_controller.py's
-    # _is_super_admin: that check is dead code today, see
-    # .scratch/m8flow-designer-home/assets/pre-existing-issues.md #2).
+    # _is_super_admin: is_super_admin_request() reads a `g` flag that is
+    # only ever set inside resolve_request_tenant()
+    # (services/tenant_context_middleware.py), and app.py never calls
+    # register_tenant_resolution_after_auth() (startup/tenant_resolution.py)
+    # to wire that resolver in as a before_request hook -- so the flag is
+    # never set and is_super_admin_request() returns False unconditionally
+    # for every request today).
     stmt = select(func.count()).select_from(ProcessInstanceModel).where(
         ProcessInstanceModel.status.in_(ProcessInstanceModel.active_statuses())
     )
@@ -692,8 +697,17 @@ def run_due(
     worker_id: str = "inline",
     tenant_id: str | None = None,
 ) -> int:
-    """Poll due scheduler jobs. Start/timer/retry may persist recovery on a second Session;
-    CompleteTaskCommand does not. This host method does not reimplement that recovery commit.
+    """Poll due scheduler jobs. The timer-start, intermediate-timer, and
+    process-retry job paths handled here call into m8flow_bpmn_core
+    (services/workflow_runtime.py) with autonomous_failure_state_persistence
+    enabled: on a ServiceTaskExecutionError, core opens its own
+    `autonomous_session = Session(bind=engine, ...)` bound to the same
+    engine as the session passed in here and commits the process instance's
+    error/recovery state on that independent session, regardless of what
+    happens to `session` afterward. CompleteTaskCommand does not use this
+    mechanism. Callers of run_due don't need extra commit/session handling
+    for that recovery state -- core already commits it internally for the
+    job types processed here.
     """
     try:
         return api.run_due_scheduler_jobs(
@@ -708,7 +722,10 @@ def run_due(
 
 
 def cleanup_process_instance_sidecars(session: Session, *, process_instance_id: int) -> None:
-    """Sidecar FKs are ON DELETE RESTRICT — delete these before removing the instance."""
+    """These sidecar models store process_instance_id as a plain integer
+    column, not a ForeignKey -- there's no DB-level constraint enforcing
+    cleanup order today. Nothing in this repo calls this function yet.
+    """
     for model in (
         ProcessInstanceFileDataModel,
         TaskDraftDataModel,

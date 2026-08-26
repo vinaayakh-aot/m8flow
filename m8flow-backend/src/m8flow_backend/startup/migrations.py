@@ -1,4 +1,3 @@
-# m8flow_backend/startup/migrations.py
 import importlib.util
 import logging
 import sys
@@ -22,21 +21,24 @@ def _ensure_migrations_importable() -> None:
         sys.path.insert(0, migrations_dir_str)
 
 
+def _load_migrate_module_directly() -> Callable[[], None]:
+    migrations_dir = _migrations_dir()
+    migrate_path = migrations_dir / "migrate.py"
+    spec = importlib.util.spec_from_file_location("m8flow_migrate", migrate_path)
+    if spec is None or spec.loader is None:
+        raise
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.upgrade_if_enabled
+
+
 def load_migration_runner() -> Callable[[], None]:
     _ensure_migrations_importable()
     try:
         from migrate import upgrade_if_enabled
         return upgrade_if_enabled
     except ModuleNotFoundError:
-        # fallback: load migrate.py directly
-        migrations_dir = _migrations_dir()
-        migrate_path = migrations_dir / "migrate.py"
-        spec = importlib.util.spec_from_file_location("m8flow_migrate", migrate_path)
-        if spec is None or spec.loader is None:
-            raise
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.upgrade_if_enabled
+        return _load_migrate_module_directly()
 
 
 def run_migrations_if_enabled(flask_app, upgrade_fn: Callable[[], None]) -> None:

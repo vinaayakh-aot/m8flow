@@ -73,10 +73,8 @@ def require_authorized_user(
     if allow_uri(user, action, request.path, session=getattr(g, "db_session", None)):
         return user
 
-    # Fallback: check group membership directly.
-    # SpiffWorkflow permissions for tenant management may not be in the DB when the
-    # user's login deferred the group-sync step (multi-org token) or the YAML import
-    # has not run yet for this login cycle.
+    # Fallback: check group membership directly (see _user_is_tenant_admin_or_super_admin
+    # docstring for why permissions may not be in the DB yet).
     if _user_is_tenant_admin_or_super_admin(user, tenant_id=tenant_id):
         return user
 

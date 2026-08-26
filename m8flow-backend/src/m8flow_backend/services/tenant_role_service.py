@@ -739,8 +739,10 @@ def _ensure_tenant_yaml_permissions_and_everybody_membership(user: Any, tenant_i
     `assign_tenant_role` only writes the requested role group (e.g. ":editor").
     Without this step the tenant's ":everybody" group is never created and the user
     cannot reach permissions like /onboarding, /extensions, /active-users, etc. that
-    SpiffWorkflow grants to every signed-in user.  Run the YAML import inside the
-    target tenant's permission scope so groups and permissions are tenant-qualified.
+    SpiffWorkflow grants to every signed-in user. Tenant-qualification comes solely
+    from the explicit `tenant_id` argument passed to `identity.import_yaml()` below;
+    `_permission_scope_tenant` is `contextlib.nullcontext` (a no-op) and provides no
+    scoping of its own.
     """
     with _permission_scope_tenant():
         identity.import_yaml(tenant_id=tenant_id)

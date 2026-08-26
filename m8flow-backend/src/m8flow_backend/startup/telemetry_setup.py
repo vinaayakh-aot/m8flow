@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/startup/telemetry_setup.py
 """Wire m8flow-backend into the shared OTel bootstrap (m8flow_telemetry).
 
 Same call shape as m8flow-connector-proxy and m8flow-nats-consumer: opt-in via

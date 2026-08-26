@@ -39,7 +39,7 @@ class TemplateAuthorizationService:
     def has_admin_permission(cls, user: UserModel | None, permission: str) -> bool:
         """Check if user has admin-level permission on templates via RBAC.
 
-        Delegates to AuthorizationService (backing /v1.0/permissions-check)
+        Delegates to `user_has_permission()` (m8flow_backend.authorization)
         instead of inspecting group membership directly.
         """
         if user is None:
@@ -67,15 +67,12 @@ class TemplateAuthorizationService:
         if cls._is_super_admin_request(user=user):
             return True
 
-        # PUBLIC: anyone with auth context
         if template.is_public():
             return True
 
-        # TENANT: must match tenant
         if template.is_tenant_visible():
             return tenant_id is not None and tenant_id == template.m8f_tenant_id
 
-        # PRIVATE: must be creator and same tenant
         if template.is_private():
             return (
                 user is not None

@@ -1,7 +1,6 @@
 """Keycloak organization-group Admin API as neutral groups + role mapping.
 
-Ticket 06. Service wrappers may still consume representations until ticket 09;
-the provider returns Group / User / Membership.
+The provider returns Group / User / Membership.
 """
 from __future__ import annotations
 

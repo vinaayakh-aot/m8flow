@@ -74,7 +74,12 @@ def _store_verified_payload(payload: dict[str, Any], *, verified_claims) -> None
 
 
 def authentication_identifier_for_request() -> str:
-    """Prefer original OpenID config before the (dead) realm-hint cookie."""
+    """Both the "original" branch and the realm-hint cookie are effectively
+    unused today: `g.original_authentication_identifier` is never assigned
+    anywhere in this codebase (only read here), and the `m8flow_auth_realm`
+    cookie is dead (see clear_dead_auth_realm_cookie). This function
+    currently always falls through to shared_realm_name().
+    """
     original = getattr(g, "original_authentication_identifier", None)
     if isinstance(original, str) and original.strip():
         return original.strip()

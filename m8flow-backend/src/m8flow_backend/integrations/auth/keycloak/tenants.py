@@ -1,8 +1,7 @@
 """Keycloak Organizations Admin API as neutral tenants + memberships.
 
-Ticket 05. Group/role mutations live in ``groups.py`` (ticket 06). Service
-wrappers may still consume representations until ticket 09; the provider
-returns Tenant / User / Membership.
+Group/role mutations live in ``groups.py``. The provider returns
+Tenant / User / Membership.
 """
 from __future__ import annotations
 

@@ -1,8 +1,7 @@
 """Keycloak Admin API directory: realm users.
 
-Ticket 04. Tenant/membership HTTP lives in ``tenants.py`` (ticket 05). The
-service layer may still consume representations until ticket 09; the provider
-only returns neutral objects.
+Tenant/membership HTTP lives in ``tenants.py``. The provider only returns
+neutral objects.
 """
 from __future__ import annotations
 

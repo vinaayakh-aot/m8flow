@@ -1,7 +1,7 @@
 """Keycloak realm provisioning: template import, mappers, client redirect URIs.
 
-Ticket 07. Spoke-realm create/delete/update plus protocol-mapper reconciliation
-live here. The provider exposes them through ``SupportsProvisioning``.
+Spoke-realm create/delete/update plus protocol-mapper reconciliation live
+here. The provider exposes them through ``SupportsProvisioning``.
 """
 from __future__ import annotations
 
@@ -88,7 +88,6 @@ def realm_exists(realm: str) -> bool:
     realm = str(realm).strip()
     try:
         base_url = keycloak_url()
-        # Public endpoint: no admin token required
         discovery_url = f"{base_url}/realms/{realm}/.well-known/openid-configuration"
         r = requests.get(discovery_url, timeout=30)
         logger.debug(

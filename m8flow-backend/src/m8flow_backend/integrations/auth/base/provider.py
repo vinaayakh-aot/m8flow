@@ -1,7 +1,7 @@
 """Abstract ``AuthProvider``: session/verify + directory read, plus typed capability accessors.
 
-Method bodies raise ``NotImplementedError`` until later tickets fill them in.
-Signatures may still be refined as each operation cluster moves (tickets 03–07).
+Method bodies raise ``NotImplementedError`` by default; concrete providers
+(e.g. ``KeycloakAuthProvider``) override every method with a real implementation.
 """
 from __future__ import annotations
 

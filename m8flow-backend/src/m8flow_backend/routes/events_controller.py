@@ -72,14 +72,14 @@ def _process_identifier_from_request(body: dict) -> str:
 @handle_api_errors
 def m8flow_trigger() -> tuple:
     """
-    POST /api/events/m8flow-trigger
+    POST /v1.0/m8flow/events/m8flow-trigger
 
     Receive an external trigger event, publish to NATS, and acknowledge.
 
     Authentication / identity
     -------------------------
     X-M8FLOW-NATS-API-Key : str
-        A valid tenant API key generated via POST /api/nats-tokens. The key alone
+        A valid tenant API key generated via POST /v1.0/m8flow/nats-tokens. The key alone
         authenticates the caller: the tenant, the owning identity, and the key's
         scope are all derived from it. No JWT is required.
 
@@ -171,10 +171,8 @@ def m8flow_trigger() -> tuple:
     event_data.pop("tenant_slug", None)
     event_data.pop("username", None)
 
-    # Process instance is returned separately
     process_instance_details = event_data.pop("process_instance", None)
 
-    # Check if the consumer replied with an error
     if isinstance(process_instance_details, dict) and process_instance_details.get("error"):
         return success_response(
             {

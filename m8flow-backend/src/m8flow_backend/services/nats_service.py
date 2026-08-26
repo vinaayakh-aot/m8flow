@@ -62,7 +62,6 @@ class NatsService:
         subject = f"m8flow.events.{tenant_slug}.trigger"
         event_id = str(uuid.uuid4())
 
-        # Create a unique inbox subject for the consumer to reply to
         reply_to = f"_INBOX.m8flow.{event_id}"
         reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
 
@@ -111,7 +110,6 @@ class NatsService:
                 )
             logger.info("Published to NATS: subject=%s stream=%s seq=%s", subject, ack.stream, ack.seq)
 
-            # Wait for the consumer to reply with process instance details
             try:
                 raw_reply = await asyncio.wait_for(reply_future, timeout=reply_timeout)
                 instance_details = json.loads(raw_reply.decode("utf-8"))

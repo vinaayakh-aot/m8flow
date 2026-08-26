@@ -1,4 +1,4 @@
-"""Shim: tenant-role helpers live on the auth seam after ticket 06.
+"""Shim: tenant-role helpers live on the auth seam.
 
 The Keycloak group-name table is in ``integrations.auth.keycloak.role_mapping``.
 Neutral role names are in ``integrations.auth.base.roles``.

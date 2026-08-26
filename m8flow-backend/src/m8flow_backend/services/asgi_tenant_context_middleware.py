@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/services/asgi_tenant_context_middleware.py
 from __future__ import annotations
 
 import base64

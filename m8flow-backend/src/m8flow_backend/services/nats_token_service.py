@@ -17,9 +17,7 @@ LOGGER = logging.getLogger("m8flow.nats.token_service")
 # Raw key format: ``m8f_<id>.<secret>``.
 KEY_PREFIX = "m8f_"
 # Minimum interval between ``last_used_at_in_seconds`` writes for a single key.
-# Auth happens on every webhook call; without throttling that is one DB write per
-# request. Stamping at most once per window keeps last-used useful while avoiding
-# write amplification under load.
+# See the throttling check in ``authenticate_key`` for the full rationale.
 LAST_USED_STAMP_THROTTLE_SECONDS = 60
 # The delimiter separating the public key id from the secret. It is deliberately
 # outside the base64url alphabet used by ``secrets.token_urlsafe``/``token_hex``,

@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/observability/request_context.py
 """Per-request correlation id, propagated the same way tenant id is.
 
 Mirrors ``m8flow_backend.tenancy``'s ContextVar + ``flask.g`` + logging.Filter

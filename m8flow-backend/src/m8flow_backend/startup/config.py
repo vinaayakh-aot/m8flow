@@ -1,4 +1,3 @@
-# extensions/startup/config.py
 import os
 import logging
 

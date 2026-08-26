@@ -9,7 +9,6 @@ import copy
 import json
 import logging
 import os
-import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -121,21 +120,6 @@ def default_organizational_group_names() -> tuple[str, ...]:
         group_names.append(group_name)
 
     return tuple(group_names)
-
-
-def _load_default_organization_role_group_names() -> tuple[str, ...]:
-    """Return a stable exported tuple for modules that import role-group names at import time."""
-    try:
-        group_names = default_organizational_group_names()
-        if group_names:
-            return group_names
-    except Exception as exc:  # pragma: no cover - defensive startup fallback
-        logger.warning("Falling back to built-in organization role groups: %s", exc)
-    return ("Approvers", "Designers", "Administrators", "Support", "Submitters", "Viewers")
-
-
-# Backward-compatible export consumed by route/service patches at import time.
-DEFAULT_ORGANIZATION_ROLE_GROUP_NAMES = _load_default_organization_role_group_names()
 
 
 def _normalized_keycloak_group_path(group: dict[str, Any], parent_path: str = "") -> str:
@@ -388,25 +372,103 @@ def _apply_runtime_client_urls(
     client["attributes"] = attrs
 
 
-def _regenerate_all_ids(obj: Any, id_map: dict[str, str] | None = None) -> dict[str, str]:
-    """
-    Recursively replace all 'id' values with new UUIDs, maintaining internal consistency.
-    Returns a mapping of old_id -> new_id so references can be updated.
-    """
-    if id_map is None:
-        id_map = {}
-    if isinstance(obj, dict):
-        if "id" in obj and isinstance(obj["id"], str):
-            old_id = obj["id"]
-            if old_id not in id_map:
-                id_map[old_id] = str(uuid.uuid4())
-            obj["id"] = id_map[old_id]
-        for v in obj.values():
-            _regenerate_all_ids(v, id_map)
-    elif isinstance(obj, list):
-        for item in obj:
-            _regenerate_all_ids(item, id_map)
-    return id_map
+def _retarget_realm_roles(
+    payload: dict[str, Any],
+    *,
+    template_name: str,
+    realm_id: str,
+    default_role_name_old: str,
+    default_role_name_new: str,
+) -> None:
+    """Rewrite each realm role's containerId (realm id) and default role name."""
+    roles = payload.get("roles") or {}
+    for role in roles.get("realm") or []:
+        if role.get("containerId") == template_name:
+            role["containerId"] = realm_id
+        if role.get("name") == default_role_name_old:
+            role["name"] = default_role_name_new
+
+
+def _rename_default_role(
+    payload: dict[str, Any],
+    *,
+    template_name: str,
+    realm_id: str,
+    default_role_name_old: str,
+    default_role_name_new: str,
+) -> None:
+    """Rewrite the top-level defaultRole reference's containerId and name."""
+    default_role = payload.get("defaultRole")
+    if isinstance(default_role, dict):
+        if default_role.get("containerId") == template_name:
+            default_role["containerId"] = realm_id
+        if default_role.get("name") == default_role_name_old:
+            default_role["name"] = default_role_name_new
+
+
+def _rewrite_user_realm_roles(
+    payload: dict[str, Any],
+    *,
+    default_role_name_old: str,
+    default_role_name_new: str,
+) -> None:
+    """Rewrite each user's realmRoles array (reference to default-roles-{realm})."""
+    for user in payload.get("users") or []:
+        realm_roles = user.get("realmRoles")
+        if isinstance(realm_roles, list):
+            user["realmRoles"] = [
+                default_role_name_new if r == default_role_name_old else r for r in realm_roles
+            ]
+
+
+def _rewrite_client_urls(
+    payload: dict[str, Any],
+    *,
+    realm_url_old: str,
+    realm_url_new: str,
+    admin_console_url_old: str,
+    admin_console_url_new: str,
+    backend_origin: str | None,
+    backend_wildcard: str | None,
+    frontend_origin: str | None,
+    frontend_wildcard: str | None,
+) -> None:
+    """Rewrite client URLs containing /realms/{realm}/ or /admin/{realm}/."""
+
+    def _replace_realm_urls(s: str) -> str:
+        if realm_url_old in s:
+            s = s.replace(realm_url_old, realm_url_new)
+        if admin_console_url_old in s:
+            s = s.replace(admin_console_url_old, admin_console_url_new)
+        return s
+
+    for client in payload.get("clients") or []:
+        for key in ("baseUrl", "adminUrl", "rootUrl"):
+            if isinstance(client.get(key), str):
+                client[key] = _replace_realm_urls(client[key])
+        for key in ("redirectUris", "webOrigins"):
+            uris = client.get(key)
+            if isinstance(uris, list):
+                client[key] = [
+                    _replace_realm_urls(u) if isinstance(u, str) else u for u in uris
+                ]
+        attrs = client.get("attributes") or {}
+        if isinstance(attrs, dict):
+            for k, v in list(attrs.items()):
+                if isinstance(v, str):
+                    attrs[k] = _replace_runtime_url_placeholders(
+                        _replace_realm_urls(v),
+                        backend_wildcard=backend_wildcard,
+                        frontend_wildcard=frontend_wildcard,
+                    )
+            client["attributes"] = attrs
+        _apply_runtime_client_urls(
+            client,
+            backend_origin=backend_origin,
+            backend_wildcard=backend_wildcard,
+            frontend_origin=frontend_origin,
+            frontend_wildcard=frontend_wildcard,
+        )
 
 
 def _fill_realm_template(
@@ -443,65 +505,39 @@ def _fill_realm_template(
     admin_console_url_old = f"{ADMIN_CONSOLE_URL_PREFIX}{template_name}/"
     admin_console_url_new = f"{ADMIN_CONSOLE_URL_PREFIX}{realm_id}/"
 
-    # Realm roles: containerId (realm id) and default role name
-    roles = payload.get("roles") or {}
-    for role in roles.get("realm") or []:
-        if role.get("containerId") == template_name:
-            role["containerId"] = realm_id
-        if role.get("name") == default_role_name_old:
-            role["name"] = default_role_name_new
+    _retarget_realm_roles(
+        payload,
+        template_name=template_name,
+        realm_id=realm_id,
+        default_role_name_old=default_role_name_old,
+        default_role_name_new=default_role_name_new,
+    )
 
-    # defaultRole (top-level default role reference)
-    default_role = payload.get("defaultRole")
-    if isinstance(default_role, dict):
-        if default_role.get("containerId") == template_name:
-            default_role["containerId"] = realm_id
-        if default_role.get("name") == default_role_name_old:
-            default_role["name"] = default_role_name_new
+    _rename_default_role(
+        payload,
+        template_name=template_name,
+        realm_id=realm_id,
+        default_role_name_old=default_role_name_old,
+        default_role_name_new=default_role_name_new,
+    )
 
-    # Users: realmRoles array (reference to default-roles-{realm})
-    for user in payload.get("users") or []:
-        realm_roles = user.get("realmRoles")
-        if isinstance(realm_roles, list):
-            user["realmRoles"] = [
-                default_role_name_new if r == default_role_name_old else r for r in realm_roles
-            ]
+    _rewrite_user_realm_roles(
+        payload,
+        default_role_name_old=default_role_name_old,
+        default_role_name_new=default_role_name_new,
+    )
 
-    # Clients: URLs containing /realms/{realm}/ or /admin/{realm}/
-    def _replace_realm_urls(s: str) -> str:
-        if realm_url_old in s:
-            s = s.replace(realm_url_old, realm_url_new)
-        if admin_console_url_old in s:
-            s = s.replace(admin_console_url_old, admin_console_url_new)
-        return s
-
-    for client in payload.get("clients") or []:
-        for key in ("baseUrl", "adminUrl", "rootUrl"):
-            if isinstance(client.get(key), str):
-                client[key] = _replace_realm_urls(client[key])
-        for key in ("redirectUris", "webOrigins"):
-            uris = client.get(key)
-            if isinstance(uris, list):
-                client[key] = [
-                    _replace_realm_urls(u) if isinstance(u, str) else u for u in uris
-                ]
-        attrs = client.get("attributes") or {}
-        if isinstance(attrs, dict):
-            for k, v in list(attrs.items()):
-                if isinstance(v, str):
-                    attrs[k] = _replace_runtime_url_placeholders(
-                        _replace_realm_urls(v),
-                        backend_wildcard=backend_wildcard,
-                        frontend_wildcard=frontend_wildcard,
-                    )
-            client["attributes"] = attrs
-        _apply_runtime_client_urls(
-            client,
-            backend_origin=backend_origin,
-            backend_wildcard=backend_wildcard,
-            frontend_origin=frontend_origin,
-            frontend_wildcard=frontend_wildcard,
-        )
+    _rewrite_client_urls(
+        payload,
+        realm_url_old=realm_url_old,
+        realm_url_new=realm_url_new,
+        admin_console_url_old=admin_console_url_old,
+        admin_console_url_new=admin_console_url_new,
+        backend_origin=backend_origin,
+        backend_wildcard=backend_wildcard,
+        frontend_origin=frontend_origin,
+        frontend_wildcard=frontend_wildcard,
+    )
 
     backend_val = redirect_uri_backend_host_and_path()
     frontend_val = redirect_uri_frontend_host()
@@ -624,9 +660,9 @@ def _minimal_realm_creation_payload(full_payload: dict[str, Any]) -> dict[str, A
         "displayName": full_payload.get("displayName"),
         "enabled": full_payload.get("enabled", True),
         "sslRequired": full_payload.get("sslRequired", "none"),
-        # Carry the realm-level registration flag from the template so new tenant
-        # realms expose the "Register" link on the login screen. partialImport does
-        # not apply realm-level settings, so this must be set on initial creation.
+        # Carry the realm-level registration flag from the template onto the new
+        # tenant realm. partialImport does not apply realm-level settings, so this
+        # must be set explicitly at creation time to match the template's value.
         "registrationAllowed": full_payload.get("registrationAllowed", False),
     }
 
@@ -684,7 +720,6 @@ def _partial_import_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
     client_id_to_find = spoke_client_id()
     for client in clients:
         _sanitize_client_for_partial_import(client, client_id_to_find=client_id_to_find)
-    # Prepare tenant-safe partial import payload: ids stripped, global-only roles/users removed.
     return {
         "ifResourceExists": "SKIP",
         "clients": clients,

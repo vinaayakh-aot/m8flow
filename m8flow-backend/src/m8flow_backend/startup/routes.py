@@ -1,4 +1,3 @@
-# extensions/startup/routes.py
 import logging
 import os
 

@@ -199,8 +199,14 @@ class ExternalFormService:
                 status_code=410,
             )
         g.user = recipient
-        # Authorize this request as the one path allowed to complete an external-form task;
-        # the completion guard (external_form_completion_guard_patch) blocks every other route.
+        # Impersonate the recipient for this call so the shared human-task completion
+        # path attributes the submission to them. There is no separate guard flag
+        # enforcing exclusivity here: the row-level lock acquired in
+        # _find_request_or_raise(for_update=True) plus the status checks in
+        # _raise_for_unusable_status() reject repeat/late submissions on this link,
+        # and a completion that already happened via another route (e.g. the in-app
+        # task page) is caught below when submit_external_form raises
+        # HumanTaskAlreadyCompletedError.
         g._m8flow_external_form_completion = True
 
         try:

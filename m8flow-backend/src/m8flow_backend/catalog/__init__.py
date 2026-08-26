@@ -19,7 +19,6 @@ UNSUPPORTED_CONSTRUCTS = (
     "messageEventDefinition",
     "correlationKey",
     "correlationProperty",
-    "subProcess",  # event subprocesses use triggeredByEvent
     "compensateEventDefinition",
     "multiInstanceLoopCharacteristics",
 )
@@ -348,11 +347,12 @@ def get_model_identity(*, tenant_id: str, process_model_identifier: str) -> dict
 
 def _reject_unsupported_constructs(xml: str) -> None:
     lowered = xml
+    # Regular subProcess elements are allowed; only event subprocesses are
+    # unsupported, detected here via triggeredByEvent="true" rather than via
+    # UNSUPPORTED_CONSTRUCTS below.
     if "triggeredByEvent=\"true\"" in xml or "triggeredByEvent='true'" in xml:
         raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
     for construct in UNSUPPORTED_CONSTRUCTS:
-        if construct == "subProcess":
-            continue
         if f"<{construct}" in lowered or f":{construct}" in lowered:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
 

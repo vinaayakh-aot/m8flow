@@ -217,37 +217,41 @@ def template_get_by_id(id: int):
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
 
 
+def _updates_from_xml_headers(request) -> tuple[dict, bytes | None, str | None]:
+    """Parse an XML-body template update: metadata comes from X-Template-* headers
+    (all optional), and the request body is the BPMN content (also optional).
+    """
+    updates = {}
+    if request.headers.get("X-Template-Name"):
+        updates["name"] = request.headers.get("X-Template-Name")
+    if request.headers.get("X-Template-Description"):
+        updates["description"] = request.headers.get("X-Template-Description")
+    if request.headers.get("X-Template-Category"):
+        updates["category"] = request.headers.get("X-Template-Category")
+    if request.headers.get("X-Template-Tags"):
+        tags = request.headers.get("X-Template-Tags")
+        try:
+            updates["tags"] = json.loads(tags)
+        except json.JSONDecodeError:
+            updates["tags"] = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    if request.headers.get("X-Template-Visibility"):
+        updates["visibility"] = request.headers.get("X-Template-Visibility")
+    if request.headers.get("X-Template-Status"):
+        updates["status"] = request.headers.get("X-Template-Status")
+
+    bpmn_bytes = request.get_data() if request.get_data() else None
+    bpmn_file_name = request.headers.get("X-Template-File-Name") or None
+    if bpmn_file_name:
+        bpmn_file_name = bpmn_file_name.strip() or None
+
+    return updates, bpmn_bytes, bpmn_file_name
+
+
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
-    
-    # Check if this is XML body request (new format) or JSON body (legacy format)
-    if request.content_type == "application/xml":
-        # New format: XML body with metadata in headers
-        # Extract metadata from headers (all optional for updates)
-        updates = {}
-        if request.headers.get("X-Template-Name"):
-            updates["name"] = request.headers.get("X-Template-Name")
-        if request.headers.get("X-Template-Description"):
-            updates["description"] = request.headers.get("X-Template-Description")
-        if request.headers.get("X-Template-Category"):
-            updates["category"] = request.headers.get("X-Template-Category")
-        if request.headers.get("X-Template-Tags"):
-            tags = request.headers.get("X-Template-Tags")
-            try:
-                updates["tags"] = json.loads(tags)
-            except json.JSONDecodeError:
-                updates["tags"] = [tag.strip() for tag in tags.split(",") if tag.strip()]
-        if request.headers.get("X-Template-Visibility"):
-            updates["visibility"] = request.headers.get("X-Template-Visibility")
-        if request.headers.get("X-Template-Status"):
-            updates["status"] = request.headers.get("X-Template-Status")
-        
-        # Get BPMN content from request body if provided
-        bpmn_bytes = request.get_data() if request.get_data() else None
-        bpmn_file_name = request.headers.get("X-Template-File-Name") or None
-        if bpmn_file_name:
-            bpmn_file_name = bpmn_file_name.strip() or None
 
+    if request.content_type == "application/xml":
+        updates, bpmn_bytes, bpmn_file_name = _updates_from_xml_headers(request)
         template = TemplateService.update_template_by_id(
             id,
             updates=updates,
@@ -256,10 +260,9 @@ def template_update_by_id(id: int):
             user=user
         )
     else:
-        # Legacy format: JSON body
         body = request.get_json(force=True, silent=True) or {}
         template = TemplateService.update_template_by_id(id, updates=body, user=user)
-    
+
     return jsonify(_serialize_template(template))
 
 
@@ -430,7 +433,6 @@ def get_process_model_template_info(modified_process_model_identifier: str):
     Returns the template info if the process model was created from a template,
     or null if no template info exists for this process model.
     """
-    # Convert modified identifier (colons) back to standard format (slashes)
     process_model_identifier = modified_process_model_identifier.replace(":", "/")
 
     tenant_id = getattr(g, "m8flow_tenant_id", None)

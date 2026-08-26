@@ -28,7 +28,6 @@ def check_tenant_exists(identifier: str):
 
 
 def _require_authenticated_user():
-    """Check if user is authenticated and return user, or raise ApiError."""
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(
@@ -41,20 +40,17 @@ def _require_authenticated_user():
 
 @handle_api_errors
 def get_tenant_by_id(tenant_id):
-    """Fetch tenant by ID."""
     tenant = TenantService.get_tenant_by_id(tenant_id)
     return success_response(_serialize_tenant(tenant), 200)
 
 
 @handle_api_errors
 def get_tenant_by_slug(slug):
-    """Fetch tenant by slug."""
     tenant = TenantService.get_tenant_by_slug(slug)
     return success_response(_serialize_tenant(tenant), 200)
 
 
 @handle_api_errors
 def get_all_tenants():
-    """Fetch all tenants."""
     tenants = TenantService.get_all_tenants()
     return success_response([_serialize_tenant(t) for t in tenants], 200)

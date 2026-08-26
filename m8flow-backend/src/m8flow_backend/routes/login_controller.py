@@ -22,9 +22,7 @@ other kind of login: the one a browser hits by full-page redirect.
      surface as Keycloak's own "loginTimeout" error page.
   5. `GET /v1.0/logout` clears those cookies and ends the Keycloak SSO session.
 
-This was dropped (along with the rest of the upstream auth controller) in the
-`m8flow-bpmn-core` cutover and never reimplemented — see
-m8flow-backend/docs/dropped-routes.md, which does not list it as intentional.
+This gap was later filled by this module.
 """
 from __future__ import annotations
 

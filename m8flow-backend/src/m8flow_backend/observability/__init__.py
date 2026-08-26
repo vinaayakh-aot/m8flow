@@ -1,5 +1,4 @@
-# m8flow-backend/src/m8flow_backend/observability/__init__.py
-"""Structured logging, request correlation, and OpenTelemetry wiring.
+"""Structured logging, request correlation, and OTel trace/span correlation.
 
 This package is the host's logging/observability seam: everything that turns
 a plain ``logging.getLogger(__name__)`` call into a Grafana-ready record

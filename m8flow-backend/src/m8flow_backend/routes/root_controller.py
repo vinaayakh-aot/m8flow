@@ -171,8 +171,6 @@ def root() -> Response:
         "health": ping_url,
         "status": status_url,
     }
-    # jsonify sets the correct application/json content-type + charset and avoids
-    # manual json.dumps serialization footguns.
     return jsonify(payload)
 
 

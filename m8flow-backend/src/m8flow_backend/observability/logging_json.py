@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/observability/logging_json.py
 """JSON log formatting + OTel trace/span correlation for uvicorn-log.yaml.
 
 Grafana (via Alloy/Loki) ingests container stdout, so the wire format for a

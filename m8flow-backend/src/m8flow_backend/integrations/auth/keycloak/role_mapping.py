@@ -1,8 +1,8 @@
 """Keycloak organization-group name ↔ neutral tenant role.
 
-Owned by ticket 06. ``verify_token`` uses this so VerifiedClaims never leak
-Keycloak group names like ``Administrators``. Stored group names still appear
-in the HTTP directory API because that is the existing client contract.
+``verify_token`` uses this so VerifiedClaims never leak Keycloak group names
+like ``Administrators``. Stored group names still appear in the HTTP directory
+API because that is the existing client contract.
 """
 from __future__ import annotations
 

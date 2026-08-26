@@ -383,7 +383,6 @@ def accept_invitation(raw_token: str, password: str) -> dict[str, Any]:
     # invitation's tenant for the membership write (mirrors an authenticated tenant request).
     context_token = set_context_tenant_id(invitation.m8f_tenant_id)
     try:
-        # Attach to the tenant organization and assign the granted role groups.
         add_tenant_member(invitation.m8f_tenant_id, username=email, group_names=group_names)
 
         invitation.status = TenantInvitationStatus.ACCEPTED

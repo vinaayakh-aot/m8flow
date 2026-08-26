@@ -22,8 +22,6 @@ from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, To
 from m8flow_backend.integrations.auth.keycloak.config import (
     keycloak_public_issuer_base,
     keycloak_url,
-    master_realm_name,
-    shared_realm_name,
     spoke_client_id,
 )
 
@@ -184,9 +182,3 @@ def verify_access_token(token: str) -> dict[str, Any]:
     if not isinstance(verified_iss, str) or not _issuer_is_allowed(verified_iss):
         raise TokenInvalid("Token issuer is not a configured Keycloak realm")
     return payload
-
-
-# Touch shared/master names so a misconfigured env still fails at import-test
-# time the same way other Keycloak accessors do (no behavior change).
-def configured_browser_realms() -> tuple[str, str]:
-    return shared_realm_name(), master_realm_name()

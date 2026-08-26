@@ -3,10 +3,9 @@
 The backend speaks only in these terms; a provider translates them to and from
 its own vocabulary (for Keycloak: organizations, groups, realm roles, ...).
 
-Shapes are fixed by the interface-design ticket
-(``.scratch/keycloak-auth-provider/issues/01-...``). Method *signatures* on the
-provider may still be refined as each operation cluster moves (tickets 03-07),
-but these object shapes are the contract both sides depend on.
+These object shapes are the contract both sides depend on: a provider must be
+able to express its data in exactly these terms, and the backend never needs
+to know more than this to operate on it.
 """
 from __future__ import annotations
 
@@ -53,8 +52,8 @@ class VerifiedClaims:
     email: str | None = None
     roles: list[str] = field(default_factory=list)
     memberships: list[Membership] = field(default_factory=list)
-    # Verified JWT payload. Temporary bridge so existing claim readers
-    # (ticket 08 rewires them to the fields above) keep working.
+    # Verified JWT payload. Permanent bridge read directly by
+    # ``tenant_context_middleware`` alongside the typed fields above.
     jwt_claims: dict[str, object] = field(default_factory=dict, compare=False, repr=False)
 
 

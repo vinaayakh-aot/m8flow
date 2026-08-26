@@ -1,4 +1,6 @@
-"""Keycloak API controller: tenant provisioning, tenant login, create user in realm."""
+"""Keycloak API controller: tenant provisioning, tenant login, create user in
+realm, organization membership lookup, and tenant lifecycle (rename/delete).
+"""
 from __future__ import annotations
 
 import logging

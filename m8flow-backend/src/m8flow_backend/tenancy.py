@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/tenancy.py
 from __future__ import annotations
 
 import logging
@@ -56,8 +55,7 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/m8flow/invitations",
 )
 
-# When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), include both
-# prefixed and unprefixed variants so exempt checks work regardless of deployment topology.
+# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
 TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
     + (
@@ -126,7 +124,6 @@ def begin_request_context() -> Token:
 
 
 def end_request_context(token: Token) -> None:
-    """Undo begin_request_context()."""
     _REQUEST_ACTIVE.reset(token)
 
 
@@ -162,9 +159,10 @@ def is_concrete_tenant_id(tenant_id: object) -> bool:
     if not normalized_tenant_id:
         return False
 
-    # Older migrations and stale pre-step-4 request context can still surface
-    # the legacy placeholder value "default". Treat it the same as "public":
-    # not a usable tenant-scoped runtime identifier.
+    # Older migrations and requests carrying a stale request context from before
+    # the current contextvar-based tenant wiring can still surface the legacy
+    # placeholder value "default". Treat it the same as "public": not a usable
+    # tenant-scoped runtime identifier.
     return not is_legacy_placeholder_tenant_id(normalized_tenant_id) and normalized_tenant_id != "public"
 
 

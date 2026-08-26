@@ -1,4 +1,3 @@
-# extensions/startup/tenant_resolution.py
 from __future__ import annotations
 
 from typing import Any
@@ -34,8 +33,11 @@ def register_tenant_resolution_after_auth(flask_app) -> None:
     def _is_auth_before_request(func) -> bool:
         mod = getattr(func, "__module__", "") or ""
         name = getattr(func, "__name__", "") or ""
+        # Identifies the auth middleware's before_request callback (module
+        # ending in "auth"/"m8flow_backend.auth", name "_authenticate" or
+        # "install_auth_middleware") so tenant resolution can be inserted
+        # immediately after it.
         return (
-            # Unpatched upstream callback registered by create_app()
             (mod.endswith("auth") or mod.endswith("m8flow_backend.auth"))
             and name in {"_authenticate", "install_auth_middleware"}
         )

@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/startup/process_error_guard.py
 """Process-wide safety net for exceptions Flask's error handlers never see.
 
 ``register_error_handlers`` (startup/error_handlers.py) covers every request;

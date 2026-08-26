@@ -1,4 +1,3 @@
-# m8flow-backend/src/m8flow_backend/startup/error_handlers.py
 """Top-level Flask exception -> JSON response mapping.
 
 This is the last line of defense for every request: whatever a route, a host

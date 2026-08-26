@@ -34,7 +34,6 @@ def _serialize_api_key(api_key, raw_token):
 
 
 def _require_authenticated_user():
-    """Ensure user is authenticated."""
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(

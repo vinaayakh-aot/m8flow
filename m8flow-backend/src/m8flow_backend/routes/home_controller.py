@@ -33,9 +33,8 @@ def _is_super_admin(user: UserModel) -> bool:
     calls `register_tenant_resolution_after_auth()` to wire that function
     in as a before_request hook. It's dead code: `is_super_admin_request()`
     returns False unconditionally for every request in the app as it runs
-    today (see .scratch/m8flow-designer-home/assets/pre-existing-issues.md
-    #2 -- also affects /v1.0/tasks' and /v1.0/process-instances' own
-    super-admin branches, not something to quietly fix inside this ticket).
+    today (this also affects /v1.0/tasks' and /v1.0/process-instances' own
+    super-admin branches -- a pre-existing gap, not something to fix here).
     This instead matches `authorization.allow_uri`'s own first-line check,
     which IS live (every allow_uri call already depends on it): a direct
     "super-admin" group-identifier lookup, no dead hook involved.
@@ -76,9 +75,8 @@ def _tenant_override(*, super_admin: bool) -> str | None:
 def get_home_stats():
     """The 6 Home-page stat cards, real data. Per-field permission gating
     (returns null, not a 403) so a reviewer's/non-admin's Home page still
-    loads with whichever cards they're actually authorized to see -- see
-    ticket 03's Answer in .scratch/m8flow-designer-home/issues/ for why
-    this can't be one blanket all-or-nothing check: task read and
+    loads with whichever cards they're actually authorized to see. This
+    can't be one blanket all-or-nothing check: task read and
     process-instance read are separately gated in m8flow.yml (reviewer has
     the former, deliberately not the latter), and total_tenants is
     super-admin-only by a fresh decision made for this map, not an

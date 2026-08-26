@@ -1,5 +1,3 @@
-"""ASGI middleware that adds CORS headers when missing and handles OPTIONS preflight."""
-
 LOCAL_CORS_ORIGINS = frozenset(
     [
         "http://localhost:6841",
@@ -40,7 +38,6 @@ class CORSFallbackMiddleware:
                 origin = h[1].decode("latin-1")
                 break
 
-        # Handle preflight: respond immediately with 200 + CORS headers.
         if scope.get("method") == "OPTIONS" and origin and origin in self.origins:
             await send(
                 {

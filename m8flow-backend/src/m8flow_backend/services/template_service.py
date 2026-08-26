@@ -66,7 +66,6 @@ class TemplateService:
     @classmethod
     def _next_version(cls, template_key: str, tenant_id: str) -> str:
         """Get the next version for a template key within a specific tenant, using V-prefixed versions."""
-        # Filter by both template_key AND tenant_id to scope versioning per tenant
         query = db.session.query(TemplateModel).filter_by(
             template_key=template_key,
             m8f_tenant_id=tenant_id
@@ -76,7 +75,6 @@ class TemplateService:
         if not rows:
             return "V1"
         
-        # Find the latest version for this tenant
         latest = max(rows, key=lambda r: cls._version_key(r.version))
         latest_version = (latest.version or "").strip()
 
@@ -361,16 +359,22 @@ class TemplateService:
         tenant_id: str | None = None,
         include_deleted: bool = False,
     ) -> TemplateModel | None:
-        """Get template by key, scoped to tenant."""
+        """Get template by key, scoped to tenant.
+
+        Tenant scoping only applies when a tenant id is available (explicit
+        ``tenant_id`` or ``g.m8flow_tenant_id``); if neither is set, this query is
+        not tenant-filtered. Callers passing ``suppress_visibility=True`` also skip
+        the additional tenant-aware visibility filtering that
+        ``TemplateAuthorizationService.filter_query_by_visibility`` would otherwise
+        apply.
+        """
         query = db.session.query(TemplateModel).filter_by(template_key=template_key)
-        
-        # Filter by tenant to ensure tenant isolation
+
         tenant = tenant_id or getattr(g, "m8flow_tenant_id", None)
         if tenant:
             query = query.filter(TemplateModel.m8f_tenant_id == tenant)
 
         if not include_deleted:
-            # Exclude soft-deleted templates by default
             query = query.filter(TemplateModel.is_deleted.is_(False))
         
         if not suppress_visibility:
@@ -400,7 +404,6 @@ class TemplateService:
         if template is None:
             return None
         
-        # Check visibility
         if not TemplateAuthorizationService.can_view(template, user):
             return None
         
@@ -449,7 +452,6 @@ class TemplateService:
         tenant = published_template.m8f_tenant_id
         key = published_template.template_key
 
-        # Look for existing draft version (unpublished, not deleted)
         existing_draft = (
             db.session.query(TemplateModel)
             .filter_by(
@@ -458,7 +460,7 @@ class TemplateService:
                 is_published=False,
                 is_deleted=False,
             )
-            .order_by(TemplateModel.id.desc())  # Get the latest draft
+            .order_by(TemplateModel.id.desc())
             .first()
         )
 
@@ -471,7 +473,6 @@ class TemplateService:
 
         next_version = cls._next_version(key, tenant)
 
-        # Copy all files to new version
         new_files: list[dict] = []
         for entry in (published_template.files or []):
             fname = entry.get("file_name")
@@ -553,15 +554,12 @@ class TemplateService:
             ft = "bpmn"
             if not existing_template.is_published:
                 if bpmn_file_name:
-                    # Update only the file with this name if it exists
                     found = any(
                         e.get("file_name") == bpmn_file_name and e.get("file_type") == "bpmn"
                         for e in files_list
                     )
-                    if found:
-                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
-                    else:
-                        cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                    cls.storage.store_file(tenant, key, version, bpmn_file_name, ft, bpmn_bytes)
+                    if not found:
                         files_list.append({"file_type": ft, "file_name": bpmn_file_name})
                 else:
                     # Replace first bpmn or add (backward compatibility)
@@ -602,17 +600,13 @@ class TemplateService:
             target_files = list(target_template.files or [])
 
             if bpmn_file_name:
-                # Update specific file by name
                 found = any(
                     e.get("file_name") == bpmn_file_name and e.get("file_type") == "bpmn"
                     for e in target_files
                 )
-                if found:
-                    cls.storage.store_file(target_template.m8f_tenant_id, target_template.template_key,
-                                          target_template.version, bpmn_file_name, ft, bpmn_bytes)
-                else:
-                    cls.storage.store_file(target_template.m8f_tenant_id, target_template.template_key,
-                                          target_template.version, bpmn_file_name, ft, bpmn_bytes)
+                cls.storage.store_file(target_template.m8f_tenant_id, target_template.template_key,
+                                      target_template.version, bpmn_file_name, ft, bpmn_bytes)
+                if not found:
                     target_files.append({"file_type": ft, "file_name": bpmn_file_name})
                     target_template.files = target_files
             else:
@@ -952,7 +946,6 @@ class TemplateService:
         if not template_key or not name:
             raise ApiError("missing_fields", "template_key and name are required", status_code=400)
 
-        # Validate zip size before extracting
         if len(zip_bytes) > MAX_ZIP_SIZE:
             raise ApiError(
                 "payload_too_large",
@@ -1039,7 +1032,6 @@ class TemplateService:
         if tenant is None:
             raise ApiError("tenant_required", TENANT_REQUIRED_MESSAGE, status_code=400)
 
-        # Get the template
         template = cls.get_template_by_id(template_id, user=user)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -1051,14 +1043,11 @@ class TemplateService:
                 status_code=400,
             )
 
-        # Validate template has files
         if not template.files:
             raise ApiError("invalid_template", "Template has no files", status_code=400)
 
-        # Construct full process model identifier
         full_process_model_id = f"{process_group_id}/{process_model_id}"
 
-        # Validate process group exists
         if not ProcessModelService.is_process_group_identifier(process_group_id):
             raise ApiError(
                 "process_group_not_found",
@@ -1066,7 +1055,6 @@ class TemplateService:
                 status_code=404,
             )
 
-        # Check if process model already exists
         if ProcessModelService.is_process_model_identifier(full_process_model_id):
             raise ApiError(
                 "process_model_exists",
@@ -1082,7 +1070,6 @@ class TemplateService:
                 status_code=409,
             )
 
-        # Create the process model
         process_model_info = {
             "id": full_process_model_id,
             "display_name": display_name,
@@ -1162,7 +1149,6 @@ class TemplateService:
                     status_code=500,
                 )
 
-        # Ensure at least one file was copied
         if files_copied == 0:
             raise ApiError(
                 "no_files_copied",
@@ -1172,14 +1158,12 @@ class TemplateService:
 
         logger.info(f"Successfully copied {files_copied} files to process model {full_process_model_id}")
 
-        # Update process model with primary file info
         if primary_file_name:
             process_model_info["primary_file_name"] = primary_file_name
         if primary_process_id:
             process_model_info["primary_process_id"] = primary_process_id
         ProcessModelService.save_process_model(process_model_info)
 
-        # Record the template provenance
         username = user.username if hasattr(user, "username") else "unknown"
         provenance = ProcessModelTemplateModel(
             process_model_identifier=full_process_model_id,
@@ -1193,7 +1177,6 @@ class TemplateService:
         db.session.add(provenance)
         ProcessModelTemplateModel.commit_with_rollback_on_exception()
 
-        # Commit to git
         _commit_and_push_to_git(
             ProcessModelService._model_file_path(tenant, full_process_model_id),
             message=f"User: {username} created process model {full_process_model_id} from template {template.template_key} v{template.version}",
@@ -1227,10 +1210,8 @@ class TemplateService:
         except UnicodeDecodeError:
             return content, None
 
-        # Generate a unique suffix
         fuzz = "".join(random.SystemRandom().choice(string.ascii_lowercase + string.digits) for _ in range(7))
 
-        # Convert dashes to underscores for process id
         underscored_id = process_model_id.replace("-", "_")
 
         # Find all process IDs in the BPMN
@@ -1261,7 +1242,6 @@ class TemplateService:
 
             return f"{prefix}{new_id}{suffix}"
 
-        # Replace process IDs
         content_str = process_id_pattern.sub(replace_process_id, content_str)
 
         # Update participant processRef attributes to match renamed process IDs

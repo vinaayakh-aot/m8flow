@@ -1,9 +1,7 @@
 """Keycloak realization of ``AuthProvider``.
 
-Session/OIDC + JWKS ``verify_token`` (ticket 03), directory user
-get/search/create/delete (ticket 04), tenant/membership operations
-(ticket 05), group/role mapping (ticket 06), and realm provisioning
-(ticket 07).
+Session/OIDC + JWKS ``verify_token``, directory user get/search/create/delete,
+tenant/membership operations, group/role mapping, and realm provisioning.
 """
 from __future__ import annotations
 
