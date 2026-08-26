@@ -187,11 +187,19 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
         legacy_tenant = None if canonical_tenant is not None else db.session.query(M8flowTenantModel).filter_by(slug=organization_alias).first()
 
         if canonical_tenant is None and legacy_tenant is None:
+            # create_tenant_if_not_exists() only commits via its own session_scope()
+            # fallback when g.db_session is unset. The db.session.get()/query() calls
+            # just above this branch already populated g.db_session (current_session()
+            # caches the session it creates onto g on first access), so
+            # create_tenant_if_not_exists() takes its no-commit branch here and relies
+            # on the caller to commit -- without this, the new row is flushed but
+            # never committed, and is silently lost when this app_context exits.
             create_tenant_if_not_exists(
                 organization_id,
                 name=organization_name,
                 slug=organization_alias,
             )
+            db.session.commit()
             logger.info(
                 "shared_realm_bootstrap: created canonical shared-realm tenant id=%s slug=%s",
                 organization_id,
