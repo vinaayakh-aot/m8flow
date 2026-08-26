@@ -1,0 +1,157 @@
+"""DB-backed tenant-identifier resolution: mapping a claimed id/alias/slug to
+the local canonical M8flowTenantModel row (or the row's slug), and reading
+the active tenant out of the current request/context.
+
+Split out of tenant_identity_helpers.py (963 lines, 8 callers, 4-6 unrelated
+concerns) along with identity_claims.py -- see architecture review finding
+S4. Deliberately has no dependency on identity_claims.py or the rest of
+tenant_identity_helpers.py; identity_claims.py depends on this module (for
+resolving a claimed identifier to a canonical tenant), not the other way
+around.
+"""
+
+from __future__ import annotations
+
+from flask import g
+from flask import has_request_context
+
+from m8flow_backend.tenancy import get_context_tenant_id
+from m8flow_backend.tenancy import is_concrete_tenant_id
+
+
+def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | None:
+    """
+    Resolve token-provided tenant identifiers to the local canonical tenant id.
+
+    When a matching tenant row exists, always return that row's primary key so
+    downstream tenant scoping, group qualification, and FK-backed records stay
+    consistent.
+    """
+    normalized_identifiers: list[str] = []
+    seen: set[str] = set()
+    for identifier in identifiers:
+        if not isinstance(identifier, str):
+            continue
+        normalized_identifier = identifier.strip()
+        if not normalized_identifier or normalized_identifier in seen:
+            continue
+        seen.add(normalized_identifier)
+        normalized_identifiers.append(normalized_identifier)
+
+    if not normalized_identifiers:
+        return None
+
+    try:
+        from sqlalchemy import or_
+
+        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+        from flask import g
+
+        filters = []
+        for normalized_identifier in normalized_identifiers:
+            filters.extend(
+                (
+                    M8flowTenantModel.id == normalized_identifier,
+                    M8flowTenantModel.slug == normalized_identifier,
+                )
+            )
+        tenant = g.db_session.query(M8flowTenantModel).filter(or_(*filters)).one_or_none()
+    except Exception:
+        tenant = None
+
+    if tenant is None or not isinstance(tenant.id, str):
+        return None
+
+    canonical_tenant_id = tenant.id.strip()
+    return canonical_tenant_id or None
+
+
+def current_tenant_id_or_none() -> str | None:
+    """Return the active tenant id, or ``None`` when no tenant context is set."""
+    if has_request_context():
+        if getattr(g, "_m8flow_global_request", False) or getattr(g, "_m8flow_public_request", False):
+            return None
+
+        request_tenant = getattr(g, "m8flow_tenant_id", None)
+        if isinstance(request_tenant, str):
+            normalized_request_tenant = request_tenant.strip()
+            if is_concrete_tenant_id(normalized_request_tenant):
+                return normalized_request_tenant
+
+    context_tenant = get_context_tenant_id()
+    if isinstance(context_tenant, str):
+        normalized_context_tenant = context_tenant.strip()
+        if is_concrete_tenant_id(normalized_context_tenant):
+            return normalized_context_tenant
+
+    return None
+
+
+def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
+    """Return the current tenant id plus any equivalent identifiers such as the slug."""
+    effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
+    if not effective_tenant_id:
+        return set()
+
+    identifiers = {effective_tenant_id}
+    try:
+        from sqlalchemy import or_
+
+        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+        from flask import g
+
+        tenant = (
+            g.db_session.query(M8flowTenantModel)
+            .filter(or_(M8flowTenantModel.id == effective_tenant_id, M8flowTenantModel.slug == effective_tenant_id))
+            .one_or_none()
+        )
+    except Exception:
+        tenant = None
+
+    if tenant is not None:
+        for value in (tenant.id, tenant.slug):
+            if isinstance(value, str):
+                normalized = value.strip()
+                if normalized:
+                    identifiers.add(normalized)
+
+    return identifiers
+
+
+def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
+    """Resolve a tenant id or slug to the canonical tenant slug."""
+    effective_tenant_identifier = tenant_identifier.strip()
+    if not effective_tenant_identifier:
+        return None
+
+    try:
+        from sqlalchemy import or_
+
+        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+        from flask import g
+
+        tenant = (
+            g.db_session.query(M8flowTenantModel)
+            .filter(
+                or_(
+                    M8flowTenantModel.id == effective_tenant_identifier,
+                    M8flowTenantModel.slug == effective_tenant_identifier,
+                )
+            )
+            .one_or_none()
+        )
+    except Exception:
+        tenant = None
+
+    if tenant is None or not isinstance(tenant.slug, str):
+        return None
+
+    slug = tenant.slug.strip()
+    return slug or None
+
+
+def tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
+    """Public wrapper for resolving a tenant id or alias to the canonical tenant slug."""
+    if not isinstance(tenant_identifier, str):
+        return None
+    return _tenant_slug_for_identifier(tenant_identifier)

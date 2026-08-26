@@ -5,7 +5,7 @@ import json
 from http.cookies import SimpleCookie
 from typing import Callable, Optional
 
-from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
+from m8flow_backend.services.identity_claims import tenant_id_from_payload
 from m8flow_backend.tenancy import (
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
     path_matches_any_prefix,

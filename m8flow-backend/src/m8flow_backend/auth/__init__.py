@@ -220,10 +220,8 @@ def _sync_groups_from_token(
     del decoded  # RBAC/sync reads VerifiedClaims, not raw JWT JSON.
     from m8flow_backend import identity
     from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE, VALID_TENANT_ROLE_NAMES
-    from m8flow_backend.services.tenant_identity_helpers import (
-        _canonical_tenant_id_from_identifiers,
-        qualify_group_identifier,
-    )
+    from m8flow_backend.services.tenant_canonicalization import _canonical_tenant_id_from_identifiers
+    from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
 
     claims = getattr(g, "verified_claims", None)
     if not isinstance(claims, VerifiedClaims):
@@ -302,7 +300,7 @@ def _ref_tokens(membership: Membership) -> set[str]:
 
 
 def _membership_for_active_tenant(memberships: list[Membership], tenant_id: str) -> Membership | None:
-    from m8flow_backend.services.tenant_identity_helpers import _canonical_tenant_id_from_identifiers
+    from m8flow_backend.services.tenant_canonicalization import _canonical_tenant_id_from_identifiers
 
     wanted = {tenant_id.strip()} if tenant_id.strip() else set()
     cookie_canonical = _canonical_tenant_id_from_identifiers(tenant_id)

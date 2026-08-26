@@ -1,3 +1,14 @@
+"""Shared-realm user provisioning (materializing/refreshing local user rows
+from Keycloak organization members, including the admin-API calls that
+requires) and tenant-qualified group-identifier string normalization.
+
+Payload/claim parsing moved to identity_claims.py, and DB-backed
+tenant-identifier canonicalization moved to tenant_canonicalization.py --
+see architecture review finding S4 (this file was 963 lines, 8 callers,
+4-6 unrelated concerns). Both are imported here for the pieces this file's
+own logic still needs (tenant resolution, realm derivation).
+"""
+
 from __future__ import annotations
 
 import logging
@@ -5,20 +16,16 @@ from collections.abc import Iterable
 from collections.abc import Mapping
 from typing import Any
 
-from flask import g
-from flask import has_request_context
-
 from m8flow_backend.db import db
 
-from m8flow_backend.tenancy import TENANT_CLAIM
-from m8flow_backend.tenancy import get_context_tenant_id
-from m8flow_backend.tenancy import is_concrete_tenant_id
+from m8flow_backend.services.identity_claims import realm_from_service
+from m8flow_backend.services.tenant_canonicalization import (
+    _tenant_slug_for_identifier,
+    current_tenant_id_or_none,
+    current_tenant_identifiers,
+)
 
-TENANT_ALIAS_CLAIM = "m8flow_tenant_alias"
-TENANT_NAME_CLAIM = "m8flow_tenant_name"
-REALM_NAME_CLAIM = "m8flow_realm_name"
 REALM_ID_CLAIM = "m8flow_realm_id"
-AUTHENTICATION_IDENTIFIER_CLAIM = "m8flow_authentication_identifier"
 ORGANIZATION_CLAIM = "organization"
 ORGANIZATION_SCOPE = "organization"
 ALL_ORGANIZATIONS_SCOPE = "organization:*"
@@ -33,320 +40,6 @@ def is_global_permission_group_identifier(group_identifier: str) -> bool:
     if not normalized_group_identifier:
         return False
     return normalized_group_identifier in GLOBAL_PERMISSION_GROUP_IDENTIFIERS
-
-
-def _string_claim(payload: Mapping[str, Any] | None, claim: str) -> str | None:
-    if payload is None:
-        return None
-    value = payload.get(claim)
-    if isinstance(value, str):
-        value = value.strip()
-        if value:
-            return value
-    return None
-
-
-def organization_memberships_from_payload(
-    payload: Mapping[str, Any] | None,
-) -> list[tuple[str, Mapping[str, Any]]]:
-    """Return normalized organization memberships from the built-in organization claim."""
-    if payload is None:
-        return []
-
-    from m8flow_backend.integrations.auth.keycloak.claims import memberships_from_organization_claim
-
-    memberships = memberships_from_organization_claim(dict(payload))
-    normalized: list[tuple[str, Mapping[str, Any]]] = []
-    for membership in memberships:
-        alias = membership.tenant_ref.alias or membership.tenant_ref.id
-        if not alias:
-            continue
-        normalized.append(
-            (
-                alias,
-                {
-                    "id": membership.tenant_ref.id,
-                    "name": membership.tenant_ref.name,
-                    "groups": membership.groups,
-                },
-            )
-        )
-    return normalized
-
-
-def single_organization_from_payload(
-    payload: Mapping[str, Any] | None,
-) -> tuple[str, Mapping[str, Any]] | None:
-    """Return the single organization entry from the built-in organization claim."""
-    organizations = organization_memberships_from_payload(payload)
-    if len(organizations) != 1:
-        return None
-    return organizations[0]
-
-
-def active_organization_from_payload(
-    payload: Mapping[str, Any] | None,
-    tenant_id: str | None = None,
-) -> tuple[str, Mapping[str, Any]] | None:
-    """Return the active organization entry, or ``None`` when it cannot be resolved safely."""
-    organizations = organization_memberships_from_payload(payload)
-    if not organizations:
-        return None
-
-    if len(organizations) == 1:
-        return organizations[0]
-
-    tenant_identifiers = current_tenant_identifiers(tenant_id)
-    if not tenant_identifiers:
-        return None
-
-    matching_organizations: list[tuple[str, Mapping[str, Any]]] = []
-    for organization_alias, organization_details in organizations:
-        organization_identifiers = {organization_alias}
-        organization_id = organization_details.get("id")
-        if isinstance(organization_id, str):
-            normalized_organization_id = organization_id.strip()
-            if normalized_organization_id:
-                organization_identifiers.add(normalized_organization_id)
-        else:
-            normalized_organization_id = None
-
-        canonical_tenant_id = _canonical_tenant_id_from_identifiers(
-            normalized_organization_id,
-            organization_alias,
-        )
-        if canonical_tenant_id:
-            organization_identifiers.add(canonical_tenant_id)
-
-        if organization_identifiers.intersection(tenant_identifiers):
-            matching_organizations.append((organization_alias, organization_details))
-
-    if len(matching_organizations) != 1:
-        return None
-    return matching_organizations[0]
-
-
-def organization_group_identifiers_from_payload(
-    payload: Mapping[str, Any] | None,
-    tenant_id: str | None = None,
-) -> list[str]:
-    """Return normalized organization-local group identifiers for the active organization."""
-    organization = active_organization_from_payload(payload, tenant_id=tenant_id)
-    if organization is None:
-        return []
-
-    _organization_alias, organization_details = organization
-    organization_groups = organization_details.get("groups")
-    if not isinstance(organization_groups, list):
-        return []
-
-    normalized_group_identifiers: list[str] = []
-    seen: set[str] = set()
-    for organization_group in organization_groups:
-        if not isinstance(organization_group, str):
-            continue
-        value = organization_group.strip()
-        if not value:
-            continue
-        normalized_value = value.rstrip("/")
-        if "/" in normalized_value:
-            normalized_value = normalized_value.split("/")[-1].strip()
-        if normalized_value and normalized_value not in seen:
-            seen.add(normalized_value)
-            normalized_group_identifiers.append(normalized_value)
-
-    return normalized_group_identifiers
-
-
-def _canonical_tenant_id_from_identifiers(*identifiers: str | None) -> str | None:
-    """
-    Resolve token-provided tenant identifiers to the local canonical tenant id.
-
-    When a matching tenant row exists, always return that row's primary key so
-    downstream tenant scoping, group qualification, and FK-backed records stay
-    consistent.
-    """
-    normalized_identifiers: list[str] = []
-    seen: set[str] = set()
-    for identifier in identifiers:
-        if not isinstance(identifier, str):
-            continue
-        normalized_identifier = identifier.strip()
-        if not normalized_identifier or normalized_identifier in seen:
-            continue
-        seen.add(normalized_identifier)
-        normalized_identifiers.append(normalized_identifier)
-
-    if not normalized_identifiers:
-        return None
-
-    try:
-        from sqlalchemy import or_
-
-        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from flask import g
-
-        filters = []
-        for normalized_identifier in normalized_identifiers:
-            filters.extend(
-                (
-                    M8flowTenantModel.id == normalized_identifier,
-                    M8flowTenantModel.slug == normalized_identifier,
-                )
-            )
-        tenant = g.db_session.query(M8flowTenantModel).filter(or_(*filters)).one_or_none()
-    except Exception:
-        tenant = None
-
-    if tenant is None or not isinstance(tenant.id, str):
-        return None
-
-    canonical_tenant_id = tenant.id.strip()
-    return canonical_tenant_id or None
-
-
-def current_tenant_id_or_none() -> str | None:
-    """Return the active tenant id, or ``None`` when no tenant context is set."""
-    if has_request_context():
-        if getattr(g, "_m8flow_global_request", False) or getattr(g, "_m8flow_public_request", False):
-            return None
-
-        request_tenant = getattr(g, "m8flow_tenant_id", None)
-        if isinstance(request_tenant, str):
-            normalized_request_tenant = request_tenant.strip()
-            if is_concrete_tenant_id(normalized_request_tenant):
-                return normalized_request_tenant
-
-    context_tenant = get_context_tenant_id()
-    if isinstance(context_tenant, str):
-        normalized_context_tenant = context_tenant.strip()
-        if is_concrete_tenant_id(normalized_context_tenant):
-            return normalized_context_tenant
-
-    return None
-
-
-def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
-    """Return the current tenant id plus any equivalent identifiers such as the slug."""
-    effective_tenant_id = (tenant_id or current_tenant_id_or_none() or "").strip()
-    if not effective_tenant_id:
-        return set()
-
-    identifiers = {effective_tenant_id}
-    try:
-        from sqlalchemy import or_
-
-        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from flask import g
-
-        tenant = (
-            g.db_session.query(M8flowTenantModel)
-            .filter(or_(M8flowTenantModel.id == effective_tenant_id, M8flowTenantModel.slug == effective_tenant_id))
-            .one_or_none()
-        )
-    except Exception:
-        tenant = None
-
-    if tenant is not None:
-        for value in (tenant.id, tenant.slug):
-            if isinstance(value, str):
-                normalized = value.strip()
-                if normalized:
-                    identifiers.add(normalized)
-
-    return identifiers
-
-
-def tenant_id_from_payload(payload: Mapping[str, Any] | None) -> str | None:
-    """Extract the configured tenant claim as the local canonical tenant id when possible."""
-    organization = active_organization_from_payload(payload)
-    if organization is not None:
-        organization_alias, organization_details = organization
-        organization_id = organization_details.get("id")
-        if isinstance(organization_id, str):
-            organization_id = organization_id.strip()
-        else:
-            organization_id = None
-
-        canonical_organization_tenant_id = _canonical_tenant_id_from_identifiers(
-            organization_id,
-            organization_alias,
-        )
-        if canonical_organization_tenant_id:
-            return canonical_organization_tenant_id
-        if organization_id:
-            return organization_id
-        if organization_alias:
-            return organization_alias
-
-    explicit_tenant_id = _string_claim(payload, TENANT_CLAIM)
-    if not explicit_tenant_id:
-        return None
-
-    canonical_explicit_tenant_id = _canonical_tenant_id_from_identifiers(
-        explicit_tenant_id,
-        _string_claim(payload, TENANT_ALIAS_CLAIM),
-    )
-    return canonical_explicit_tenant_id or explicit_tenant_id
-
-
-def tenant_alias_from_payload(payload: Mapping[str, Any] | None) -> str | None:
-    """Extract the active tenant alias from a decoded token payload."""
-    tenant_alias = _string_claim(payload, TENANT_ALIAS_CLAIM)
-    if tenant_alias:
-        return tenant_alias
-
-    organization = active_organization_from_payload(payload)
-    if organization is None:
-        return None
-    organization_alias, _ = organization
-    return organization_alias
-
-
-def tenant_name_from_payload(payload: Mapping[str, Any] | None) -> str | None:
-    """Extract the active tenant display name from a decoded token payload."""
-    return _string_claim(payload, TENANT_NAME_CLAIM)
-
-
-def realm_name_from_payload(payload: Mapping[str, Any] | None) -> str | None:
-    """Extract the Keycloak realm name from a decoded token payload."""
-    realm_name = _string_claim(payload, AUTHENTICATION_IDENTIFIER_CLAIM)
-    if realm_name:
-        return realm_name
-
-    realm_name = _string_claim(payload, REALM_NAME_CLAIM)
-    if realm_name:
-        return realm_name
-
-    realm_name = _string_claim(payload, "realm_name")
-    if realm_name:
-        return realm_name
-
-    # Legacy RealmInfoMapper tokens used m8flow_tenant_name for the realm name.
-    return _string_claim(payload, TENANT_NAME_CLAIM)
-
-
-def authentication_identifier_from_payload(payload: Mapping[str, Any] | None) -> str | None:
-    """Extract the auth-config identifier from a decoded token payload."""
-    return realm_name_from_payload(payload)
-
-
-def extract_realm_from_issuer(iss: str | None) -> str | None:
-    """Extract the Keycloak realm name from an issuer URL."""
-    if isinstance(iss, str) and "/realms/" in iss:
-        return iss.split("/realms/")[-1].split("/")[0]
-    return None
-
-
-def realm_from_service(service: str | None) -> str:
-    """Derive a stable tenant-like value from a service/issuer string."""
-    realm = extract_realm_from_issuer(service)
-    if realm:
-        return realm
-    if not service:
-        return "unknown"
-    normalized = service.rstrip("/")
-    return normalized.replace("://", "_").replace("/", "_")[-32:] or "unknown"
 
 
 def user_belongs_to_current_tenant(
@@ -844,45 +537,6 @@ def normalize_organizational_group_identifiers(group_identifiers: list[str]) -> 
             seen.add(canonical_identifier)
             normalized.append(canonical_identifier)
     return normalized
-
-
-def _tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
-    """Resolve a tenant id or slug to the canonical tenant slug."""
-    effective_tenant_identifier = tenant_identifier.strip()
-    if not effective_tenant_identifier:
-        return None
-
-    try:
-        from sqlalchemy import or_
-
-        from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-        from flask import g
-
-        tenant = (
-            g.db_session.query(M8flowTenantModel)
-            .filter(
-                or_(
-                    M8flowTenantModel.id == effective_tenant_identifier,
-                    M8flowTenantModel.slug == effective_tenant_identifier,
-                )
-            )
-            .one_or_none()
-        )
-    except Exception:
-        tenant = None
-
-    if tenant is None or not isinstance(tenant.slug, str):
-        return None
-
-    slug = tenant.slug.strip()
-    return slug or None
-
-
-def tenant_slug_for_identifier(tenant_identifier: str) -> str | None:
-    """Public wrapper for resolving a tenant id or alias to the canonical tenant slug."""
-    if not isinstance(tenant_identifier, str):
-        return None
-    return _tenant_slug_for_identifier(tenant_identifier)
 
 
 def organization_scope_for_tenant(tenant_identifier: str | None = None) -> str:

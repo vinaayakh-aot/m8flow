@@ -180,7 +180,7 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
 
     try:
         from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
-        from m8flow_backend.services.tenant_identity_helpers import (
+        from m8flow_backend.services.identity_claims import (
             authentication_identifier_from_payload,
             extract_realm_from_issuer,
         )
