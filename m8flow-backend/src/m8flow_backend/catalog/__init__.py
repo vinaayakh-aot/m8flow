@@ -24,7 +24,17 @@ UNSUPPORTED_CONSTRUCTS = (
 )
 
 
-def save(session: Session, *, path: str, xml: str, tenant_id: str, user_id: int) -> None:
+def save(
+    session: Session, *, path: str, xml: str, tenant_id: str, user_id: int, file_name: str | None = None
+) -> None:
+    """Import the BPMN definition and write it to disk. When the caller knows
+    the real on-disk filename (e.g. update_file(), where a template-created
+    model kept its template's original filename), pass it as `file_name` --
+    otherwise the write falls back to process_model.json's primary_file_name,
+    then to {leaf-of-path}.bpmn for a genuinely new model with no metadata
+    yet. Guessing the leaf name unconditionally (the old behavior) wrote a
+    phantom {leaf}.bpmn alongside the real file for every non-default-named
+    model."""
     _reject_unsupported_constructs(xml)
     workflow.import_definition(
         session,
@@ -34,7 +44,9 @@ def save(session: Session, *, path: str, xml: str, tenant_id: str, user_id: int)
         source_bpmn_xml=xml,
         bpmn_name=Path(path).name,
     )
-    disk_path = _model_file_path(tenant_id, path)
+    disk_path = (
+        _tenant_models_root(tenant_id) / path / file_name if file_name else _model_file_path(tenant_id, path)
+    )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     disk_path.write_text(xml, encoding="utf-8")
     _best_effort_git_commit(disk_path, message=f"Save process model {path}")
@@ -107,6 +119,8 @@ def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     model_id = process_model_info["id"] if isinstance(process_model_info, dict) else getattr(process_model_info, "id")
     (_tenant_models_root(tenant) / model_id).mkdir(parents=True, exist_ok=True)
+    if isinstance(process_model_info, dict):
+        _write_process_model_json(tenant, model_id, process_model_info)
 
 
 def save_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
@@ -125,7 +139,7 @@ def update_file(process_model_info: Any, file_name: str, content: bytes, *, tena
 
         xml = content.decode("utf-8") if isinstance(content, bytes) else content
         user = require_current_user()
-        save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id)
+        save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
     else:
         # save() (the .bpmn branch above) already git-commits via its own call.
         # Non-bpmn files (e.g. .dmn) previously wrote straight to disk with no
@@ -365,8 +379,32 @@ def _tenant_models_root(tenant_id: str) -> Path:
 
 
 def _model_file_path(tenant_id: str, path: str) -> Path:
+    """Best-effort default disk path for a model's primary .bpmn file when the
+    caller didn't pass an explicit file_name. Prefers process_model.json's
+    primary_file_name (the real on-disk name for template-created models);
+    falls back to {leaf-of-path}.bpmn only when no metadata exists yet, e.g.
+    a genuinely new model created via POST /v1.0/process-models."""
+    meta = read_json_file(_tenant_models_root(tenant_id) / path / "process_model.json")
+    primary = meta.get("primary_file_name")
+    if isinstance(primary, str) and primary.strip():
+        return _tenant_models_root(tenant_id) / path / primary.strip()
     name = path.rstrip("/").split("/")[-1]
     return _tenant_models_root(tenant_id) / path / f"{name}.bpmn"
+
+
+def _write_process_model_json(tenant_id: str, model_id: str, info: dict[str, Any]) -> None:
+    """Persist the process_model.json fields this module already reads
+    (display_name, description, primary_file_name, primary_process_id) --
+    without this, callers wrote them onto `process_model_info` dicts that
+    were never actually saved to disk, so every read back saw {}."""
+    payload = {key: value for key, value in info.items() if key != "id" and value is not None}
+    if not payload:
+        return
+    import json
+
+    path = _tenant_models_root(tenant_id) / model_id / "process_model.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _best_effort_git_commit(file_path: Path, *, message: str) -> None:

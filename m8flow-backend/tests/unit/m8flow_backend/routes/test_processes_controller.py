@@ -415,6 +415,49 @@ def test_detail_when_bpmn_filename_differs_from_model_id(client, db_session, tmp
     assert encoded.get_json()["id"] == "test-process-group/wfh-group-4355dd7e70"
 
 
+def test_editor_saves_bpmn_file_with_a_non_leaf_name_writes_only_the_real_file(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Regression for architecture review finding W2: catalog._model_file_path
+    used to hard-code {model-id-leaf}.bpmn regardless of the file actually
+    being written, so every edit to a template-created model (which keeps its
+    template's original filename, e.g. wfh-approval.bpmn under model id
+    wfh-group-4355dd7e70) wrote the real file *and* a phantom
+    wfh-group-4355dd7e70.bpmn alongside it."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    model_dir = tmp_path / "bpmn" / "t1" / "test-process-group" / "wfh-group-4355dd7e70"
+    model_dir.mkdir(parents=True)
+    (tmp_path / "bpmn" / "t1" / "test-process-group" / "process_group.json").write_text(
+        json.dumps({"display_name": "Test process group"}),
+        encoding="utf-8",
+    )
+    (model_dir / "wfh-approval.bpmn").write_text(
+        '<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"/>',
+        encoding="utf-8",
+    )
+    (model_dir / "process_model.json").write_text(
+        json.dumps({"display_name": "WFH approval", "primary_file_name": "wfh-approval.bpmn"}),
+        encoding="utf-8",
+    )
+    _user, token = _login_user(
+        client, db_session, username="editor-wfh-save", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.read_bytes()
+
+    response = client.put(
+        "/v1.0/m8flow/process-models/test-process-group:wfh-group-4355dd7e70/files/wfh-approval.bpmn",
+        data=xml,
+        headers={"Authorization": f"Bearer {token}"},
+        content_type="application/octet-stream",
+    )
+    assert response.status_code == 200
+
+    assert model_dir.joinpath("wfh-approval.bpmn").read_bytes() == xml
+    phantom = model_dir / "wfh-group-4355dd7e70.bpmn"
+    assert not phantom.exists(), "save() must not write a leaf-name-guessed phantom file"
+    assert sorted(p.name for p in model_dir.glob("*.bpmn")) == ["wfh-approval.bpmn"]
+
+
 def test_detail_missing_model_is_404(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
