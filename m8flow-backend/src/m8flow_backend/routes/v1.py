@@ -16,7 +16,12 @@ from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME, get_healthy_response, is_super_admin_request
+from m8flow_backend.tenancy import (
+    SELECTED_TENANT_COOKIE_NAME,
+    get_healthy_response,
+    is_super_admin_request,
+    require_tenant_id,
+)
 
 
 def register_v1_routes(app: Flask) -> None:
@@ -42,7 +47,7 @@ def register_v1_routes(app: Flask) -> None:
         session = g.db_session
         if not allow_uri(user, "GET", "/v1.0/tasks", session=session):
             raise ApiError("permission_denied", "Not allowed to list tasks", 403)
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         if is_super_admin_request():
             tasks = workflow.list_pending_tasks_for_super_admin(session)
         else:
@@ -63,7 +68,7 @@ def register_v1_routes(app: Flask) -> None:
     def claim_task(human_task_id: int):
         user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         task = workflow.claim(session, tenant_id=tenant_id, human_task_id=human_task_id, user_id=user.id)
         return jsonify({"id": task.id, "actual_owner_id": task.actual_owner_id})
 
@@ -71,7 +76,7 @@ def register_v1_routes(app: Flask) -> None:
     def complete_task(human_task_id: int):
         user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         payload = request.get_json(silent=True) or {}
         instance = workflow.complete(
             session,
@@ -84,16 +89,16 @@ def register_v1_routes(app: Flask) -> None:
 
     @app.get("/v1.0/tasks/<int:human_task_id>")
     def get_task(human_task_id: int):
-        require_current_user()
+        user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         return jsonify(human_task.display_task(session, tenant_id=tenant_id, human_task_id=human_task_id))
 
     @app.post("/v1.0/process-models")
     def save_process_model():
         user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         body = request.get_json(force=True)
         catalog.save(
             session,
@@ -106,8 +111,8 @@ def register_v1_routes(app: Flask) -> None:
 
     @app.get("/v1.0/process-models")
     def list_process_models():
-        require_current_user()
-        tenant_id = _require_tenant()
+        user = require_current_user()
+        tenant_id = require_tenant_id(user)
         group = request.args.get("group")
         return jsonify(catalog.list_models(group, tenant_id=tenant_id))
 
@@ -115,7 +120,7 @@ def register_v1_routes(app: Flask) -> None:
     def start_process():
         user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         body = request.get_json(force=True)
         instance = workflow.start(
             session,
@@ -127,9 +132,9 @@ def register_v1_routes(app: Flask) -> None:
 
     @app.get("/v1.0/process-instances")
     def list_instances():
-        require_current_user()
+        user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         if is_super_admin_request():
             rows = workflow.list_instances_for_super_admin(session)
         else:
@@ -138,9 +143,9 @@ def register_v1_routes(app: Flask) -> None:
 
     @app.get("/v1.0/secrets")
     def list_secrets():
-        require_current_user()
+        user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         from sqlalchemy import select
         from m8flow_backend.models.native import SecretModel
 
@@ -149,9 +154,9 @@ def register_v1_routes(app: Flask) -> None:
 
     @app.put("/v1.0/secrets/<key>")
     def put_secret(key: str):
-        require_current_user()
+        user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         body = request.get_json(force=True)
         secrets.put_secret(session, tenant_id=tenant_id, key=key, value=body["value"])
         return jsonify({"key": key})
@@ -220,7 +225,7 @@ def register_v1_routes(app: Flask) -> None:
     def submit_external_form(human_task_id: int):
         user = require_current_user()
         session = g.db_session
-        tenant_id = _require_tenant()
+        tenant_id = require_tenant_id(user)
         payload = request.get_json(silent=True) or {}
         instance = human_task.submit_external_form(
             session,
@@ -230,11 +235,3 @@ def register_v1_routes(app: Flask) -> None:
             task_payload=payload,
         )
         return jsonify({"process_instance_id": instance.id, "status": instance.status})
-
-
-def _require_tenant() -> str:
-    tenant_id = request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
-    if not tenant_id:
-        raise ApiError("tenant_required", "m8flow_selected_tenant cookie is required", 400)
-    g.m8flow_tenant_id = tenant_id
-    return tenant_id

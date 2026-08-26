@@ -252,6 +252,48 @@ def is_super_admin_request() -> bool:
     return actor_is_super_admin(getattr(g, "user", None))
 
 
+def tenant_id_from_selected_cookie() -> str | None:
+    """Read the selected-tenant cookie, or an already-resolved g.m8flow_tenant_id.
+    The one place this lookup happens -- route-level tenant helpers should build
+    on this instead of re-reading the cookie themselves."""
+    return request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
+
+
+def tenant_override_for_super_admin(*, is_super_admin: bool) -> str | None:
+    """Optional cross-tenant scope override: `tenantId` or `tenant_id` query param
+    (both spellings m8flow-frontend/m8flow-designer send), honored only for
+    super-admins."""
+    if not is_super_admin:
+        return None
+    return request.args.get("tenantId") or request.args.get("tenant_id") or None
+
+
+def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
+    """The one 'resolve a concrete tenant id for this request or 400' helper.
+    Super-admins may select any tenant via `tenantId`/`tenant_id`
+    (allow_super_admin_override); everyone else -- and a super-admin who didn't
+    override -- needs the `m8flow_selected_tenant` cookie. Raises tenant_required
+    (400 ApiError) if no concrete tenant resolves. Sets g.m8flow_tenant_id as a
+    side effect so tenancy.get_tenant_id() and RLS session scoping see the same
+    value.
+
+    Was 3-4 independent reimplementations (routes/v1.py::_require_tenant,
+    home_controller's tenant helpers, processes_controller::_require_concrete_tenant,
+    nats_token_controller::_require_tenant_id) with different -- one of them
+    outright broken -- super-admin-override semantics; see architecture review
+    finding C3."""
+    from m8flow_backend.authorization import actor_is_super_admin
+    from m8flow_backend.errors import ApiError
+
+    super_admin = actor_is_super_admin(user)
+    override = tenant_override_for_super_admin(is_super_admin=super_admin) if allow_super_admin_override else None
+    tenant_id = override or tenant_id_from_selected_cookie()
+    if not tenant_id:
+        raise ApiError("tenant_required", "m8flow_selected_tenant cookie is required", 400)
+    g.m8flow_tenant_id = tenant_id
+    return tenant_id
+
+
 def get_tenant_id(*, warn_on_default: bool = True) -> str:
     """
     Return the tenant id for the current execution.

@@ -7,7 +7,7 @@ from m8flow_backend.auth import require_current_user
 from m8flow_backend.authorization import allow_uri
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.routes.processes_controller import _require_concrete_tenant
+from m8flow_backend.tenancy import require_tenant_id
 
 _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 
@@ -15,15 +15,14 @@ _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}
 @handle_api_errors
 def list_process_instances():
     """Designer Process Instances list. Concrete tenant always required —
-    same posture as Processes/Templates (`_require_concrete_tenant`,
-    reused from `processes_controller.py`): no merged all-tenant catalog
-    for super-admins, even though nothing here technically forbids it.
-    Denied callers get an empty page (200), not 403 — mirrors
-    `list_process_models`'s own convention.
+    same posture as Processes/Templates (`tenancy.require_tenant_id`): no
+    merged all-tenant catalog for super-admins, even though nothing here
+    technically forbids it. Denied callers get an empty page (200), not 403 —
+    mirrors `list_process_models`'s own convention.
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-instances", session=session):
         return success_response(_EMPTY_PAGE, 200)
@@ -63,7 +62,7 @@ def list_process_instance_owners():
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-instances", session=session):
         return success_response({"owners": []}, 200)
@@ -81,7 +80,7 @@ def get_process_instance(process_instance_id: int):
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(
         user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session

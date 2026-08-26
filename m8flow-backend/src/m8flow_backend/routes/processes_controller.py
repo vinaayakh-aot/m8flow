@@ -6,11 +6,10 @@ from flask import Response, g, request
 
 from m8flow_backend import catalog, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, allow_uri
+from m8flow_backend.authorization import allow_uri
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.routes.home_controller import _optional_tenant_id, _tenant_override
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_backend.tenancy import require_tenant_id
 
 _FILE_MIMETYPES = {
     "bpmn": "application/xml",
@@ -36,30 +35,6 @@ def process_model_identifier_from_path_param(modified: str | None) -> str:
     return value.replace(":", "/")
 
 
-def _require_concrete_tenant(*, user: UserModel) -> str:
-    """Processes catalog is never all-tenants. Super-admin may pass tenantId
-    (or tenant_id) or rely on the selected-tenant cookie; everyone else must
-    have the cookie. Missing concrete tenant → 400.
-    """
-    super_admin = actor_is_super_admin(user)
-    own_tenant_id = _optional_tenant_id()
-    if super_admin:
-        override = _tenant_override(super_admin=True)
-        tenant_id = override or own_tenant_id
-        if not tenant_id:
-            raise ApiError(
-                "tenant_required",
-                "A concrete tenant is required (tenantId query or m8flow_selected_tenant cookie)",
-                400,
-            )
-        g.m8flow_tenant_id = tenant_id
-        return tenant_id
-    if not own_tenant_id:
-        raise ApiError("tenant_required", "m8flow_selected_tenant cookie is required", 400)
-    g.m8flow_tenant_id = own_tenant_id
-    return own_tenant_id
-
-
 @handle_api_errors
 def list_process_models():
     """Designer Processes models list. New endpoint rather than widening
@@ -70,7 +45,7 @@ def list_process_models():
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
         return success_response([], 200)
@@ -99,7 +74,7 @@ def list_process_groups():
     """Designer Process groups picker. Concrete tenant required; deny → []."""
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-groups", session=session):
         return success_response([], 200)
@@ -128,7 +103,7 @@ def get_process_model(modified_process_model_identifier: str):
     """Combined process-model detail for the designer detail page."""
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
         raise ApiError("not_found", "Process model not found", 404)
@@ -181,7 +156,7 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
         raise ApiError("not_found", "Process model not found", 404)
@@ -215,7 +190,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "PUT", "/v1.0/process-models", session=session):
         raise ApiError("permission_denied", "Not permitted to modify this process model", 403)
@@ -256,7 +231,7 @@ def start_process_instance(modified_process_model_identifier: str):
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "POST", "/v1.0/process-instances", session=session):
         raise ApiError("permission_denied", "Not permitted to start this process model", 403)
@@ -293,7 +268,7 @@ def delete_process_model(modified_process_model_identifier: str):
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = _require_concrete_tenant(user=user)
+    tenant_id = require_tenant_id(user)
 
     if not allow_uri(user, "DELETE", "/v1.0/process-models", session=session):
         raise ApiError("permission_denied", "Not permitted to delete this process model", 403)

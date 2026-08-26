@@ -11,16 +11,18 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.services.tenant_service import TenantService
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.tenancy import tenant_id_from_selected_cookie, tenant_override_for_super_admin
 
 
 def _optional_tenant_id() -> str | None:
-    return request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
+    return tenant_id_from_selected_cookie()
 
 
 def _resolve_own_tenant_id(*, super_admin: bool) -> str | None:
     """Tenant cookie is required for regular users; optional for super-admins
-    (null scope = all tenants / All Tenants in the sidebar)."""
+    (null scope = all tenants / All Tenants in the sidebar) -- unlike
+    tenancy.require_tenant_id, which always demands a concrete tenant. Home is
+    the one place a super-admin's request is legitimately tenant-less."""
     own_tenant_id = _optional_tenant_id()
     if super_admin:
         if own_tenant_id:
@@ -33,14 +35,7 @@ def _resolve_own_tenant_id(*, super_admin: bool) -> str | None:
 
 
 def _tenant_override(*, super_admin: bool) -> str | None:
-    """Optional cross-tenant scope override for super-admins, honored the
-    same way templates_controller.py's filter_tenant_id is: only when the
-    caller is a super-admin, and accepting both querystring spellings
-    m8flow-frontend/m8flow-designer send (`tenantId` and `tenant_id`).
-    """
-    if not super_admin:
-        return None
-    return request.args.get("tenantId") or request.args.get("tenant_id") or None
+    return tenant_override_for_super_admin(is_super_admin=super_admin)
 
 
 @handle_api_errors
