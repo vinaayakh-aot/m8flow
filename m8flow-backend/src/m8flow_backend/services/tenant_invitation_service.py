@@ -197,10 +197,17 @@ def create_invitation(
         created_by=created_by,
         modified_by=created_by,
     )
+
+    # Send before persisting: send_email() raises on a genuine configured-SMTP
+    # failure (it only returns False, no raise, in dev mode when SMTP isn't
+    # configured at all). Committing first left a dangling, un-retryable
+    # invitation row behind on a transient SMTP outage -- see architecture
+    # review finding S2.
+    sent = _send_invitation_email(normalized_email, tenant.name, raw_token)
+
     db.session.add(invitation)
     db.session.commit()
 
-    sent = _send_invitation_email(normalized_email, tenant.name, raw_token)
     link = None if sent else _accept_url(raw_token)
     return _serialize(invitation, include_link=link)
 
@@ -266,6 +273,13 @@ def resend_invitation(tenant_id: str, invitation_id: str, modified_by: str) -> d
         )
 
     raw_token = secrets.token_urlsafe(32)
+
+    # Send before rotating the token: on a genuine configured-SMTP failure
+    # (send_email() raises), committing first would invalidate the
+    # invitation's still-usable existing link while never delivering the new
+    # one -- see architecture review finding S2.
+    sent = _send_invitation_email(invitation.email, tenant.name, raw_token)
+
     invitation.token_hash = _hash_token(raw_token)
     invitation.status = TenantInvitationStatus.PENDING
     invitation.expires_at_in_seconds = _now_seconds() + DEFAULT_VALIDITY_DAYS * _SECONDS_PER_DAY
@@ -273,7 +287,6 @@ def resend_invitation(tenant_id: str, invitation_id: str, modified_by: str) -> d
     db.session.add(invitation)
     db.session.commit()
 
-    sent = _send_invitation_email(invitation.email, tenant.name, raw_token)
     link = None if sent else _accept_url(raw_token)
     return _serialize(invitation, include_link=link)
 

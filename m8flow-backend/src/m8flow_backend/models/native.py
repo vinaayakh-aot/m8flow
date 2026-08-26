@@ -144,17 +144,6 @@ class ProcessModelTemplateModel(HostBase):
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
 
-class M8flowTenantInvitationModel(HostBase):
-    __tablename__ = "m8flow_tenant_invitation"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str | None] = mapped_column(String(255))
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
 class M8flowNatsApiKeyModel(HostBase):
     __tablename__ = "m8flow_nats_api_key"
 
