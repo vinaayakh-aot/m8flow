@@ -23,6 +23,14 @@ def get_secret(session: Session, *, tenant_id: str, key: str) -> SecretModel | N
     ).first()
 
 
+def list_secret_keys(session: Session, *, tenant_id: str) -> list[str]:
+    """Secret keys for a tenant, never the values -- the one place a
+    GET-/v1.0/secrets-shaped listing should go through instead of a route
+    querying SecretModel directly."""
+    rows = session.scalars(select(SecretModel).where(SecretModel.m8f_tenant_id == tenant_id)).all()
+    return [row.key for row in rows]
+
+
 def put_secret(session: Session, *, tenant_id: str, key: str, value: str) -> SecretModel:
     row = get_secret(session, tenant_id=tenant_id, key=key)
     if row is None:

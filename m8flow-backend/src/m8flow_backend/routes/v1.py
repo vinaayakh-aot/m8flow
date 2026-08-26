@@ -146,11 +146,7 @@ def register_v1_routes(app: Flask) -> None:
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        from sqlalchemy import select
-        from m8flow_backend.models.native import SecretModel
-
-        rows = session.scalars(select(SecretModel).where(SecretModel.m8f_tenant_id == tenant_id)).all()
-        return jsonify([{"key": row.key} for row in rows])
+        return jsonify([{"key": key} for key in secrets.list_secret_keys(session, tenant_id=tenant_id)])
 
     @app.put("/v1.0/secrets/<key>")
     def put_secret(key: str):
