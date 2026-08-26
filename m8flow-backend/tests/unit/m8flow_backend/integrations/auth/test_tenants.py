@@ -40,15 +40,7 @@ class _FakeResponse:
 def _tenant_http(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.tenants.fetch_master_admin_token",
-        lambda: "admin-token",
-    )
-    monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.fetch_master_admin_token",
-        lambda: "admin-token",
-    )
-    monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.groups.fetch_master_admin_token",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
 
@@ -73,7 +65,7 @@ def test_get_tenant_by_id_returns_neutral_tenant(monkeypatch):
         assert headers["Authorization"] == "Bearer admin-token"
         return _FakeResponse(_acme())
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     tenant = KeycloakAuthProvider().directory_admin.get_tenant(TenantRef(id="org-1"))
     assert tenant == Tenant(ref=TenantRef(id="org-1", alias="acme", name="Acme"), display_name="Acme")
 
@@ -83,7 +75,7 @@ def test_get_tenant_by_alias_returns_neutral_tenant(monkeypatch):
         assert url == ORGS_URL
         return _FakeResponse([_acme()])
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     tenant = KeycloakAuthProvider().directory_admin.get_tenant(TenantRef(alias="acme"))
     assert tenant.ref.id == "org-1"
     assert tenant.ref.alias == "acme"
@@ -91,7 +83,7 @@ def test_get_tenant_by_alias_returns_neutral_tenant(monkeypatch):
 
 def test_get_tenant_raises_tenant_not_found(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.tenants.requests.get",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.get",
         lambda *args, **kwargs: _FakeResponse([], status_code=200),
     )
     with pytest.raises(TenantNotFound):
@@ -112,8 +104,8 @@ def test_create_tenant_posts_then_returns_neutral_tenant(monkeypatch):
         assert url == f"{ORGS_URL}/org-1"
         return _FakeResponse(_acme())
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.post", fake_post)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     monkeypatch.setattr(
         "m8flow_backend.integrations.auth.keycloak.groups.ensure_default_groups",
         lambda *args, **kwargs: [],
@@ -125,7 +117,7 @@ def test_create_tenant_posts_then_returns_neutral_tenant(monkeypatch):
 
 def test_create_tenant_conflict_is_provider_unavailable(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.tenants.requests.post",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.post",
         lambda *args, **kwargs: _FakeResponse({"error": "exists"}, status_code=409),
     )
     monkeypatch.setattr(
@@ -150,9 +142,9 @@ def test_add_member_by_username(monkeypatch):
         posted.append((url, json))
         return _FakeResponse({}, status_code=204)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
     membership = KeycloakAuthProvider().directory_admin.add_member(
         username="ada",
         tenant_ref=TenantRef(id="org-1"),
@@ -169,7 +161,7 @@ def test_get_member_raises_user_not_found(monkeypatch):
             return _FakeResponse([])
         raise AssertionError(url)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     with pytest.raises(UserNotFound):
         KeycloakAuthProvider().directory_admin.get_member(
             username="missing",
@@ -189,9 +181,9 @@ def test_list_memberships_for_username(monkeypatch):
             return _FakeResponse([{"name": "Designers"}])
         raise AssertionError(url)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     memberships = KeycloakAuthProvider().list_memberships(username="ada")
     assert len(memberships) == 1
     assert memberships[0].tenant_ref.alias == "acme"

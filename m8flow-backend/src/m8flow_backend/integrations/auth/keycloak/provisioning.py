@@ -13,6 +13,7 @@ import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
+from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
 from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
 from m8flow_backend.integrations.auth.keycloak.config import keycloak_url, spoke_client_id, template_realm_name
 from m8flow_backend.integrations.auth.keycloak.realm_template import (
@@ -617,22 +618,14 @@ def delete_realm(realm_id: str, admin_token: str | None = None) -> None:
     if not realm_id or not str(realm_id).strip():
         raise ValueError("realm_id is required")
     realm_id = str(realm_id).strip()
-    
-    try:
-        token = admin_token or fetch_master_admin_token()
-        base_url = keycloak_url()
-
-        r = requests.delete(
-            f"{base_url}/admin/realms/{realm_id}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not delete tenant realm {realm_id!r}") from exc
-    if r.status_code == 404:
+    response = KeycloakAdminClient(admin_token=admin_token).delete(
+        realm_id,
+        tolerate=(404,),
+        context=f"delete tenant realm {realm_id!r}",
+    )
+    if response.status_code == 404:
         logger.info("Keycloak realm %s already deleted or not found.", realm_id)
         return
-    r.raise_for_status()
     logger.info("Deleted Keycloak realm: %s", realm_id)
 
 
@@ -643,7 +636,7 @@ def update_realm(realm_id: str, display_name: str, admin_token: str | None = Non
 
     if not display_name or not str(display_name).strip():
         raise ValueError("display_name is required")
-    
+
     if not admin_token or not str(admin_token).strip():
         raise ValueError("admin_token is required")
 
@@ -651,23 +644,11 @@ def update_realm(realm_id: str, display_name: str, admin_token: str | None = Non
     display_name = str(display_name).strip()
     admin_token = str(admin_token).strip()
 
-    base_url = keycloak_url()
-
-    payload = {
-        "realm": realm_id,
-        "displayName": display_name
-    }
-
-    try:
-        r = requests.put(
-            f"{base_url}/admin/realms/{realm_id}",
-            json=payload,
-            headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/json"},
-            timeout=30,
-        )
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not update tenant realm {realm_id!r}") from exc
+    KeycloakAdminClient(admin_token=admin_token).put(
+        realm_id,
+        json={"realm": realm_id, "displayName": display_name},
+        context=f"update tenant realm {realm_id!r}",
+    )
     logger.info("Updated Keycloak realm %s: displayName=%s", realm_id, display_name)
 
 

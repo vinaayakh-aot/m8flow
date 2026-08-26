@@ -1,25 +1,20 @@
 """Keycloak Organizations Admin API as neutral tenants + memberships.
 
-Group/role mutations live in ``groups.py``. The provider returns
-Tenant / User / Membership.
+Group/role mutations live in ``groups.py``; HTTP plumbing lives in
+``admin_client.py``. The provider returns Tenant / User / Membership.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import quote
-
-import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Membership, Tenant, TenantRef, User
-from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
-from m8flow_backend.integrations.auth.keycloak.config import keycloak_url, shared_realm_name
+from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
+from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.integrations.auth.keycloak.directory import fetch_user_representation, user_from_representation
 
 logger = logging.getLogger(__name__)
-
-_HTTP_TIMEOUT_SECONDS = 30
 
 
 def tenant_from_representation(payload: dict[str, Any]) -> Tenant:
@@ -76,20 +71,9 @@ def _membership_with_directory_groups(
     return Membership(tenant_ref=tenant.ref, roles=list(roles), groups=list(roles))
 
 
-def _admin_token(admin_token: str | None) -> str:
-    return admin_token or fetch_master_admin_token()
-
-
-def _organizations_url(*segments: str) -> str:
-    base = f"{keycloak_url()}/admin/realms/{shared_realm_name()}/organizations"
-    normalized = [quote(segment.strip("/"), safe="") for segment in segments if segment and str(segment).strip("/")]
-    if not normalized:
-        return base
-    return f"{base}/{'/'.join(normalized)}"
-
-
-def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+def _shared_realm_segments(*segments: str) -> tuple[str, ...]:
+    """Organization endpoints all hang off the shared realm's ``organizations`` node."""
+    return (shared_realm_name(), "organizations", *segments)
 
 
 def _tenant_id(tenant_ref: TenantRef) -> str | None:
@@ -112,18 +96,14 @@ def fetch_organization_representation_by_id(
     if not organization_id or not str(organization_id).strip():
         raise ValueError("organization_id is required")
     normalized_id = str(organization_id).strip()
-    try:
-        response = requests.get(
-            _organizations_url(normalized_id),
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not look up tenant {normalized_id!r}") from exc
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        *_shared_realm_segments(normalized_id),
+        tolerate=(404,),
+        context=f"look up tenant {normalized_id!r}",
+    )
+    if response.status_code == 404:
+        return None
+    payload = response.json()
     return payload if isinstance(payload, dict) else None
 
 
@@ -135,20 +115,14 @@ def fetch_organization_representation_by_alias(
     if not alias or not str(alias).strip():
         raise ValueError("alias is required")
     normalized_alias = str(alias).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
 
     def _load(**params: str) -> list[dict[str, Any]]:
-        try:
-            response = requests.get(
-                _organizations_url(),
-                params=params,
-                headers=_headers(token),
-                timeout=_HTTP_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except requests.RequestException as exc:
-            raise ProviderUnavailable(f"Could not look up tenant alias {normalized_alias!r}") from exc
+        payload = client.get(
+            *_shared_realm_segments(),
+            params=params,
+            context=f"look up tenant alias {normalized_alias!r}",
+        ).json()
         if not isinstance(payload, list):
             return []
         return [item for item in payload if isinstance(item, dict)]
@@ -189,31 +163,27 @@ def create_tenant(
         raise ValueError("alias is required")
     normalized_alias = str(alias).strip()
     display_name = str(name).strip() if name and str(name).strip() else normalized_alias
-    token = _admin_token(admin_token)
-    try:
-        response = requests.post(
-            _organizations_url(),
-            json={"alias": normalized_alias, "name": display_name, "enabled": enabled},
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 409:
-            raise ProviderUnavailable("Tenant already exists")
-        response.raise_for_status()
-        location = response.headers.get("Location")
-        representation = None
-        if location and isinstance(location, str) and location.strip():
-            organization_id = location.strip().rstrip("/").split("/")[-1]
-            representation = fetch_organization_representation_by_id(organization_id, admin_token=token)
-        if representation is None:
-            representation = fetch_organization_representation_by_alias(normalized_alias, admin_token=token)
-        if representation is None:
-            raise ProviderUnavailable(f"Tenant {normalized_alias!r} was created but could not be fetched")
-        return tenant_from_representation(representation)
-    except ProviderUnavailable:
-        raise
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not create tenant {normalized_alias!r}") from exc
+    client = KeycloakAdminClient(admin_token=admin_token)
+    response = client.post(
+        *_shared_realm_segments(),
+        json={"alias": normalized_alias, "name": display_name, "enabled": enabled},
+        tolerate=(409,),
+        context=f"create tenant {normalized_alias!r}",
+    )
+    if response.status_code == 409:
+        raise ProviderUnavailable("Tenant already exists")
+    # Reuse this operation's resolved token so the follow-up lookups don't re-fetch it.
+    token = client.token
+    location = response.headers.get("Location")
+    representation = None
+    if location and isinstance(location, str) and location.strip():
+        organization_id = location.strip().rstrip("/").split("/")[-1]
+        representation = fetch_organization_representation_by_id(organization_id, admin_token=token)
+    if representation is None:
+        representation = fetch_organization_representation_by_alias(normalized_alias, admin_token=token)
+    if representation is None:
+        raise ProviderUnavailable(f"Tenant {normalized_alias!r} was created but could not be fetched")
+    return tenant_from_representation(representation)
 
 
 def update_tenant(
@@ -231,17 +201,11 @@ def update_tenant(
     if not tenant_id or not alias:
         raise ProviderUnavailable("Directory tenant is missing id or alias")
     normalized_name = str(name).strip()
-    token = _admin_token(admin_token)
-    try:
-        response = requests.put(
-            _organizations_url(tenant_id),
-            json={"id": tenant_id, "alias": alias, "name": normalized_name, "enabled": enabled},
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not update tenant {tenant_id!r}") from exc
+    KeycloakAdminClient(admin_token=admin_token).put(
+        *_shared_realm_segments(tenant_id),
+        json={"id": tenant_id, "alias": alias, "name": normalized_name, "enabled": enabled},
+        context=f"update tenant {tenant_id!r}",
+    )
     return Tenant(
         ref=TenantRef(id=tenant_id, alias=alias, name=normalized_name),
         display_name=normalized_name,
@@ -256,17 +220,11 @@ def delete_tenant(tenant_ref: TenantRef, *, admin_token: str | None = None) -> N
     tenant_id = tenant.ref.id
     if not tenant_id:
         raise ProviderUnavailable("Directory tenant is missing an id")
-    try:
-        response = requests.delete(
-            _organizations_url(tenant_id),
-            headers={"Authorization": f"Bearer {_admin_token(admin_token)}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not delete tenant {tenant_id!r}") from exc
+    KeycloakAdminClient(admin_token=admin_token).delete(
+        *_shared_realm_segments(tenant_id),
+        tolerate=(404,),
+        context=f"delete tenant {tenant_id!r}",
+    )
 
 
 def search_member_representations(
@@ -288,17 +246,11 @@ def search_member_representations(
     if normalized_search:
         params["search"] = normalized_search
         params["exact"] = "true" if exact else "false"
-    try:
-        response = requests.get(
-            _organizations_url(normalized_id, "members"),
-            params=params,
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not search members of tenant {normalized_id!r}") from exc
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        *_shared_realm_segments(normalized_id, "members"),
+        params=params,
+        context=f"search members of tenant {normalized_id!r}",
+    ).json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -344,25 +296,18 @@ def add_member_by_user_id(
         raise ValueError("user_id is required")
     normalized_id = str(organization_id).strip()
     normalized_user_id = str(user_id).strip()
-    try:
-        response = requests.post(
-            _organizations_url(normalized_id, "members"),
-            json=normalized_user_id,
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
+    response = KeycloakAdminClient(admin_token=admin_token).post(
+        *_shared_realm_segments(normalized_id, "members"),
+        json=normalized_user_id,
+        tolerate=(409,),
+        context=f"add member {normalized_user_id!r} to tenant {normalized_id!r}",
+    )
+    if response.status_code == 409:
+        logger.info(
+            "User %s is already a member of tenant %s; ignoring conflict.",
+            normalized_user_id,
+            normalized_id,
         )
-        if response.status_code == 409:
-            logger.info(
-                "User %s is already a member of tenant %s; ignoring conflict.",
-                normalized_user_id,
-                normalized_id,
-            )
-            return
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(
-            f"Could not add member {normalized_user_id!r} to tenant {normalized_id!r}"
-        ) from exc
 
 
 def add_member_by_username(
@@ -397,18 +342,11 @@ def remove_member_by_user_id(
         raise ValueError("member_id is required")
     normalized_id = str(organization_id).strip()
     normalized_member_id = str(member_id).strip()
-    try:
-        response = requests.delete(
-            _organizations_url(normalized_id, "members", normalized_member_id),
-            headers={"Authorization": f"Bearer {_admin_token(admin_token)}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code != 404:
-            response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(
-            f"Could not remove member {normalized_member_id!r} from tenant {normalized_id!r}"
-        ) from exc
+    KeycloakAdminClient(admin_token=admin_token).delete(
+        *_shared_realm_segments(normalized_id, "members", normalized_member_id),
+        tolerate=(404,),
+        context=f"remove member {normalized_member_id!r} from tenant {normalized_id!r}",
+    )
 
 
 def remove_member_by_username(
@@ -440,22 +378,17 @@ def list_user_organization_representations(
         raise ValueError("user_id is required")
     normalized_user_id = str(user_id).strip()
     normalized_realm = str(realm).strip() if realm and str(realm).strip() else shared_realm_name()
-    url = (
-        f"{keycloak_url()}/admin/realms/{normalized_realm}/users/"
-        f"{quote(normalized_user_id, safe='')}/organizations"
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        normalized_realm,
+        "users",
+        normalized_user_id,
+        "organizations",
+        tolerate=(404,),
+        context=f"list tenants for user {normalized_user_id!r}",
     )
-    try:
-        response = requests.get(
-            url,
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return []
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not list tenants for user {normalized_user_id!r}") from exc
+    if response.status_code == 404:
+        return []
+    payload = response.json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]

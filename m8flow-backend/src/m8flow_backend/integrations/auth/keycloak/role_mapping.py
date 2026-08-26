@@ -6,10 +6,27 @@ API because that is the existing client contract.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
 from types import MappingProxyType
 
-from m8flow_backend.integrations.auth.base.roles import VALID_TENANT_ROLE_NAMES
+from m8flow_backend.integrations.auth.base.roles import (
+    VALID_TENANT_ROLE_NAMES,
+    normalize_tenant_role_name,
+    normalize_tenant_role_names,
+)
+
+# Neutral role-name validation lives in ``base.roles``; re-exported here so the
+# existing Keycloak-side importers (groups, tenant_group_mapping) are unchanged.
+__all__ = [
+    "ORGANIZATION_GROUP_FOR_TENANT_ROLE",
+    "ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE",
+    "ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE",
+    "TENANT_ROLE_FOR_ORGANIZATION_GROUP",
+    "normalize_tenant_role_name",
+    "normalize_tenant_role_names",
+    "organization_group_name_candidates_for_tenant_role",
+    "primary_organization_group_name_for_tenant_role",
+    "tenant_roles_for_organization_group",
+]
 
 ORGANIZATION_GROUP_FOR_TENANT_ROLE = MappingProxyType(
     {
@@ -28,25 +45,6 @@ TENANT_ROLE_FOR_ORGANIZATION_GROUP = MappingProxyType(
 
 ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE = "m8flow_role_names"
 ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE = "m8flow_role_mapping_configured"
-
-
-def normalize_tenant_role_name(role_name: str | None) -> str:
-    normalized = str(role_name or "").strip()
-    if normalized not in VALID_TENANT_ROLE_NAMES:
-        return ""
-    return normalized
-
-
-def normalize_tenant_role_names(role_names: Iterable[str | None] | None) -> tuple[str, ...]:
-    normalized_role_names: list[str] = []
-    seen: set[str] = set()
-    for role_name in role_names or ():
-        normalized = normalize_tenant_role_name(role_name)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        normalized_role_names.append(normalized)
-    return tuple(sorted(normalized_role_names))
 
 
 def organization_group_name_candidates_for_tenant_role(role_name: str | None) -> tuple[str, ...]:

@@ -341,7 +341,7 @@ permissions:
     actions: [all]
     uri: /tasks/*
   read-task-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /tasks
     command: task.list

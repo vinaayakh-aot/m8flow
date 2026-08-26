@@ -41,7 +41,7 @@ class _FakeResponse:
 def _directory_http(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.fetch_master_admin_token",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
 
@@ -64,7 +64,7 @@ def test_get_user_returns_neutral_user(monkeypatch):
         assert headers["Authorization"] == "Bearer admin-token"
         return _FakeResponse([_ada()])
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     user = KeycloakAuthProvider().get_user(username="ada", authentication_identifier="m8flow")
     assert user == User(
         subject="u1",
@@ -76,7 +76,7 @@ def test_get_user_returns_neutral_user(monkeypatch):
 
 def test_get_user_raises_user_not_found(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.requests.get",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.get",
         lambda *args, **kwargs: _FakeResponse([]),
     )
     with pytest.raises(UserNotFound):
@@ -90,7 +90,7 @@ def test_search_users_returns_neutral_users(monkeypatch):
         assert params["max"] == 50
         return _FakeResponse([_ada(), {"id": "u2", "username": "ada-admin"}])
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     users = KeycloakAuthProvider().search_users(query="ada", authentication_identifier="m8flow")
     assert [user.subject for user in users] == ["u1", "u2"]
     assert users[0].username == "ada"
@@ -117,9 +117,9 @@ def test_create_user_posts_then_returns_neutral_user(monkeypatch):
         assert json["requiredActions"] == []
         return _FakeResponse({}, status_code=204)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.post", fake_post)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.put", fake_put)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.put", fake_put)
 
     user = KeycloakAuthProvider().directory_admin.create_user(
         username="ada",
@@ -134,7 +134,7 @@ def test_create_user_posts_then_returns_neutral_user(monkeypatch):
 
 def test_create_user_conflict_is_provider_unavailable(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.requests.post",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.post",
         lambda *args, **kwargs: _FakeResponse({"error": "exists"}, status_code=409),
     )
     with pytest.raises(ProviderUnavailable, match="already exists"):
@@ -155,9 +155,9 @@ def test_delete_user_by_username(monkeypatch):
         deleted.append(url)
         return _FakeResponse({}, status_code=204)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.requests.delete",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.delete",
         fake_delete,
     )
     KeycloakAuthProvider().directory_admin.delete_user(
@@ -169,7 +169,7 @@ def test_delete_user_by_username(monkeypatch):
 
 def test_delete_user_missing_username_raises_user_not_found(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.requests.get",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.get",
         lambda *args, **kwargs: _FakeResponse([]),
     )
     with pytest.raises(UserNotFound):
@@ -181,7 +181,7 @@ def test_delete_user_missing_username_raises_user_not_found(monkeypatch):
 
 def test_delete_user_by_id_treats_404_as_success(monkeypatch):
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.requests.delete",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.requests.delete",
         lambda *args, **kwargs: _FakeResponse({}, status_code=404),
     )
     directory.delete_user_by_id("m8flow", "u1")

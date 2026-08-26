@@ -141,3 +141,81 @@ def test_do_route_get_via_client(client: TestClient) -> None:
     payload: dict[str, Any] = response.json()
     assert payload["command_response"]["body"] == {"ping": "pong"}
     assert payload["error"] is None
+
+
+def test_connector_dispatch_table() -> None:
+    from m8flow_node_wire_proxy.adapter import _connector_for, _run_head, _run_http_generic
+
+    assert _connector_for("HEAD") is _run_head
+    for method in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+        assert _connector_for(method) is _run_http_generic
+
+
+@pytest.mark.asyncio
+async def test_execute_retries_once_on_5xx_then_succeeds() -> None:
+    mock_run = AsyncMock(
+        side_effect=[
+            _mock_connector_response(status=500, body='{"error":"boom"}'),
+            _mock_connector_response(status=200, body='{"ok":true}'),
+        ]
+    )
+    with (
+        patch("m8flow_node_wire_proxy.adapter._run_http_generic", mock_run),
+        patch("m8flow_node_wire_proxy.adapter.asyncio.sleep", AsyncMock()) as mock_sleep,
+    ):
+        result = await execute_http_v2(
+            "http",
+            "GetRequestV2",
+            {"url": "https://example.com/items", "attempts": 3},
+        )
+    assert mock_run.await_count == 2
+    assert mock_sleep.await_count == 1
+    assert result["error"] is None
+    assert result["command_response"]["http_status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_execute_does_not_retry_on_4xx() -> None:
+    mock_run = AsyncMock(return_value=_mock_connector_response(status=404, body="{}"))
+    with (
+        patch("m8flow_node_wire_proxy.adapter._run_http_generic", mock_run),
+        patch("m8flow_node_wire_proxy.adapter.asyncio.sleep", AsyncMock()) as mock_sleep,
+    ):
+        result = await execute_http_v2(
+            "http",
+            "GetRequestV2",
+            {"url": "https://example.com/items", "attempts": 3},
+        )
+    assert mock_run.await_count == 1
+    assert mock_sleep.await_count == 0
+    assert result["command_response"]["http_status"] == 404
+
+
+@pytest.mark.asyncio
+async def test_execute_exhausts_attempts_on_persistent_5xx() -> None:
+    mock_run = AsyncMock(return_value=_mock_connector_response(status=503, body="{}"))
+    with (
+        patch("m8flow_node_wire_proxy.adapter._run_http_generic", mock_run),
+        patch("m8flow_node_wire_proxy.adapter.asyncio.sleep", AsyncMock()) as mock_sleep,
+    ):
+        result = await execute_http_v2(
+            "http",
+            "GetRequestV2",
+            {"url": "https://example.com/items", "attempts": 3},
+        )
+    assert mock_run.await_count == 3
+    assert mock_sleep.await_count == 2
+    assert result["command_response"]["http_status"] == 503
+
+
+@pytest.mark.asyncio
+async def test_head_fails_closed_when_ssrf_gate_unavailable() -> None:
+    """If node_wire_gateway can't provide the SSRF gate, refuse rather than send unchecked."""
+    from m8flow_node_wire_proxy.adapter import _run_head
+
+    with patch("m8flow_node_wire_proxy.node_wire_gateway.get_ssrf_gate", return_value=None):
+        result = await _run_head({"url": "https://example.com", "headers": {}, "params": None})
+
+    assert result.success is False
+    assert result.error_code == "SsrfGateUnavailable"
+    assert result.data is None

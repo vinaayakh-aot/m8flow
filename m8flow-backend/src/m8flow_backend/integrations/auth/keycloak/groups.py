@@ -1,6 +1,6 @@
 """Keycloak organization-group Admin API as neutral groups + role mapping.
 
-The provider returns Group / User / Membership.
+HTTP plumbing lives in ``admin_client.py``. The provider returns Group / User / Membership.
 """
 from __future__ import annotations
 
@@ -10,16 +10,12 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-
-import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef, User
-from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
+from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
 from m8flow_backend.integrations.auth.keycloak.config import (
     keycloak_default_groups_path,
-    keycloak_url,
     shared_realm_name,
 )
 from m8flow_backend.integrations.auth.keycloak.directory import fetch_user_representation, user_from_representation
@@ -35,7 +31,6 @@ from m8flow_backend.integrations.auth.keycloak.tenants import resolve_tenant_ref
 
 logger = logging.getLogger(__name__)
 
-_HTTP_TIMEOUT_SECONDS = 30
 _FALLBACK_DEFAULT_GROUP_NAMES = tuple(ORGANIZATION_GROUP_FOR_TENANT_ROLE.values())
 
 
@@ -46,41 +41,14 @@ def group_from_representation(payload: dict[str, Any], tenant_ref: TenantRef) ->
     return Group(identifier=name.strip(), tenant_ref=tenant_ref)
 
 
-def _admin_token(admin_token: str | None) -> str:
-    return admin_token or fetch_master_admin_token()
+def _org_groups_segments(organization_id: str, *segments: str) -> tuple[str, ...]:
+    """Segments for ``.../organizations/{org}/groups[/...]`` under the shared realm."""
+    return (shared_realm_name(), "organizations", organization_id, "groups", *segments)
 
 
-def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-
-def _groups_url(organization_id: str, *segments: str) -> str:
-    base = f"{keycloak_url()}/admin/realms/{shared_realm_name()}/organizations/{quote(organization_id, safe='')}/groups"
-    extra = [quote(segment.strip("/"), safe="") for segment in segments if segment and str(segment).strip("/")]
-    if not extra:
-        return base
-    return f"{base}/{'/'.join(extra)}"
-
-
-def _member_groups_url(organization_id: str, member_id: str) -> str:
-    return (
-        f"{keycloak_url()}/admin/realms/{shared_realm_name()}/organizations/"
-        f"{quote(organization_id, safe='')}/members/{quote(member_id, safe='')}/groups"
-    )
-
-
-def _role_mappings_url(organization_id: str, group_id: str, *segments: str) -> str:
-    base = _groups_url(organization_id, group_id, "role-mappings", "realm")
-    extra = [quote(segment.strip("/"), safe="") for segment in segments if segment and str(segment).strip("/")]
-    if not extra:
-        return base
-    return f"{base}/{'/'.join(extra)}"
-
-
-def _unavailable(action: str, exc: Exception) -> ProviderUnavailable:
-    error = ProviderUnavailable(f"Could not {action}")
-    error.__cause__ = exc
-    return error
+def _realm_group_segments(group_id: str, *segments: str) -> tuple[str, ...]:
+    """Segments for the realm-level ``.../groups/{id}[/...]`` node (non-organization)."""
+    return (shared_realm_name(), "groups", group_id, *segments)
 
 
 def default_group_identifiers() -> tuple[str, ...]:
@@ -132,22 +100,16 @@ def list_group_representations(
     if not organization_id or not str(organization_id).strip():
         raise ValueError("organization_id is required")
     normalized_id = str(organization_id).strip()
-    try:
-        response = requests.get(
-            _groups_url(normalized_id),
-            params={
-                "briefRepresentation": "true" if brief_representation else "false",
-                "populateHierarchy": "false",
-                "subGroupsCount": "false",
-                "max": 100,
-            },
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"list groups for tenant {normalized_id!r}", exc)
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        *_org_groups_segments(normalized_id),
+        params={
+            "briefRepresentation": "true" if brief_representation else "false",
+            "populateHierarchy": "false",
+            "subGroupsCount": "false",
+            "max": 100,
+        },
+        context=f"list groups for tenant {normalized_id!r}",
+    ).json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -165,19 +127,15 @@ def fetch_group_representation_by_id(
         raise ValueError("group_id is required")
     normalized_org = str(organization_id).strip()
     normalized_group_id = str(group_id).strip()
-    try:
-        response = requests.get(
-            _groups_url(normalized_org, normalized_group_id),
-            params={"subGroupsCount": "false"},
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"fetch group {normalized_group_id!r}", exc)
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        *_org_groups_segments(normalized_org, normalized_group_id),
+        params={"subGroupsCount": "false"},
+        tolerate=(404,),
+        context=f"fetch group {normalized_group_id!r}",
+    )
+    if response.status_code == 404:
+        return None
+    payload = response.json()
     return payload if isinstance(payload, dict) else None
 
 
@@ -193,24 +151,18 @@ def fetch_group_representation_by_name(
         raise ValueError("group_name is required")
     normalized_org = str(organization_id).strip()
     normalized_name = str(group_name).strip()
-    try:
-        response = requests.get(
-            _groups_url(normalized_org),
-            params={
-                "search": normalized_name,
-                "exact": "true",
-                "briefRepresentation": "true",
-                "populateHierarchy": "false",
-                "subGroupsCount": "false",
-                "max": 100,
-            },
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"look up group {normalized_name!r}", exc)
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        *_org_groups_segments(normalized_org),
+        params={
+            "search": normalized_name,
+            "exact": "true",
+            "briefRepresentation": "true",
+            "populateHierarchy": "false",
+            "subGroupsCount": "false",
+            "max": 100,
+        },
+        context=f"look up group {normalized_name!r}",
+    ).json()
     if not isinstance(payload, list):
         return None
     for item in payload:
@@ -236,17 +188,16 @@ def fetch_member_group_representations(
         raise ValueError("member_id is required")
     normalized_org = str(organization_id).strip()
     normalized_member = str(member_id).strip()
-    try:
-        response = requests.get(
-            _member_groups_url(normalized_org, normalized_member),
-            params={"briefRepresentation": "true", "max": 100},
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"list groups for member {normalized_member!r}", exc)
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        shared_realm_name(),
+        "organizations",
+        normalized_org,
+        "members",
+        normalized_member,
+        "groups",
+        params={"briefRepresentation": "true", "max": 100},
+        context=f"list groups for member {normalized_member!r}",
+    ).json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -264,17 +215,11 @@ def list_group_member_representations(
         raise ValueError("group_id is required")
     normalized_org = str(organization_id).strip()
     normalized_group_id = str(group_id).strip()
-    try:
-        response = requests.get(
-            _groups_url(normalized_org, normalized_group_id, "members"),
-            params={"briefRepresentation": "true", "max": 100},
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"list members of group {normalized_group_id!r}", exc)
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        *_org_groups_segments(normalized_org, normalized_group_id, "members"),
+        params={"briefRepresentation": "true", "max": 100},
+        context=f"list members of group {normalized_group_id!r}",
+    ).json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -292,17 +237,13 @@ def create_group_representation(
         raise ValueError("group_name is required")
     normalized_org = str(organization_id).strip()
     normalized_name = str(group_name).strip()
-    token = _admin_token(admin_token)
-    try:
-        response = requests.post(
-            _groups_url(normalized_org),
-            json={"name": normalized_name},
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"create group {normalized_name!r}", exc)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    response = client.post(
+        *_org_groups_segments(normalized_org),
+        json={"name": normalized_name},
+        context=f"create group {normalized_name!r}",
+    )
+    token = client.token
     location = (response.headers or {}).get("Location")
     representation: dict[str, Any] | None = None
     if location and isinstance(location, str):
@@ -329,16 +270,11 @@ def delete_group_representation(
         raise ValueError("group_id is required")
     normalized_org = str(organization_id).strip()
     normalized_group_id = str(group_id).strip()
-    try:
-        response = requests.delete(
-            _groups_url(normalized_org, normalized_group_id),
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code != 404:
-            response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"delete group {normalized_group_id!r}", exc)
+    KeycloakAdminClient(admin_token=admin_token).delete(
+        *_org_groups_segments(normalized_org, normalized_group_id),
+        tolerate=(404,),
+        context=f"delete group {normalized_group_id!r}",
+    )
 
 
 def _attribute_values(attributes: Mapping[str, Any] | None, attribute_name: str) -> tuple[str, ...]:
@@ -392,7 +328,6 @@ def _put_group_attributes(
     role_names: list[str] | tuple[str, ...] | None = None,
     admin_token: str | None = None,
 ) -> dict[str, Any]:
-    token = _admin_token(admin_token)
     existing_attributes = representation.get("attributes")
     updated_attributes = copy.deepcopy(existing_attributes) if isinstance(existing_attributes, dict) else {}
     group_name = name.strip() if isinstance(name, str) and name.strip() else representation.get("name")
@@ -409,17 +344,13 @@ def _put_group_attributes(
     description = representation.get("description")
     if isinstance(description, str):
         payload["description"] = description
-    try:
-        response = requests.put(
-            _groups_url(organization_id, group_id),
-            json=payload,
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"update group {group_id!r}", exc)
-    refreshed = fetch_group_representation_by_id(organization_id, group_id, admin_token=token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    client.put(
+        *_org_groups_segments(organization_id, group_id),
+        json=payload,
+        context=f"update group {group_id!r}",
+    )
+    refreshed = fetch_group_representation_by_id(organization_id, group_id, admin_token=client.token)
     if isinstance(refreshed, dict):
         return refreshed
     payload["id"] = group_id
@@ -478,19 +409,24 @@ def fetch_realm_role_representation(
         raise ValueError("role_name is required")
     normalized_realm = str(realm_name).strip()
     normalized_role = str(role_name).strip()
-    try:
-        response = requests.get(
-            f"{keycloak_url()}/admin/realms/{quote(normalized_realm, safe='')}/roles/{quote(normalized_role, safe='')}",
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"look up realm role {normalized_role!r}", exc)
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        normalized_realm,
+        "roles",
+        normalized_role,
+        tolerate=(404,),
+        context=f"look up realm role {normalized_role!r}",
+    )
+    if response.status_code == 404:
+        return None
+    payload = response.json()
     return payload if isinstance(payload, dict) else None
+
+
+def _realm_role_mapping_segments(group_id: str, organization_id: str | None, *tail: str) -> tuple[str, ...]:
+    """Realm role-mapping segments for a group, organization-scoped when an org id is given."""
+    if organization_id and str(organization_id).strip():
+        return _org_groups_segments(str(organization_id).strip(), group_id, "role-mappings", "realm", *tail)
+    return _realm_group_segments(group_id, "role-mappings", "realm", *tail)
 
 
 def list_group_realm_role_mappings(
@@ -502,23 +438,10 @@ def list_group_realm_role_mappings(
     if not group_id or not str(group_id).strip():
         raise ValueError("group_id is required")
     normalized_group_id = str(group_id).strip()
-    if organization_id and str(organization_id).strip():
-        url = _role_mappings_url(str(organization_id).strip(), normalized_group_id, "composite")
-    else:
-        url = (
-            f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/"
-            f"{quote(normalized_group_id, safe='')}/role-mappings/realm/composite"
-        )
-    try:
-        response = requests.get(
-            url,
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        raise _unavailable(f"list realm-role mappings for group {normalized_group_id!r}", exc)
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        *_realm_role_mapping_segments(normalized_group_id, organization_id, "composite"),
+        context=f"list realm-role mappings for group {normalized_group_id!r}",
+    ).json()
     if not isinstance(payload, list):
         return []
     return [item for item in payload if isinstance(item, dict)]
@@ -537,7 +460,8 @@ def add_group_realm_role_mapping(
         raise ValueError("role_name is required")
     normalized_group_id = str(group_id).strip()
     normalized_role = str(role_name).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    token = client.token
     existing = {
         str(item.get("name")).strip()
         for item in list_group_realm_role_mappings(
@@ -552,23 +476,11 @@ def add_group_realm_role_mapping(
     role = fetch_realm_role_representation(shared_realm_name(), normalized_role, admin_token=token)
     if not isinstance(role, dict):
         raise ValueError(f"Realm role '{normalized_role}' does not exist in shared realm '{shared_realm_name()}'.")
-    if organization_id and str(organization_id).strip():
-        url = _role_mappings_url(str(organization_id).strip(), normalized_group_id)
-    else:
-        url = (
-            f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/"
-            f"{quote(normalized_group_id, safe='')}/role-mappings/realm"
-        )
-    try:
-        response = requests.post(
-            url,
-            json=[role],
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"grant realm role {normalized_role!r} to group {normalized_group_id!r}", exc)
+    client.post(
+        *_realm_role_mapping_segments(normalized_group_id, organization_id),
+        json=[role],
+        context=f"grant realm role {normalized_role!r} to group {normalized_group_id!r}",
+    )
 
 
 def remove_group_realm_role_mapping(
@@ -584,7 +496,8 @@ def remove_group_realm_role_mapping(
         raise ValueError("role_name is required")
     normalized_group_id = str(group_id).strip()
     normalized_role = str(role_name).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    token = client.token
     existing_role = next(
         (
             item
@@ -601,24 +514,12 @@ def remove_group_realm_role_mapping(
     )
     if not isinstance(existing_role, dict):
         return
-    if organization_id and str(organization_id).strip():
-        url = _role_mappings_url(str(organization_id).strip(), normalized_group_id)
-    else:
-        url = (
-            f"{keycloak_url()}/admin/realms/{shared_realm_name()}/groups/"
-            f"{quote(normalized_group_id, safe='')}/role-mappings/realm"
-        )
-    try:
-        response = requests.delete(
-            url,
-            json=[existing_role],
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code != 404:
-            response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"remove realm role {normalized_role!r} from group {normalized_group_id!r}", exc)
+    client.delete(
+        *_realm_role_mapping_segments(normalized_group_id, organization_id),
+        json=[existing_role],
+        tolerate=(404,),
+        context=f"remove realm role {normalized_role!r} from group {normalized_group_id!r}",
+    )
 
 
 def ensure_group_role_mappings(
@@ -629,7 +530,7 @@ def ensure_group_role_mappings(
     if not organization_id or not str(organization_id).strip():
         raise ValueError("organization_id is required")
     normalized_org = str(organization_id).strip()
-    token = _admin_token(admin_token)
+    token = KeycloakAdminClient(admin_token=admin_token).token
     for group in list_group_representations(normalized_org, admin_token=token):
         group_id = group.get("id")
         group_name = group.get("name")
@@ -656,7 +557,7 @@ def ensure_default_groups(
     admin_token: str | None = None,
 ) -> list[Group]:
     organization_id = _organization_id(tenant_ref, admin_token=admin_token)
-    token = _admin_token(admin_token)
+    token = KeycloakAdminClient(admin_token=admin_token).token
     ensured: list[dict[str, Any]] = []
     for group_name in group_names or default_group_identifiers():
         if not group_name or not str(group_name).strip():
@@ -689,30 +590,26 @@ def add_group_member_by_id(
     normalized_org = str(organization_id).strip()
     normalized_name = str(group_name).strip()
     normalized_member = str(member_id).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    token = client.token
     representation = fetch_group_representation_by_name(normalized_org, normalized_name, admin_token=token)
     if representation is None:
         representation = create_group_representation(normalized_org, normalized_name, admin_token=token)
     group_id = representation.get("id")
     if not isinstance(group_id, str) or not group_id.strip():
         raise ProviderUnavailable(f"Group {normalized_name!r} in tenant {normalized_org!r} is missing an id")
-    try:
-        response = requests.put(
-            _groups_url(normalized_org, group_id.strip(), "members", normalized_member),
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
+    response = client.put(
+        *_org_groups_segments(normalized_org, group_id.strip(), "members", normalized_member),
+        tolerate=(409,),
+        context=f"add member {normalized_member!r} to group {normalized_name!r}",
+    )
+    if response.status_code == 409:
+        logger.info(
+            "Organization member %s is already assigned to organization group %s in organization %s; ignoring conflict.",
+            normalized_member,
+            normalized_name,
+            normalized_org,
         )
-        if response.status_code == 409:
-            logger.info(
-                "Organization member %s is already assigned to organization group %s in organization %s; ignoring conflict.",
-                normalized_member,
-                normalized_name,
-                normalized_org,
-            )
-            return
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"add member {normalized_member!r} to group {normalized_name!r}", exc)
 
 
 def remove_group_member_by_id(
@@ -727,23 +624,19 @@ def remove_group_member_by_id(
     normalized_org = str(organization_id).strip()
     normalized_name = str(group_name).strip()
     normalized_member = str(member_id).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    token = client.token
     representation = fetch_group_representation_by_name(normalized_org, normalized_name, admin_token=token)
     if representation is None:
         return
     group_id = representation.get("id")
     if not isinstance(group_id, str) or not group_id.strip():
         return
-    try:
-        response = requests.delete(
-            _groups_url(normalized_org, group_id.strip(), "members", normalized_member),
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code != 404:
-            response.raise_for_status()
-    except requests.RequestException as exc:
-        raise _unavailable(f"remove member {normalized_member!r} from group {normalized_name!r}", exc)
+    client.delete(
+        *_org_groups_segments(normalized_org, group_id.strip(), "members", normalized_member),
+        tolerate=(404,),
+        context=f"remove member {normalized_member!r} from group {normalized_name!r}",
+    )
 
 
 def _user_id_for_username(username: str, *, admin_token: str | None = None) -> str:

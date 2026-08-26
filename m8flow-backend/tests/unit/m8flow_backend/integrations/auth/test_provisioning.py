@@ -46,6 +46,10 @@ def _provision_http(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", BASE)
     monkeypatch.setattr(provisioning, "fetch_master_admin_token", lambda: "admin-token")
     monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
+        lambda: "admin-token",
+    )
+    monkeypatch.setattr(
         provisioning,
         "load_realm_template",
         lambda: {"realm": "template", "loginTheme": "m8flow"},

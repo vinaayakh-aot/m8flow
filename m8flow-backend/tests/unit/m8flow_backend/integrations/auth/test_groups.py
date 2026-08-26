@@ -42,15 +42,7 @@ class _FakeResponse:
 def _group_http(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.groups.fetch_master_admin_token",
-        lambda: "admin-token",
-    )
-    monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.tenants.fetch_master_admin_token",
-        lambda: "admin-token",
-    )
-    monkeypatch.setattr(
-        "m8flow_backend.integrations.auth.keycloak.directory.fetch_master_admin_token",
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
 
@@ -82,8 +74,8 @@ def test_list_groups_returns_neutral_groups(monkeypatch):
             return _FakeResponse([_administrators()])
         raise AssertionError(url)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     found = KeycloakAuthProvider().directory_admin.list_groups(TenantRef(id="org-1"))
     assert found == [Group(identifier="Administrators", tenant_ref=TenantRef(id="org-1", alias="acme", name="Acme"))]
 
@@ -101,9 +93,9 @@ def test_create_group_posts_then_returns_neutral_group(monkeypatch):
             return _FakeResponse({"id": "g-rev", "name": "Reviewers", "path": "/Reviewers"})
         raise AssertionError(url)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
     group = KeycloakAuthProvider().directory_admin.create_group(
         TenantRef(id="org-1"),
         identifier="Reviewers",
@@ -129,10 +121,10 @@ def test_assign_roles_adds_member_to_mapped_group(monkeypatch):
         put_urls.append(url)
         return _FakeResponse({}, status_code=204)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.directory.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.put", fake_put)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.put", fake_put)
     membership = KeycloakAuthProvider().directory_admin.assign_roles(
         username="ada",
         tenant_ref=TenantRef(id="org-1"),
@@ -174,9 +166,9 @@ def test_ensure_default_groups_creates_missing_group(monkeypatch):
             return _FakeResponse(_acme())
         raise AssertionError(url)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get_groups)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get_groups)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get_groups)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get_groups)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
     monkeypatch.setattr(
         "m8flow_backend.integrations.auth.keycloak.groups.default_group_identifiers",
         lambda: ("Administrators",),
@@ -196,7 +188,7 @@ def test_list_groups_http_error_is_provider_unavailable(monkeypatch):
             return _FakeResponse(_acme())
         return _FakeResponse({"error": "down"}, status_code=503)
 
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.tenants.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.groups.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     with pytest.raises(ProviderUnavailable):
         KeycloakAuthProvider().directory_admin.list_groups(TenantRef(id="org-1"))

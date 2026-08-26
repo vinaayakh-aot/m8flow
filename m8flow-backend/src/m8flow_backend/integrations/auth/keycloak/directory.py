@@ -1,24 +1,19 @@
 """Keycloak Admin API directory: realm users.
 
-Tenant/membership HTTP lives in ``tenants.py``. The provider only returns
-neutral objects.
+Tenant/membership HTTP lives in ``tenants.py``. HTTP plumbing (URLs, headers,
+admin token, error mapping) lives in ``admin_client.py``. This module owns only
+the user endpoints and the Keycloak-representation ↔ neutral-``User`` mapping.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import quote
-
-import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, UserNotFound
 from m8flow_backend.integrations.auth.base.models import User
-from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
-from m8flow_backend.integrations.auth.keycloak.config import keycloak_url
+from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
 
 logger = logging.getLogger(__name__)
-
-_HTTP_TIMEOUT_SECONDS = 30
 
 
 def user_from_representation(payload: dict[str, Any]) -> User:
@@ -38,22 +33,6 @@ def user_from_representation(payload: dict[str, Any]) -> User:
     )
 
 
-def _admin_token(admin_token: str | None) -> str:
-    return admin_token or fetch_master_admin_token()
-
-
-def _users_collection_url(realm: str) -> str:
-    return f"{keycloak_url()}/admin/realms/{realm}/users"
-
-
-def _user_url(realm: str, user_id: str) -> str:
-    return f"{_users_collection_url(realm)}/{quote(user_id, safe='')}"
-
-
-def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-
 def fetch_user_representation(
     realm: str,
     username: str,
@@ -67,17 +46,13 @@ def fetch_user_representation(
         raise ValueError("username is required")
     normalized_realm = str(realm).strip()
     normalized_username = str(username).strip()
-    try:
-        response = requests.get(
-            _users_collection_url(normalized_realm),
-            params={"username": normalized_username, "exact": "true", "max": 100},
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        users = response.json()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not look up directory user {normalized_username!r}") from exc
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        normalized_realm,
+        "users",
+        params={"username": normalized_username, "exact": "true", "max": 100},
+        context=f"look up directory user {normalized_username!r}",
+    )
+    users = response.json()
     if not isinstance(users, list):
         return None
     exact = [
@@ -109,17 +84,13 @@ def search_user_representations(
     if normalized_search:
         params["search"] = normalized_search
         params["exact"] = "true" if exact else "false"
-    try:
-        response = requests.get(
-            _users_collection_url(normalized_realm),
-            params=params,
-            headers=_headers(_admin_token(admin_token)),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        users = response.json()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not search directory users in realm {normalized_realm!r}") from exc
+    response = KeycloakAdminClient(admin_token=admin_token).get(
+        normalized_realm,
+        "users",
+        params=params,
+        context=f"search directory users in realm {normalized_realm!r}",
+    )
+    users = response.json()
     if not isinstance(users, list):
         return []
     return [user for user in users if isinstance(user, dict)]
@@ -139,7 +110,8 @@ def create_user(
         raise ValueError("realm and username are required")
     normalized_realm = str(realm).strip()
     normalized_username = str(username).strip()
-    token = _admin_token(admin_token)
+    client = KeycloakAdminClient(admin_token=admin_token)
+    context = f"create directory user {normalized_username!r}"
     payload: dict[str, Any] = {
         "username": normalized_username,
         "enabled": enabled,
@@ -151,47 +123,26 @@ def create_user(
     }
     if email:
         payload["email"] = email
-    try:
-        response = requests.post(
-            _users_collection_url(normalized_realm),
-            json=payload,
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 409:
-            raise ProviderUnavailable("User already exists")
-        response.raise_for_status()
-        location = response.headers.get("Location")
-        if not (location and location.strip()):
-            raise ProviderUnavailable("Directory did not return a user location after create")
-        user_id = location.strip().rstrip("/").split("/")[-1]
-        get_response = requests.get(
-            _user_url(normalized_realm, user_id),
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        get_response.raise_for_status()
-        user_data = get_response.json()
-        if not isinstance(user_data, dict):
-            raise ProviderUnavailable("Directory returned a malformed user after create")
-        user_data["requiredActions"] = []
-        user_data["emailVerified"] = True
-        if not user_data.get("firstName"):
-            user_data["firstName"] = normalized_username
-        if not user_data.get("lastName"):
-            user_data["lastName"] = "User"
-        put_response = requests.put(
-            _user_url(normalized_realm, user_id),
-            json=user_data,
-            headers=_headers(token),
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        put_response.raise_for_status()
-        return user_from_representation(user_data)
-    except ProviderUnavailable:
-        raise
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not create directory user {normalized_username!r}") from exc
+    create_response = client.post(
+        normalized_realm, "users", json=payload, tolerate=(409,), context=context
+    )
+    if create_response.status_code == 409:
+        raise ProviderUnavailable("User already exists")
+    location = create_response.headers.get("Location")
+    if not (location and location.strip()):
+        raise ProviderUnavailable("Directory did not return a user location after create")
+    user_id = location.strip().rstrip("/").split("/")[-1]
+    user_data = client.get(normalized_realm, "users", user_id, context=context).json()
+    if not isinstance(user_data, dict):
+        raise ProviderUnavailable("Directory returned a malformed user after create")
+    user_data["requiredActions"] = []
+    user_data["emailVerified"] = True
+    if not user_data.get("firstName"):
+        user_data["firstName"] = normalized_username
+    if not user_data.get("lastName"):
+        user_data["lastName"] = "User"
+    client.put(normalized_realm, "users", user_id, json=user_data, context=context)
+    return user_from_representation(user_data)
 
 
 def delete_user_by_id(
@@ -204,22 +155,20 @@ def delete_user_by_id(
         raise ValueError("user_id is required")
     normalized_realm = str(realm).strip()
     normalized_user_id = str(user_id).strip()
-    try:
-        response = requests.delete(
-            _user_url(normalized_realm, normalized_user_id),
-            headers={"Authorization": f"Bearer {_admin_token(admin_token)}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
+    response = KeycloakAdminClient(admin_token=admin_token).delete(
+        normalized_realm,
+        "users",
+        normalized_user_id,
+        tolerate=(404,),
+        context=f"delete directory user {normalized_user_id!r}",
+    )
+    if response.status_code == 404:
+        logger.info(
+            "Directory user %s already deleted or not found in realm %s.",
+            normalized_user_id,
+            normalized_realm,
         )
-        if response.status_code == 404:
-            logger.info(
-                "Directory user %s already deleted or not found in realm %s.",
-                normalized_user_id,
-                normalized_realm,
-            )
-            return
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Could not delete directory user {normalized_user_id!r}") from exc
+        return
     logger.info("Deleted directory user %s from realm %s.", normalized_user_id, normalized_realm)
 
 

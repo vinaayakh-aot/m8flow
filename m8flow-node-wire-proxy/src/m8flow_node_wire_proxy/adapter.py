@@ -8,6 +8,8 @@ import asyncio
 import base64
 import json
 import os
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -15,6 +17,21 @@ import httpx
 from m8flow_node_wire_proxy.catalog import OPERATOR_METHODS
 
 _SPIFF_PREFIX = "spiff__"
+
+
+@dataclass
+class ConnectorResult:
+    """Uniform result shape both outbound-request adapters return.
+
+    Lets execute_http_v2's retry loop stay ignorant of which adapter ran —
+    http_generic (node-wire, in-process) and the hand-rolled HEAD adapter
+    both normalize into this before returning.
+    """
+
+    success: bool
+    data: dict[str, Any] | None
+    error_code: str | None
+    message: str | None
 
 
 def strip_spiff_keys(payload: dict[str, Any]) -> dict[str, Any]:
@@ -137,31 +154,45 @@ def envelope_from_connector_failure(
     }
 
 
-async def _run_http_generic(request_input: dict[str, Any]) -> Any:
-    from node_wire_http_generic.logic import HttpGenericConnector
+async def _run_http_generic(request_input: dict[str, Any]) -> ConnectorResult:
+    """http_generic (node-wire, in-process) — every method except HEAD.
 
-    # HEAD is not allowed by http_generic schema — caller must use _run_head.
-    connector_input = {**request_input, "method": request_input["method"]}
-    return await HttpGenericConnector().run(connector_input)
+    HEAD is not allowed by http_generic's schema — see _run_head.
+    """
+    from m8flow_node_wire_proxy.node_wire_gateway import get_http_generic_connector
+
+    HttpGenericConnector = get_http_generic_connector()
+    response = await HttpGenericConnector().run(dict(request_input))
+    return ConnectorResult(
+        success=bool(response.success),
+        data=response.data or {},
+        error_code=response.error_code,
+        message=response.message,
+    )
 
 
-async def _run_head(request_input: dict[str, Any]) -> dict[str, Any]:
-    """Adapter-side HEAD (http_generic disallows HEAD method)."""
-    # Reuse http_generic SSRF gate when available.
+async def _run_head(request_input: dict[str, Any]) -> ConnectorResult:
+    """Adapter-side HEAD (http_generic disallows HEAD method).
+
+    Fails closed: if http_generic's SSRF gate isn't available, the request
+    is refused rather than sent unchecked.
+    """
+    from m8flow_node_wire_proxy.node_wire_gateway import get_ssrf_gate
+
+    gate = get_ssrf_gate()
+    if gate is None:
+        return ConnectorResult(
+            success=False,
+            data=None,
+            error_code="SsrfGateUnavailable",
+            message="SSRF gate unavailable, refusing HEAD request",
+        )
+    assert_safe_destination, ssrf_blocked_error = gate
+
     try:
-        from node_wire_http_generic.logic import SsrfBlockedError, _assert_safe_destination
-
-        try:
-            await _assert_safe_destination(str(request_input["url"]))
-        except SsrfBlockedError as exc:
-            return {
-                "success": False,
-                "data": None,
-                "error_code": "SsrfBlockedError",
-                "message": str(exc),
-            }
-    except ImportError:
-        pass
+        await assert_safe_destination(str(request_input["url"]))
+    except ssrf_blocked_error as exc:
+        return ConnectorResult(success=False, data=None, error_code="SsrfBlockedError", message=str(exc))
 
     timeout = float(os.getenv("NW_TIMEOUT", "30.0"))
     try:
@@ -174,22 +205,28 @@ async def _run_head(request_input: dict[str, Any]) -> dict[str, Any]:
                 timeout=timeout,
             )
     except Exception as exc:  # noqa: BLE001 — map transport errors like Spiff
-        return {
-            "success": False,
-            "data": None,
-            "error_code": type(exc).__name__,
-            "message": str(exc),
-        }
-    return {
-        "success": True,
-        "data": {
+        return ConnectorResult(success=False, data=None, error_code=type(exc).__name__, message=str(exc))
+
+    return ConnectorResult(
+        success=True,
+        data={
             "status_code": response.status_code,
             "headers": dict(response.headers),
             "body": response.text or "",
         },
-        "error_code": None,
-        "message": None,
-    }
+        error_code=None,
+        message=None,
+    )
+
+
+_CONNECTORS: dict[str, Callable[[dict[str, Any]], Awaitable[ConnectorResult]]] = {
+    "HEAD": _run_head,
+}
+
+
+def _connector_for(method: str) -> Callable[[dict[str, Any]], Awaitable[ConnectorResult]]:
+    """Dispatch table: HEAD gets the hand-rolled adapter, everything else goes through http_generic."""
+    return _CONNECTORS.get(method, _run_http_generic)
 
 
 async def execute_http_v2(connector: str, command: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -211,30 +248,18 @@ async def execute_http_v2(connector: str, command: str, payload: dict[str, Any])
         return envelope_from_connector_failure(error_code=type(exc).__name__, message=str(exc))
 
     method = request_input["method"]
+    run_connector = _connector_for(method)
     last_envelope: dict[str, Any] | None = None
 
     for attempt in range(1, attempts + 1):
         if attempt > 1:
             await asyncio.sleep(1)
 
-        if method == "HEAD":
-            result = await _run_head(request_input)
-            success = bool(result.get("success"))
-            data = result.get("data") or {}
-            error_code = result.get("error_code")
-            message = result.get("message")
-        else:
-            # Drop HEAD-only method confusion — never send HEAD to http_generic.
-            generic_input = {**request_input}
-            response = await _run_http_generic(generic_input)
-            success = bool(response.success)
-            data = response.data or {}
-            error_code = response.error_code
-            message = response.message
+        result = await run_connector(request_input)
+        if not result.success:
+            return envelope_from_connector_failure(error_code=result.error_code, message=result.message)
 
-        if not success:
-            return envelope_from_connector_failure(error_code=error_code, message=message)
-
+        data = result.data or {}
         status = int(data.get("status_code") or 0)
         headers = data.get("headers") or {}
         body_text = data.get("body")

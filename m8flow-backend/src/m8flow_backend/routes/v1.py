@@ -11,7 +11,7 @@ from m8flow_backend.auth import (
     require_current_user,
     set_selected_tenant_cookie,
 )
-from m8flow_backend.authorization import allow_uri
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
@@ -33,20 +33,17 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify(payload), code
 
     @app.get("/v1.0/onboarding")
+    @require_permission(forbidden_message="Not allowed to read onboarding")
     def onboarding():
         user = require_current_user()
-        session = g.db_session
-        if not allow_uri(user, "GET", "/v1.0/onboarding", session=session):
-            raise ApiError("permission_denied", "Not allowed to read onboarding", 403)
         tenant_id = request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
         return jsonify({"ok": True, "username": user.username, "tenant_id": tenant_id})
 
     @app.get("/v1.0/tasks")
+    @require_permission(forbidden_message="Not allowed to list tasks")
     def list_tasks():
         user = require_current_user()
         session = g.db_session
-        if not allow_uri(user, "GET", "/v1.0/tasks", session=session):
-            raise ApiError("permission_denied", "Not allowed to list tasks", 403)
         tenant_id = require_tenant_id(user)
         if is_super_admin_request():
             tasks = workflow.list_pending_tasks_for_super_admin(session)
@@ -65,6 +62,7 @@ def register_v1_routes(app: Flask) -> None:
         )
 
     @app.put("/v1.0/tasks/<int:human_task_id>/claim")
+    @require_permission(uri="/v1.0/tasks/{human_task_id}/claim", forbidden_message="Not allowed to claim this task")
     def claim_task(human_task_id: int):
         user = require_current_user()
         session = g.db_session
@@ -73,6 +71,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify({"id": task.id, "actual_owner_id": task.actual_owner_id})
 
     @app.post("/v1.0/tasks/<int:human_task_id>/complete")
+    @require_permission(uri="/v1.0/tasks/{human_task_id}/complete", forbidden_message="Not allowed to complete this task")
     def complete_task(human_task_id: int):
         user = require_current_user()
         session = g.db_session
@@ -88,6 +87,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify({"process_instance_id": instance.id, "status": instance.status})
 
     @app.get("/v1.0/tasks/<int:human_task_id>")
+    @require_permission(uri="/v1.0/tasks/{human_task_id}", on_deny="404", forbidden_message="Task not found")
     def get_task(human_task_id: int):
         user = require_current_user()
         session = g.db_session
@@ -95,6 +95,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify(human_task.display_task(session, tenant_id=tenant_id, human_task_id=human_task_id))
 
     @app.post("/v1.0/process-models")
+    @require_permission(forbidden_message="Not allowed to save process models")
     def save_process_model():
         user = require_current_user()
         session = g.db_session
@@ -110,12 +111,21 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify({"ok": True}), 201
 
     @app.get("/v1.0/process-models")
+    @require_permission(on_deny="empty", empty_response=[])
     def list_process_models():
         user = require_current_user()
         tenant_id = require_tenant_id(user)
         group = request.args.get("group")
         return jsonify(catalog.list_models(group, tenant_id=tenant_id))
 
+    # Deliberately still ungated (unlike the sibling routes above): m8flow.yml
+    # has no permission entry that actually covers POST /process-instances for
+    # every role the "submitter" group docstring promises process-starting to.
+    # "create-process-instance-list" (create, exact uri) omits submitter, and
+    # "run-all-process-models" (start, PM:ALL) grants submitter but against a
+    # /process-models/* uri shape that never matches this route. Picking either
+    # action would newly lock submitter out of starting processes -- needs a
+    # product decision on the intended grant, not a guess here.
     @app.post("/v1.0/process-instances")
     def start_process():
         user = require_current_user()
@@ -131,6 +141,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify({"id": instance.id, "status": instance.status}), 201
 
     @app.get("/v1.0/process-instances")
+    @require_permission(on_deny="empty", empty_response=[])
     def list_instances():
         user = require_current_user()
         session = g.db_session
@@ -142,6 +153,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify([{"id": row.id, "status": row.status} for row in rows])
 
     @app.get("/v1.0/secrets")
+    @require_permission(on_deny="empty", empty_response=[])
     def list_secrets():
         user = require_current_user()
         session = g.db_session
@@ -149,6 +161,7 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify([{"key": key} for key in secrets.list_secret_keys(session, tenant_id=tenant_id)])
 
     @app.put("/v1.0/secrets/<key>")
+    @require_permission(uri="/v1.0/secrets/{key}", forbidden_message="Not allowed to manage secrets")
     def put_secret(key: str):
         user = require_current_user()
         session = g.db_session
@@ -217,6 +230,11 @@ def register_v1_routes(app: Flask) -> None:
         methods=["POST"],
     )
 
+    # Deliberately still ungated (see start_process above for the same caveat):
+    # m8flow.yml has no permission entry at all for /m8flow/external-forms*, so
+    # gating this would newly deny every non-editor/tenant-admin role currently
+    # able to submit an assigned task's external form -- needs a product
+    # decision on the intended grant, not a guess here.
     @app.post("/v1.0/m8flow/external-forms/<int:human_task_id>/submit")
     def submit_external_form(human_task_id: int):
         user = require_current_user()
