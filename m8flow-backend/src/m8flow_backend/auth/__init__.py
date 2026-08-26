@@ -272,6 +272,17 @@ def _sync_groups_from_token(
         group_identifiers=identifiers,
         tenant_id=str(canonical_tenant_id),
     )
+    # sync_groups only creates the UserGroupAssignmentModel row; it never seeds
+    # the tenant-qualified group's actual m8flow.yml permissions into the DB.
+    # Without this, allow_uri's real DB-grant check (_uri_permitted) has
+    # nothing to find for a freshly-synced tenant role and silently falls
+    # through to _group_identifier_fallback on every request -- see
+    # architecture review finding C5. import_yaml's grant() calls are
+    # idempotent (existing-row lookup before insert), so re-running this on
+    # every enrichment is safe, matching the same pattern
+    # tenant_role_service._ensure_tenant_yaml_permissions_and_everybody_membership
+    # already uses for the Keycloak-organization-member-sync path.
+    identity.import_yaml(session, tenant_id=str(canonical_tenant_id))
     session.flush()
     try:
         session.expire(user, ["groups"])

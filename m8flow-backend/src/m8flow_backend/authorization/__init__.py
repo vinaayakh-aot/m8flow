@@ -10,6 +10,12 @@ from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 
+# m8flow.yml's permission uris are written without this prefix (`/tasks`, not
+# `/v1.0/tasks`); every real caller passes the actual route path, prefix and
+# all. Without stripping it here, _uri_permitted's DB-backed grant check can
+# never match any real request -- see architecture review finding C5.
+_API_PATH_PREFIX = "/v1.0"
+
 
 class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
@@ -19,11 +25,18 @@ class HostAuthorizationPolicy:
         return default.authorize(session, request)
 
 
+def _without_api_path_prefix(path: str) -> str:
+    if path.startswith(_API_PATH_PREFIX):
+        return path[len(_API_PATH_PREFIX):] or "/"
+    return path
+
+
 def allow_uri(user: UserModel, method: str, path: str, *, session: Session | None = None) -> bool:
     if user is None:
         return False
     if actor_is_super_admin(user):
         return True
+    path = _without_api_path_prefix(path)
     action = _method_to_action(method)
     db_session = session
     if db_session is None:
