@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import html
 import logging
-import smtplib
 import time
 from datetime import datetime
 from datetime import timezone
-from email.message import EmailMessage
 from typing import Any
 from urllib.parse import parse_qsl
 from urllib.parse import urlencode
@@ -22,6 +20,7 @@ from m8flow_backend.config import notification_max_attempts
 from m8flow_backend.config import notification_sweep_grace_seconds
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+from m8flow_backend.services.smtp_client import send_smtp_message
 
 LOGGER = logging.getLogger("m8flow.external_forms.notification")
 
@@ -229,13 +228,6 @@ class ExternalFormNotificationService:
 
     @staticmethod
     def send_email(settings: dict[str, Any], to_email: str, subject: str, text_body: str, html_body: str) -> None:
-        message = EmailMessage()
-        message["From"] = settings["from_email"]
-        message["To"] = to_email
-        message["Subject"] = subject
-        message.set_content(text_body)
-        message.add_alternative(html_body, subtype="html")
-
         # Surfaces the negotiated transport so a "Connection unexpectedly closed" (plaintext
         # hitting an implicit-TLS port) vs auth issue is obvious from the logs. No secrets logged.
         LOGGER.info(
@@ -246,13 +238,19 @@ class ExternalFormNotificationService:
             settings["starttls"],
             bool(settings["username"] and settings["password"]),
         )
-        smtp_class = smtplib.SMTP_SSL if settings["ssl"] else smtplib.SMTP
-        with smtp_class(settings["host"], settings["port"], timeout=30) as client:
-            if settings["starttls"] and not settings["ssl"]:
-                client.starttls()
-            if settings["username"] and settings["password"]:
-                client.login(settings["username"], settings["password"])
-            client.send_message(message)
+        send_smtp_message(
+            host=settings["host"],
+            port=settings["port"],
+            from_address=settings["from_email"],
+            to_address=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            use_ssl=settings["ssl"],
+            use_tls=settings["starttls"],
+            username=settings["username"],
+            password=settings["password"],
+        )
 
     @classmethod
     def notify(cls, reference_id: str) -> str:
