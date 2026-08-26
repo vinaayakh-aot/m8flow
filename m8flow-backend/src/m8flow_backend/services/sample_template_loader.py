@@ -6,20 +6,20 @@ Skips templates that already exist (idempotent).
 
 from __future__ import annotations
 
-import io
 import logging
 import os
 import re
-import zipfile
 
 from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.db import db
+from m8flow_backend.errors import ApiError
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     file_type_from_filename,
+    safe_extract_zip,
 )
 from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
@@ -33,10 +33,6 @@ _SAMPLE_TEMPLATES_DIR = os.path.join(
     os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
     "sample_templates",
 )
-
-MAX_ZIP_SIZE = 50 * 1024 * 1024
-MAX_EXTRACTED_SIZE = 200 * 1024 * 1024
-MAX_ZIP_ENTRIES = 100
 
 
 def _derive_template_key(filename: str) -> str:
@@ -66,35 +62,17 @@ def _derive_display_name(filename: str) -> str:
 
 
 def _extract_zip(zip_path: str) -> list[tuple[str, bytes]]:
-    """Extract files from a ZIP, returning (base_name, content) pairs."""
-    file_size = os.path.getsize(zip_path)
-    if file_size > MAX_ZIP_SIZE:
-        raise ValueError(f"ZIP exceeds {MAX_ZIP_SIZE // (1024 * 1024)} MB limit")
-
-    files: list[tuple[str, bytes]] = []
-    total_extracted = 0
-
+    """Extract files from a ZIP, returning (base_name, content) pairs. Delegates
+    to template_storage_service.safe_extract_zip -- the same size/entry-limit
+    logic import_template_from_zip uses for uploaded template zips -- and
+    translates its ApiError into ValueError so the caller's existing except
+    clause still catches it."""
     with open(zip_path, "rb") as fh:
         zip_bytes = fh.read()
-
-    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-        entries = [n for n in zf.namelist() if not n.endswith("/")]
-        if len(entries) > MAX_ZIP_ENTRIES:
-            raise ValueError(f"ZIP contains too many entries (max {MAX_ZIP_ENTRIES})")
-
-        for name_in_zip in entries:
-            base_name = os.path.basename(name_in_zip)
-            if not base_name or base_name.startswith("."):
-                continue
-            content = zf.read(name_in_zip)
-            total_extracted += len(content)
-            if total_extracted > MAX_EXTRACTED_SIZE:
-                raise ValueError(
-                    f"Extracted content exceeds {MAX_EXTRACTED_SIZE // (1024 * 1024)} MB limit"
-                )
-            files.append((base_name, content))
-
-    return files
+    try:
+        return safe_extract_zip(zip_bytes)
+    except ApiError as exc:
+        raise ValueError(exc.message) from exc
 
 
 def load_sample_templates(flask_app) -> None:  # noqa: ANN001
@@ -148,7 +126,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                 zip_path = os.path.join(sample_dir, zip_filename)
                 try:
                     files = _extract_zip(zip_path)
-                except (ValueError, zipfile.BadZipFile) as exc:
+                except ValueError as exc:
                     logger.error("Failed to extract %s: %s", zip_filename, exc)
                     skipped += 1
                     continue

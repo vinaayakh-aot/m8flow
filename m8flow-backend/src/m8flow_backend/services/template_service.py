@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import io
 import logging
-import os
 import random
 import re
 import string
-import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,14 +26,10 @@ from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     TemplateStorageService,
     file_type_from_filename,
+    safe_extract_zip,
 )
 
 logger = logging.getLogger(__name__)
-
-# Zip import safety limits
-MAX_ZIP_SIZE = 50 * 1024 * 1024        # 50 MB compressed
-MAX_EXTRACTED_SIZE = 200 * 1024 * 1024  # 200 MB total uncompressed
-MAX_ZIP_ENTRIES = 100
 
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"  # keep in sync with TemplateModel __table_args__
 
@@ -946,46 +939,9 @@ class TemplateService:
         if not template_key or not name:
             raise ApiError("missing_fields", "template_key and name are required", status_code=400)
 
-        if len(zip_bytes) > MAX_ZIP_SIZE:
-            raise ApiError(
-                "payload_too_large",
-                f"Zip file exceeds maximum allowed size of {MAX_ZIP_SIZE // (1024 * 1024)} MB",
-                status_code=400,
-            )
-
         version = metadata.get("version") or cls._next_version(template_key, tenant)
-        files_to_add: list[tuple[str, bytes]] = []
-        has_bpmn = False
-        total_extracted = 0
-        try:
-            with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-                entries = [n for n in zf.namelist() if not n.endswith("/")]
-                if len(entries) > MAX_ZIP_ENTRIES:
-                    raise ApiError(
-                        "payload_too_large",
-                        f"Zip contains too many entries (max {MAX_ZIP_ENTRIES})",
-                        status_code=400,
-                    )
-                for name_in_zip in entries:
-                    base_name = os.path.basename(name_in_zip)
-                    if not base_name:
-                        continue
-                    if base_name.startswith("."):
-                        continue
-                    content = zf.read(name_in_zip)
-                    total_extracted += len(content)
-                    if total_extracted > MAX_EXTRACTED_SIZE:
-                        raise ApiError(
-                            "payload_too_large",
-                            f"Extracted content exceeds maximum allowed size of {MAX_EXTRACTED_SIZE // (1024 * 1024)} MB",
-                            status_code=400,
-                        )
-                    ft = file_type_from_filename(base_name)
-                    if ft == "bpmn":
-                        has_bpmn = True
-                    files_to_add.append((base_name, content))
-        except zipfile.BadZipFile as e:
-            raise ApiError("invalid_content", f"Invalid zip file: {e}", status_code=400)
+        files_to_add = safe_extract_zip(zip_bytes)
+        has_bpmn = any(file_type_from_filename(name) == "bpmn" for name, _ in files_to_add)
 
         if not has_bpmn:
             raise ApiError("missing_fields", "Zip must contain at least one .bpmn file", status_code=400)
