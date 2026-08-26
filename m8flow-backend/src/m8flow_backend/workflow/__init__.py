@@ -198,14 +198,9 @@ def count_active_process_instances(session: Session, *, tenant_id: str | None = 
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # unlike list_instances_for_super_admin's own is_super_admin_request()
-    # guard, deliberately not re-checked here (see home_controller.py's
-    # _is_super_admin: is_super_admin_request() reads a `g` flag that is
-    # only ever set inside resolve_request_tenant()
-    # (services/tenant_context_middleware.py), and app.py never calls
-    # register_tenant_resolution_after_auth() (startup/tenant_resolution.py)
-    # to wire that resolver in as a before_request hook -- so the flag is
-    # never set and is_super_admin_request() returns False unconditionally
-    # for every request today).
+    # guard, deliberately not re-checked here (this is home-stats support,
+    # called only from home_controller.get_home_stats after it has already
+    # computed super_admin via authorization.actor_is_super_admin(user)).
     stmt = select(func.count()).select_from(ProcessInstanceModel).where(
         ProcessInstanceModel.status.in_(ProcessInstanceModel.active_statuses())
     )

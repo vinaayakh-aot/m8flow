@@ -6,10 +6,10 @@ from flask import Response, g, request
 
 from m8flow_backend import catalog, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import allow_uri
+from m8flow_backend.authorization import actor_is_super_admin, allow_uri
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.routes.home_controller import _is_super_admin, _optional_tenant_id, _tenant_override
+from m8flow_backend.routes.home_controller import _optional_tenant_id, _tenant_override
 from m8flow_bpmn_core.models.user import UserModel
 
 _FILE_MIMETYPES = {
@@ -41,7 +41,7 @@ def _require_concrete_tenant(*, user: UserModel) -> str:
     (or tenant_id) or rely on the selected-tenant cookie; everyone else must
     have the cookie. Missing concrete tenant → 400.
     """
-    super_admin = _is_super_admin(user)
+    super_admin = actor_is_super_admin(user)
     own_tenant_id = _optional_tenant_id()
     if super_admin:
         override = _tenant_override(super_admin=True)

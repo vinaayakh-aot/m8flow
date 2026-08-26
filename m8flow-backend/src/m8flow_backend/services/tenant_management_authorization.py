@@ -12,14 +12,6 @@ from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_paylo
 from m8flow_backend.tenancy import is_super_admin_request
 
 
-def _user_has_super_admin_group(user: object | None) -> bool:
-    for group in getattr(user, "groups", []):
-        identifier = getattr(group, "identifier", None)
-        if isinstance(identifier, str) and identifier.strip() == "super-admin":
-            return True
-    return False
-
-
 def _user_is_tenant_admin_or_super_admin(
     user: object,
     tenant_id: str | None = None,
@@ -157,9 +149,6 @@ def ensure_request_can_access_tenant(
     forbidden_message: str,
 ) -> None:
     if is_super_admin_request():
-        return
-
-    if _user_has_super_admin_group(getattr(g, "user", None)):
         return
 
     # Master-realm requests are treated as global (no tenant scope).

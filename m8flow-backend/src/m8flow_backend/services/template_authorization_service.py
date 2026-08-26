@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import g
 from sqlalchemy import or_, and_
 
-from m8flow_backend.authorization import user_has_permission
+from m8flow_backend.authorization import actor_is_super_admin, user_has_permission
 from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
@@ -14,22 +14,7 @@ class TemplateAuthorizationService:
 
     @staticmethod
     def _is_super_admin_request(user: UserModel | None = None) -> bool:
-        if bool(getattr(g, "_m8flow_super_admin_request", False)):
-            return True
-
-        candidate = user or getattr(g, "user", None)
-        groups = getattr(candidate, "groups", None)
-        if not isinstance(groups, list):
-            return False
-
-        for group in groups:
-            identifier = group if isinstance(group, str) else getattr(group, "identifier", None)
-            if not isinstance(identifier, str):
-                continue
-            normalized = identifier.strip().strip("/").split("/")[-1]
-            if normalized == "super-admin" or normalized.endswith(":super-admin"):
-                return True
-        return False
+        return actor_is_super_admin(user or getattr(g, "user", None))
 
     @staticmethod
     def _tenant_id() -> str | None:

@@ -240,9 +240,16 @@ def is_public_request() -> bool:
 
 
 def is_super_admin_request() -> bool:
+    """Zero-arg convenience wrapper over `authorization.actor_is_super_admin(g.user)`
+    for the many call sites that only have request context, not a `user` in hand.
+    Previously read a `g._m8flow_super_admin_request` flag that nothing ever set
+    (see architecture review finding C1) -- delegating here means the real check
+    lives in exactly one place."""
     if not has_request_context():
         return False
-    return bool(getattr(g, "_m8flow_super_admin_request", False))
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    return actor_is_super_admin(getattr(g, "user", None))
 
 
 def get_tenant_id(*, warn_on_default: bool = True) -> str:

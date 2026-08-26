@@ -9,7 +9,6 @@ from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
-from m8flow_backend.tenancy import is_super_admin_request
 
 
 class HostAuthorizationPolicy:
@@ -23,12 +22,7 @@ class HostAuthorizationPolicy:
 def allow_uri(user: UserModel, method: str, path: str, *, session: Session | None = None) -> bool:
     if user is None:
         return False
-    identifiers = {getattr(group, "identifier", "") for group in getattr(user, "groups", [])}
-    if SUPER_ADMIN_ROLE in identifiers or is_super_admin_request():
-        return True
-    # Master-realm tokens carry super-admin in verified claims before local groups sync.
-    # Bind to this user so a request JWT cannot elevate a different actor.
-    if _verified_claims_grant_super_admin_to(user):
+    if actor_is_super_admin(user):
         return True
     action = _method_to_action(method)
     db_session = session
@@ -92,13 +86,22 @@ def _verified_claims_grant_super_admin_to(user: UserModel) -> bool:
     return claims is not None and _actor_matches_verified_claims(user) and SUPER_ADMIN_ROLE in claims.roles
 
 
-def _actor_is_super_admin(session: Session, user_id: int) -> bool:
-    user = session.get(UserModel, user_id)
+def actor_is_super_admin(user: UserModel | None) -> bool:
+    """The one super-admin check every caller should use: a live "super-admin"
+    group membership, or (before local group sync has persisted it) a verified
+    JWT role claim bound to this specific user. Formerly reimplemented ad hoc
+    in home_controller, template_authorization_service, tenant_management_authorization,
+    and via a `g` flag (`tenancy.is_super_admin_request`) that nothing ever set --
+    see architecture review finding C1."""
     if user is None:
         return False
     if any(getattr(group, "identifier", None) == SUPER_ADMIN_ROLE for group in user.groups):
         return True
     return _verified_claims_grant_super_admin_to(user)
+
+
+def _actor_is_super_admin(session: Session, user_id: int) -> bool:
+    return actor_is_super_admin(session.get(UserModel, user_id))
 
 
 def _method_to_action(method: str) -> str:

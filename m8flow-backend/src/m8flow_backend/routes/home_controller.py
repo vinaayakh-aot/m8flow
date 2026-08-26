@@ -5,10 +5,8 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import allow_uri
+from m8flow_backend.authorization import actor_is_super_admin, allow_uri
 from m8flow_backend.errors import ApiError
-from m8flow_backend.integrations.auth.base.models import VerifiedClaims
-from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
@@ -18,32 +16,6 @@ from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
 
 def _optional_tenant_id() -> str | None:
     return request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
-
-
-def _token_indicates_super_admin(_decoded: object = None) -> bool:
-    """True when verified claims carry the global super-admin role (before local groups sync)."""
-    claims = getattr(g, "verified_claims", None)
-    return isinstance(claims, VerifiedClaims) and SUPER_ADMIN_ROLE in claims.roles
-
-
-def _is_super_admin(user: UserModel) -> bool:
-    """Deliberately NOT `tenancy.is_super_admin_request()` -- that reads a
-    `g` flag only ever set inside `resolve_request_tenant()`
-    (services/tenant_context_middleware.py), and nothing in app.py ever
-    calls `register_tenant_resolution_after_auth()` to wire that function
-    in as a before_request hook. It's dead code: `is_super_admin_request()`
-    returns False unconditionally for every request in the app as it runs
-    today (this also affects /v1.0/tasks' and /v1.0/process-instances' own
-    super-admin branches -- a pre-existing gap, not something to fix here).
-    This instead matches `authorization.allow_uri`'s own first-line check,
-    which IS live (every allow_uri call already depends on it): a direct
-    "super-admin" group-identifier lookup, no dead hook involved.
-    Also accepts JWT role claims (Keycloak master login) before local group
-    sync has persisted `super-admin` on the user row.
-    """
-    if any(getattr(group, "identifier", "") == SUPER_ADMIN_ROLE for group in user.groups):
-        return True
-    return _token_indicates_super_admin()
 
 
 def _resolve_own_tenant_id(*, super_admin: bool) -> str | None:
@@ -84,7 +56,7 @@ def get_home_stats():
     """
     user = require_current_user()
     session = g.db_session
-    super_admin = _is_super_admin(user)
+    super_admin = actor_is_super_admin(user)
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
@@ -129,7 +101,7 @@ def get_home_stats():
 
 def _home_scope_tenant_id(*, user: UserModel, own_tenant_id: str | None) -> str | None:
     """Shared tenant-scope resolution for Home endpoints -- see get_home_stats."""
-    super_admin = _is_super_admin(user)
+    super_admin = actor_is_super_admin(user)
     override_tenant_id = _tenant_override(super_admin=super_admin)
     if super_admin:
         return override_tenant_id if override_tenant_id else None
@@ -146,7 +118,7 @@ def get_home_recent_instances():
     the shared list shape was the risk this ticket asked to avoid.
 
     Authorization mirrors ticket 03's live allow_uri check against
-    /v1.0/process-instances (not the dead is_super_admin_request()). Denied
+    /v1.0/process-instances. Denied
     callers get an empty list (200), not a 403 -- same Home-still-loads
     philosophy as home-stats returning null per unauthorized field. That
     inherits YAML-uri-prefix issue #3 (viewer won't match via real YAML
@@ -155,7 +127,7 @@ def get_home_recent_instances():
     """
     user = require_current_user()
     session = g.db_session
-    super_admin = _is_super_admin(user)
+    super_admin = actor_is_super_admin(user)
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
@@ -217,7 +189,7 @@ def get_home_my_tasks():
     """
     user = require_current_user()
     session = g.db_session
-    super_admin = _is_super_admin(user)
+    super_admin = actor_is_super_admin(user)
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
