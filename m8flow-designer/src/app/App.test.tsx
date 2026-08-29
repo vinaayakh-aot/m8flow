@@ -1,19 +1,24 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import App from './App';
+import { AppRoutes } from './App';
 
-const mockIsLoggedIn = vi.fn();
-const mockResumeLoginAfterLogout = vi.fn();
-const mockEnsureSelectedTenantCookie = vi.fn();
+const mockShouldShowTenantSelectionGate = vi.fn();
 
 vi.mock('@/lib/auth', () => ({
-  isLoggedIn: () => mockIsLoggedIn(),
-  resumeLoginAfterLogout: () => mockResumeLoginAfterLogout(),
-  ensureSelectedTenantCookie: () => mockEnsureSelectedTenantCookie(),
+  shouldShowTenantSelectionGate: (pathname: string) => mockShouldShowTenantSelectionGate(pathname),
   getCurrentUser: () => ({ username: 'editor', email: null }),
   isSuperAdmin: () => false,
   logout: () => undefined,
+}));
+
+vi.mock('@/pages/tenant-select/TenantSelectPage', () => ({
+  default: () => <div>tenant-gate</div>,
+}));
+
+vi.mock('@/pages/accept-invitation/AcceptInvitationPage', () => ({
+  default: () => <div>accept-invitation</div>,
 }));
 
 vi.mock('@/components/layout/AppShell', async () => {
@@ -40,30 +45,55 @@ vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
 
-describe('App', () => {
+function renderRoutes(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AppRoutes />
+    </MemoryRouter>,
+  );
+}
+
+describe('AppRoutes tenant gate', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('shows the redirecting copy and resumes Keycloak login when logged out', () => {
-    mockIsLoggedIn.mockReturnValue(false);
+  it('shows the landing gate when logged out and does not auto-redirect to Keycloak', () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(true);
 
-    render(<App />);
+    renderRoutes('/');
 
-    expect(screen.getByText('Redirecting to sign in...')).toBeInTheDocument();
+    expect(screen.getByText('tenant-gate')).toBeInTheDocument();
     expect(screen.queryByText('home-page')).not.toBeInTheDocument();
-    expect(mockResumeLoginAfterLogout).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Redirecting to sign in...')).not.toBeInTheDocument();
   });
 
-  it('renders the app shell and Home route when the user is logged in', () => {
-    mockIsLoggedIn.mockReturnValue(true);
+  it('renders the app shell when the tenant cookie gate is not shown', () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
 
-    render(<App />);
+    renderRoutes('/');
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(screen.getByText('home-page')).toBeInTheDocument();
-    expect(screen.queryByText('Redirecting to sign in...')).not.toBeInTheDocument();
-    expect(mockResumeLoginAfterLogout).not.toHaveBeenCalled();
-    expect(mockEnsureSelectedTenantCookie).toHaveBeenCalled();
+    expect(screen.queryByText('tenant-gate')).not.toBeInTheDocument();
+  });
+
+  it('re-opens the gate on /tenant', () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(true);
+
+    renderRoutes('/tenant');
+
+    expect(screen.getByText('tenant-gate')).toBeInTheDocument();
+    expect(screen.queryByText('home-page')).not.toBeInTheDocument();
+  });
+
+  it('does not intercept /accept-invitation', () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(true);
+
+    renderRoutes('/accept-invitation');
+
+    expect(screen.getByText('accept-invitation')).toBeInTheDocument();
+    expect(screen.queryByText('tenant-gate')).not.toBeInTheDocument();
+    expect(mockShouldShowTenantSelectionGate).not.toHaveBeenCalled();
   });
 });

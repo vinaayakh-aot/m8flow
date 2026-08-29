@@ -378,9 +378,12 @@ def list_user_organization_representations(
         raise ValueError("user_id is required")
     normalized_user_id = str(user_id).strip()
     normalized_realm = str(realm).strip() if realm and str(realm).strip() else shared_realm_name()
+    # Keycloak 26+ lists a user's orgs at organizations/members/{id}/organizations,
+    # not users/{id}/organizations (that path 404s and was treated as zero-org).
     response = KeycloakAdminClient(admin_token=admin_token).get(
         normalized_realm,
-        "users",
+        "organizations",
+        "members",
         normalized_user_id,
         "organizations",
         tolerate=(404,),

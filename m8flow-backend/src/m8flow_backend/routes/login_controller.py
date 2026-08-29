@@ -142,10 +142,19 @@ def login() -> Response:
       redirect_url (required): where to land in the app after a successful login.
       authentication_identifier (optional): realm to authenticate against;
         defaults to the shared realm.
+      tenant + tenant_finalization (optional): when the browser already has a
+        shared-realm session, finalize the active tenant locally (cookie +
+        group sync) instead of starting another Keycloak round-trip.
     """
     redirect_url = request.args.get("redirect_url")
     if not redirect_url:
         raise ApiError("redirect_url_required", "redirect_url is required", 400)
+
+    from m8flow_backend.auth import try_finalize_shared_realm_session
+
+    finalized = try_finalize_shared_realm_session(redirect_url)
+    if finalized is not None:
+        return finalized
 
     identifier = (request.args.get("authentication_identifier") or "").strip() or shared_realm_name()
     nonce = secrets.token_urlsafe(24)

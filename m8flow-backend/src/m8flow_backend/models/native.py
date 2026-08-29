@@ -41,9 +41,16 @@ class RefreshTokenModel(HostBase):
 
 class ServiceAccountModel(HostBase):
     __tablename__ = "service_account"
+    __table_args__ = (
+        UniqueConstraint("m8f_tenant_id", "name", "created_by_user_id", name="service_account_uniq"),
+        UniqueConstraint("client_id", name="uq_host_service_account_client_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    secret_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

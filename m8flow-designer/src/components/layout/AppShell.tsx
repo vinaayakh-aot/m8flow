@@ -21,6 +21,9 @@ export type AppShellOutletContext = {
    * harnesses that build a minimal context still type-check; AppShell always
    * provides it, and consumers treat absent as "cannot manage". */
   canManageProcesses?: boolean;
+  /** YAML authentications grants (integrator / tenant-admin / viewer read). */
+  canReadAuthentications?: boolean;
+  canManageAuthentications?: boolean;
 };
 
 /**
@@ -34,15 +37,25 @@ export function AppShell() {
   );
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [canReadAuthentications, setCanReadAuthentications] = useState(false);
+  const [canManageAuthentications, setCanManageAuthentications] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetchCapabilities()
       .then((caps) => {
-        if (!cancelled) setCanManage(Boolean(caps.can_manage_processes));
+        if (!cancelled) {
+          setCanManage(Boolean(caps.can_manage_processes));
+          setCanReadAuthentications(Boolean(caps.can_read_authentications));
+          setCanManageAuthentications(Boolean(caps.can_manage_authentications));
+        }
       })
       .catch(() => {
-        if (!cancelled) setCanManage(false);
+        if (!cancelled) {
+          setCanManage(false);
+          setCanReadAuthentications(false);
+          setCanManageAuthentications(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -82,6 +95,8 @@ export function AppShell() {
     selectedTenantId,
     isSuperAdmin: superAdmin,
     canManageProcesses: canManage,
+    canReadAuthentications,
+    canManageAuthentications,
   };
   const tenantOptions =
     selectedTenantId && !tenants.some((t) => t.id === selectedTenantId)
@@ -97,6 +112,7 @@ export function AppShell() {
         tenants={tenantOptions}
         onLogout={logout}
         userLabel={userLabel}
+        showAuthentications={canReadAuthentications}
       />
       <Outlet context={outletContext} />
     </div>

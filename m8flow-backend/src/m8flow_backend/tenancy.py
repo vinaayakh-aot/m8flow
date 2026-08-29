@@ -278,7 +278,14 @@ def is_super_admin_request() -> bool:
 def tenant_id_from_selected_cookie() -> str | None:
     """Read the selected-tenant cookie, or an already-resolved g.m8flow_tenant_id.
     The one place this lookup happens -- route-level tenant helpers should build
-    on this instead of re-reading the cookie themselves."""
+    on this instead of re-reading the cookie themselves.
+
+    A service-account API key pins the tenant from the credential itself; that
+    wins over a leftover browser cookie so machine clients stay tenant-scoped.
+    """
+    sa_tenant = getattr(g, "service_account_tenant_id", None)
+    if isinstance(sa_tenant, str) and sa_tenant.strip():
+        return sa_tenant.strip()
     return request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
 
 

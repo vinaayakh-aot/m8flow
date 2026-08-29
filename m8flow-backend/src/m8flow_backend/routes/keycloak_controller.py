@@ -204,8 +204,14 @@ def get_current_user_organization_memberships() -> tuple[dict, int]:
             status_code=401,
         ) from exc
 
+    memberships = list(claims.memberships)
+    if not memberships and claims.username:
+        # Thin/stale tokens may omit the organization claim. Directory lookup is
+        # the source of truth for whether this user has any organizations.
+        memberships = get_auth_provider().list_memberships(username=claims.username)
+
     resolved_memberships: list[dict[str, str | None]] = []
-    for membership in claims.memberships:
+    for membership in memberships:
         organization_alias = membership.tenant_ref.alias or membership.tenant_ref.id or ""
         organization_id = membership.tenant_ref.id
         organization_name = membership.tenant_ref.name

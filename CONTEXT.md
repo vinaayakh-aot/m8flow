@@ -35,3 +35,27 @@ _Avoid_: folder, directory, tenant
 **Created by**:
 The user who created a catalog object (process model or template). The mockup label "Owner" is this person, not a separate role.
 _Avoid_: owner
+
+**Shared realm**:
+The Keycloak realm where tenant users authenticate. Organizations in this realm map to tenants.
+_Avoid_: spoke realm, tenant realm
+
+**Master realm**:
+The Keycloak realm for platform / super-admin sign-in.
+_Avoid_: admin realm, spoke realm
+
+**Active tenant**:
+The organization a shared-realm user is working in for the current session.
+_Avoid_: localStorage tenant, selected tenant as a browser-storage value
+
+**Tenant selection gate**:
+The post-login step that chooses the active tenant when a shared-realm user belongs to organizations. It is not the tenant registry or tenant-admin UI.
+_Avoid_: Tenants page, All Tenants, tenant switcher
+
+**Accept invitation**:
+The public path where an invited person sets a password and becomes a shared-realm user in an organization. Distinct from creating, resending, or revoking invitations. The emailed URL uses the designer origin.
+_Avoid_: invitation admin, tenant invite UI
+
+**Service account**:
+A tenant-scoped machine credential for API access, not a human Keycloak login.
+_Avoid_: NATS API key, manage-token, spoke-realm client

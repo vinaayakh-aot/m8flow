@@ -106,3 +106,29 @@ def test_resend_invitation_does_not_rotate_the_token_on_smtp_failure(db_session,
     unchanged = db_session.query(M8flowTenantInvitationModel).filter_by(id=row.id).one()
     assert unchanged.token_hash == original_token_hash
     assert unchanged.status == TenantInvitationStatus.PENDING
+
+
+def test_create_invitation_email_and_dev_link_use_designer_accept_url(db_session, monkeypatch):
+    captured: dict[str, str] = {}
+
+    def _capture(_email, _subject, html_body, text_body=None):
+        captured["html"] = html_body
+        captured["text"] = text_body or ""
+        return False
+
+    monkeypatch.setattr(tenant_invitation_service, "send_email", _capture)
+    monkeypatch.delenv("M8FLOW_FRONTEND_BASE_URL", raising=False)
+    monkeypatch.delenv("M8FLOW_APP_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://localhost:6842")
+    _seed_tenant(db_session)
+
+    result = tenant_invitation_service.create_invitation(
+        "t1", "invitee@example.com", ["editor"], None, "admin"
+    )
+
+    link = result["invitation_link"]
+    assert link.startswith("http://localhost:6853/accept-invitation?token=")
+    assert link in captured["html"]
+    assert link in captured["text"]
+    assert "http://localhost:6841" not in captured["html"]
+    assert "http://localhost:6842" not in captured["html"]

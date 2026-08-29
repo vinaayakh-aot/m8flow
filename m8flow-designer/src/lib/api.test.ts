@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { ensureSelectedTenantCookie, getAccessToken, resumeLoginAfterLogout } = vi.hoisted(() => ({
-  ensureSelectedTenantCookie: vi.fn(),
+const { getAccessToken, resumeLoginAfterLogout } = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
   resumeLoginAfterLogout: vi.fn(),
 }));
 
 vi.mock('./auth', () => ({
-  ensureSelectedTenantCookie,
   getAccessToken,
   resumeLoginAfterLogout,
 }));
@@ -37,7 +35,6 @@ describe('apiGet auth-retry-on-401', () => {
     // the module too so "already redirected" from one test can't suppress
     // the assertion in the next.
     vi.resetModules();
-    ensureSelectedTenantCookie.mockReset();
     getAccessToken.mockReset().mockReturnValue('access-token');
     resumeLoginAfterLogout.mockReset();
     vi.unstubAllGlobals();

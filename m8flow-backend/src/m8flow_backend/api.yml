@@ -1587,6 +1587,10 @@ paths:
                 properties:
                   can_manage_processes:
                     type: boolean
+                  can_read_authentications:
+                    type: boolean
+                  can_manage_authentications:
+                    type: boolean
         "401":
           description: Unauthorized - user not authenticated
 

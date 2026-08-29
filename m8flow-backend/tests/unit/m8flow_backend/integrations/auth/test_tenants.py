@@ -170,22 +170,36 @@ def test_get_member_raises_user_not_found(monkeypatch):
 
 
 def test_list_memberships_for_username(monkeypatch):
+    member_orgs_url = f"{ORGS_URL}/members/u1/organizations"
     member_groups_url = f"{ORGS_URL}/org-1/members/u1/groups"
 
     def fake_get(url, params=None, headers=None, timeout=None):
         if url == USERS_URL:
             return _FakeResponse([_ada()])
-        if url == f"{USERS_URL}/u1/organizations":
+        if url == member_orgs_url:
             return _FakeResponse([_acme()])
         if url == member_groups_url:
             return _FakeResponse([{"name": "Designers"}])
         raise AssertionError(url)
 
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
-    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     memberships = KeycloakAuthProvider().list_memberships(username="ada")
     assert len(memberships) == 1
     assert memberships[0].tenant_ref.alias == "acme"
     assert memberships[0].roles == ["editor"]
     assert memberships[0].groups == ["editor"]
+
+
+def test_list_memberships_for_username_empty_when_directory_has_no_orgs(monkeypatch):
+    member_orgs_url = f"{ORGS_URL}/members/u1/organizations"
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == USERS_URL:
+            return _FakeResponse([_ada()])
+        if url == member_orgs_url:
+            return _FakeResponse([], status_code=404)
+        raise AssertionError(url)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    memberships = KeycloakAuthProvider().list_memberships(username="ada")
+    assert memberships == []

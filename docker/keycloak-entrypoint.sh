@@ -25,6 +25,9 @@ FRONTEND_LOGOUT_REDIRECT_URI="${FRONTEND_PUBLIC_URL%/}/*"
 # m8flow-designer) that also need to land back in-app after Keycloak end-session.
 # Purely additive to the client's post.logout.redirect.uris (Keycloak's own
 # "##"-joined multi-value attribute syntax); does not touch login flow/theme.
+if [ -z "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-}" ]; then
+  M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS="http://localhost:6853"
+fi
 if [ -n "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-}" ]; then
   IFS=',' read -ra _m8flow_additional_logout_uris <<< "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS}"
   for _m8flow_logout_uri in "${_m8flow_additional_logout_uris[@]}"; do

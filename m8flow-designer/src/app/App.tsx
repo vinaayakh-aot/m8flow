@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
-import { ensureSelectedTenantCookie, isLoggedIn, resumeLoginAfterLogout } from '@/lib/auth';
+import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
 import HomePage from '@/pages/home/HomePage';
+import TenantSelectPage from '@/pages/tenant-select/TenantSelectPage';
+import AcceptInvitationPage from '@/pages/accept-invitation/AcceptInvitationPage';
 
 // Lazy, not a static import: bpmn-js/dmn-js's raw ESM (no file extensions on
 // their internal imports) fails to resolve under Vitest's Node-based SSR
@@ -32,109 +34,126 @@ const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/P
 // of the main entry chunk (same reasoning as the other page routes above).
 const TaskReviewInboxPage = lazy(() => import('@/pages/task-review/TaskReviewInboxPage'));
 const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDetailPage'));
+const AuthenticationsPage = lazy(() => import('@/pages/authentications/AuthenticationsPage'));
 
-export default function App() {
-  const loggedIn = isLoggedIn();
+const GATE_PATHS = new Set(['/', '/tenant']);
 
-  useEffect(() => {
-    if (!loggedIn) {
-      // After logout (or cold visit), go straight to Keycloak. Platform admins
-      // resume master when that was the last realm; prompt=login prevents
-      // leftover SSO from skipping the credential form.
-      resumeLoginAfterLogout();
-      return;
-    }
-    ensureSelectedTenantCookie();
-  }, [loggedIn]);
+function LoadingFallback({ label }: { label: string }) {
+  return <p className="p-6 text-sm text-muted-foreground">{label}</p>;
+}
 
-  if (!loggedIn) {
-    return (
-      <main style={{ fontFamily: 'sans-serif', padding: '3rem', textAlign: 'center' }}>
-        <p>Redirecting to sign in...</p>
-      </main>
-    );
+function AppShellRoutes() {
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<HomePage />} />
+        <Route
+          path="processes"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading processes…" />}>
+              <ProcessesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="processes/:processModelId"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading process…" />}>
+              <ProcessModelDetailPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="processes/:processModelId/modeler/:fileName"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading modeler…" />}>
+              <ProcessModelModelerPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="templates"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading templates…" />}>
+              <TemplatesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="templates/:templateId"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading template…" />}>
+              <TemplateModelerPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="process-instances"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading process instances…" />}>
+              <ProcessInstancesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="process-instances/:instanceId"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading process instance…" />}>
+              <ProcessInstanceDetailPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="task-review"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading tasks…" />}>
+              <TaskReviewInboxPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="task-review/:taskId"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading task…" />}>
+              <TaskReviewDetailPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="authentications"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading authentications…" />}>
+              <AuthenticationsPage />
+            </Suspense>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}
+
+export function AppRoutes() {
+  const { pathname } = useLocation();
+
+  if (pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation/')) {
+    return <AcceptInvitationPage />;
   }
 
+  if (shouldShowTenantSelectionGate(pathname)) {
+    if (!GATE_PATHS.has(pathname)) {
+      return <Navigate to="/" replace />;
+    }
+    return <TenantSelectPage />;
+  }
+
+  return <AppShellRoutes />;
+}
+
+export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<HomePage />} />
-          <Route
-            path="processes"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading processes…</p>}>
-                <ProcessesPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="processes/:processModelId"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process…</p>}>
-                <ProcessModelDetailPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="processes/:processModelId/modeler/:fileName"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading modeler…</p>}>
-                <ProcessModelModelerPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="templates"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading templates…</p>}>
-                <TemplatesPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="templates/:templateId"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading template…</p>}>
-                <TemplateModelerPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="process-instances"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process instances…</p>}>
-                <ProcessInstancesPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="process-instances/:instanceId"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process instance…</p>}>
-                <ProcessInstanceDetailPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="task-review"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading tasks…</p>}>
-                <TaskReviewInboxPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="task-review/:taskId"
-            element={
-              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading task…</p>}>
-                <TaskReviewDetailPage />
-              </Suspense>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

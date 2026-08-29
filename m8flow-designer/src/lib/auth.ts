@@ -118,35 +118,129 @@ export function isSuperAdmin(): boolean {
   return false;
 }
 
-const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
+export const MASTER_REALM_IDENTIFIER = 'master';
+export const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
+
+const TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS = new Set(['/', '/tenant']);
+
+export type OrganizationMembership = {
+  alias: string;
+  id: string | null;
+  name: string | null;
+};
 
 export function getSelectedTenantId(): string | null {
   return readCookie(SELECTED_TENANT_COOKIE);
 }
 
+export function clearSelectedTenantCookie(): void {
+  document.cookie = `${SELECTED_TENANT_COOKIE}=; Max-Age=0; Path=/`;
+}
+
+export function getAuthenticationIdentifier(): string | null {
+  const value = readCookie('authentication_identifier');
+  return value && value.trim() ? value.trim() : null;
+}
+
+/** Master-realm session or super-admin: skip the shared-realm cookie gate. */
+export function skipsTenantCookieGate(): boolean {
+  return isSuperAdmin() || getAuthenticationIdentifier() === MASTER_REALM_IDENTIFIER;
+}
+
+function membershipsFromPayload(decoded: Record<string, unknown>): OrganizationMembership[] {
+  const claim = decoded.organization;
+  if (Array.isArray(claim)) {
+    return claim.flatMap((item) => {
+      if (typeof item === 'string' && item.trim()) {
+        return [{ alias: item.trim(), id: null, name: null }];
+      }
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const record = item as Record<string, unknown>;
+        const alias = typeof record.alias === 'string' ? record.alias.trim() : '';
+        if (!alias) {
+          return [];
+        }
+        return [
+          {
+            alias,
+            id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null,
+            name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+  if (!claim || typeof claim !== 'object') {
+    return [];
+  }
+  return Object.entries(claim).flatMap(([alias, details]) => {
+    const trimmedAlias = alias.trim();
+    if (!trimmedAlias) {
+      return [];
+    }
+    if (!details || typeof details !== 'object' || Array.isArray(details)) {
+      return [{ alias: trimmedAlias, id: null, name: null }];
+    }
+    const record = details as Record<string, unknown>;
+    return [
+      {
+        alias: trimmedAlias,
+        id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null,
+        name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null,
+      },
+    ];
+  });
+}
+
 /**
- * Home/backend routes require the `m8flow_selected_tenant` cookie (AGENTS.md).
- * Designer has no tenant-picker for regular users; when the cookie is missing,
- * finalize from the Keycloak JWT `m8flow_tenant_id` claim (same host cookie
- * pattern as m8flow-frontend's TenantSelectPage).
+ * Shared-realm organizations from the current JWT. Names may be missing;
+ * load display names from GET /v1.0/m8flow/organization-memberships when needed.
  */
-export function ensureSelectedTenantCookie(): void {
-  // Super-admins use optional tenant scope (All Tenants); do not invent a cookie
-  // from a missing claim — Home APIs allow null scope for them.
-  if (isSuperAdmin()) {
-    return;
-  }
-  if (getSelectedTenantId()) {
-    return;
-  }
-  for (const token of [getAccessToken(), readCookie('id_token')]) {
+export function getOrganizationMemberships(): OrganizationMembership[] {
+  for (const token of [readCookie('id_token'), getAccessToken()]) {
     const decoded = token ? decodeJwtPayload(token) : null;
-    const tenantId = decoded?.m8flow_tenant_id;
-    if (typeof tenantId === 'string' && tenantId.trim()) {
-      document.cookie = `${SELECTED_TENANT_COOKIE}=${encodeURIComponent(tenantId.trim())}; Path=/; SameSite=Lax`;
-      return;
+    if (!decoded) {
+      continue;
+    }
+    const memberships = membershipsFromPayload(decoded);
+    if (memberships.length > 0) {
+      return memberships;
     }
   }
+  return [];
+}
+
+export function isTenantSelectionExemptPath(pathname: string): boolean {
+  return pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation/');
+}
+
+/**
+ * Whether the designer should show the landing / tenant-selection page.
+ * `localStorage` is never treated as finalization; only `m8flow_selected_tenant`.
+ */
+export function shouldShowTenantSelectionGate(pathname: string): boolean {
+  if (isTenantSelectionExemptPath(pathname)) {
+    return false;
+  }
+  if (!isLoggedIn()) {
+    return true;
+  }
+  if (skipsTenantCookieGate()) {
+    return false;
+  }
+  if (pathname === '/tenant') {
+    return true;
+  }
+  return !getSelectedTenantId();
+}
+
+export function tenantFinalizationRedirectUrl(): string {
+  const pathname = window.location.pathname || '/';
+  if (TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS.has(pathname)) {
+    return `${window.location.origin}/`;
+  }
+  return `${window.location.origin}${pathname}${window.location.search || ''}`;
 }
 
 const POST_LOGOUT_PROMPT_KEY = 'm8flow_post_logout_prompt';
@@ -178,8 +272,11 @@ export function login(options?: {
   authenticationIdentifier?: string;
   /** Force Keycloak to show the credential form (no silent SSO). */
   promptLogin?: boolean;
+  tenant?: string;
+  tenantFinalization?: boolean;
+  redirectUrl?: string;
 }): void {
-  const redirectUrl = window.location.href;
+  const redirectUrl = options?.redirectUrl ?? window.location.href;
   const params = new URLSearchParams({
     redirect_url: redirectUrl,
   });
@@ -190,17 +287,40 @@ export function login(options?: {
   if (identifier) {
     params.set('authentication_identifier', identifier);
   }
+  if (options?.tenant) {
+    params.set('tenant', options.tenant);
+  }
+  if (options?.tenantFinalization) {
+    params.set('tenant_finalization', '1');
+  }
   // Always evaluate the post-logout flag (do not short-circuit) so it is cleared.
   const fromLogout = consumePostLogoutPrompt();
-  if (options?.promptLogin || fromLogout) {
+  if (!options?.tenantFinalization && (options?.promptLogin || fromLogout)) {
     params.set('prompt', 'login');
   }
   window.location.href = `${BACKEND_BASE_URL}/v1.0/login?${params.toString()}`;
 }
 
-/** Master-realm platform admin login (Keycloak `super-admin` role). */
-export function loginAsPlatformAdmin(options?: { promptLogin?: boolean }): void {
-  login({ authenticationIdentifier: 'master', promptLogin: options?.promptLogin });
+/** Master-realm platform admin login (Keycloak `super-admin` role). Lands in designer. */
+export function loginAsPlatformAdmin(options?: {
+  promptLogin?: boolean;
+  redirectUrl?: string;
+}): void {
+  login({
+    authenticationIdentifier: MASTER_REALM_IDENTIFIER,
+    promptLogin: options?.promptLogin,
+    redirectUrl: options?.redirectUrl,
+  });
+}
+
+/** Backend hop that sets `m8flow_selected_tenant` for one shared-realm organization. */
+export function finalizeTenantLogin(organization: OrganizationMembership): void {
+  login({
+    authenticationIdentifier: getAuthenticationIdentifier() || undefined,
+    tenant: organization.alias,
+    tenantFinalization: true,
+    redirectUrl: tenantFinalizationRedirectUrl(),
+  });
 }
 
 /**

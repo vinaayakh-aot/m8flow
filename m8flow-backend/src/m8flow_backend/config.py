@@ -124,13 +124,16 @@ def notification_sweep_grace_seconds() -> int:
 
 
 def app_frontend_base_url() -> str:
-    """Base URL of the frontend, used to build invitation accept links.
+    """Origin of m8flow-designer, used to build invitation accept links.
 
-    Prefers an explicit M8FLOW_FRONTEND_BASE_URL, then the shared public base URL,
-    falling back to the local-dev frontend (http://localhost:6841)."""
-    raw = _get("M8FLOW_FRONTEND_BASE_URL") or app_public_base_url()
+    Prefers ``M8FLOW_FRONTEND_BASE_URL``, then ``M8FLOW_APP_PUBLIC_BASE_URL`` when
+    that is the user-facing app origin. Does not use Keycloak hostnames — those
+    would send invitees to the IdP. Local default is designer at
+    ``http://localhost:6853``.
+    """
+    raw = _get("M8FLOW_FRONTEND_BASE_URL") or _get("M8FLOW_APP_PUBLIC_BASE_URL")
     if not raw:
-        return "http://localhost:6841"
+        return "http://localhost:6853"
     if "://" not in raw:
         raw = "https://" + raw
     return raw.rstrip("/")

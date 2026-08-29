@@ -16,9 +16,15 @@ vi.mock('@/lib/auth', () => ({
   logout: () => mockLogout(),
 }));
 
+const mockFetchCapabilities = vi.fn().mockResolvedValue({
+  can_manage_processes: false,
+  can_read_authentications: false,
+  can_manage_authentications: false,
+});
+
 vi.mock('@/lib/api', () => ({
   fetchTenants: (...args: unknown[]) => mockFetchTenants(...args),
-  fetchCapabilities: () => Promise.resolve({ can_manage_processes: false }),
+  fetchCapabilities: () => mockFetchCapabilities(),
 }));
 
 function renderShell(initialPath = '/') {
@@ -46,6 +52,11 @@ describe('AppShell', () => {
   afterEach(() => {
     vi.clearAllMocks();
     mockIsSuperAdmin.mockReturnValue(false);
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: false,
+      can_read_authentications: false,
+      can_manage_authentications: false,
+    });
     try {
       localStorage.clear();
     } catch {
@@ -91,6 +102,22 @@ describe('AppShell', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(mockFetchTenants).not.toHaveBeenCalled();
     expect(screen.getByText('home-outlet')).toBeInTheDocument();
+  });
+
+  it('shows Setup → Authentications when capabilities allow read', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: false,
+      can_read_authentications: true,
+      can_manage_authentications: true,
+    });
+
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'Authentications' })).toHaveAttribute(
+      'href',
+      '/authentications',
+    );
   });
 
   it('for a super-admin: shows Tenant selector and fetches tenants', () => {

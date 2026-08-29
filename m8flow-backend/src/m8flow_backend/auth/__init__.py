@@ -97,6 +97,158 @@ def set_selected_tenant_cookie(response, tenant_id: str) -> None:
     response.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id, max_age=86400 * 30, path="/")
 
 
+_FINALIZATION_TRUTHY = frozenset({"1", "true", "yes"})
+
+
+def try_finalize_shared_realm_session(redirect_url: str):
+    """Finalize an already-authenticated shared-realm session onto one tenant.
+
+    When ``tenant`` + ``tenant_finalization`` are present and the browser still
+    has a shared-realm access/id token, set ``m8flow_selected_tenant``, enrich
+    the active organization's groups from the auth provider (the token listing
+    orgs is not enough), sync local groups, and redirect to ``redirect_url``
+    without a second Keycloak round-trip.
+
+    Returns ``None`` to fall through to ordinary OIDC login when the session
+    cannot be parsed or has no organization memberships.
+    """
+    from flask import g, redirect, request
+
+    flag = str(request.args.get("tenant_finalization") or "").strip().lower()
+    if flag not in _FINALIZATION_TRUTHY:
+        return None
+    tenant_alias = (request.args.get("tenant") or "").strip()
+    if not tenant_alias:
+        return None
+
+    identifier = (
+        (request.args.get("authentication_identifier") or "").strip()
+        or (request.cookies.get("authentication_identifier") or "").strip()
+    )
+    if identifier != shared_realm_name():
+        return None
+
+    session_token = request.cookies.get("access_token") or request.cookies.get("id_token")
+    if not session_token:
+        return None
+
+    try:
+        decoded = decode_auth_token(session_token)
+    except jwt.PyJWTError:
+        logger.warning(
+            "tenant_finalization: unable to parse existing shared-realm session; falling back to standard login"
+        )
+        return None
+
+    claims = getattr(g, "verified_claims", None)
+    if not isinstance(claims, VerifiedClaims):
+        try:
+            from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
+
+            claims = verified_claims_from_payload(decoded)
+        except (TypeError, ValueError):
+            logger.warning(
+                "tenant_finalization: unable to parse existing shared-realm session; falling back to standard login"
+            )
+            return None
+        g.verified_claims = claims
+
+    from m8flow_backend.services.tenant_service import TenantService
+
+    tenant_info = TenantService.check_tenant_exists(tenant_alias)
+    if not tenant_info.get("exists"):
+        raise ApiError("tenant_not_found", "Tenant not found", 404)
+    selected_tenant_id = str(tenant_info["tenant_id"])
+
+    directory_memberships = _directory_memberships_for_username(
+        claims.username
+        or (decoded.get("preferred_username") if isinstance(decoded.get("preferred_username"), str) else None)
+    )
+    memberships = directory_memberships or list(claims.memberships)
+    if not memberships:
+        logger.warning(
+            "tenant_finalization: shared-realm session lacked organization memberships; falling back to standard login"
+        )
+        return None
+
+    if directory_memberships:
+        g.verified_claims = VerifiedClaims(
+            subject=claims.subject,
+            issuer=claims.issuer,
+            username=claims.username,
+            email=claims.email,
+            roles=claims.roles,
+            memberships=directory_memberships,
+            jwt_claims=claims.jwt_claims,
+        )
+
+    token_membership = _membership_for_active_tenant(
+        memberships, tenant_alias
+    ) or _membership_for_active_tenant(memberships, selected_tenant_id)
+    if token_membership is None:
+        raise ApiError(
+            "tenant_not_available",
+            "Selected tenant is not available for this session",
+            403,
+        )
+
+    session: Session = g.db_session
+    username = claims.username or str(decoded.get("preferred_username") or claims.subject)
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        user = on_login_or_token_enrichment(
+            session,
+            username=str(username),
+            service=claims.issuer,
+            service_id=claims.subject,
+            email=claims.email if isinstance(claims.email, str) else None,
+            active_tenant_id=selected_tenant_id,
+        )
+    except IntegrityError:
+        session.rollback()
+        user = session.scalars(
+            select(UserModel).where(
+                UserModel.service == claims.issuer,
+                UserModel.service_id == claims.subject,
+            )
+        ).first()
+        if user is None:
+            logger.warning(
+                "tenant_finalization: user provisioning raced and could not be recovered; falling back to standard login"
+            )
+            return None
+
+    _sync_groups_from_token(
+        session,
+        user=user,
+        decoded=decoded,
+        tenant_id=selected_tenant_id,
+    )
+    session.flush()
+
+    response = redirect(redirect_url)
+    set_selected_tenant_cookie(response, selected_tenant_id)
+    return response
+
+
+def _directory_memberships_for_username(username: str | None) -> list[Membership]:
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.errors import AuthProviderError
+
+    if not isinstance(username, str) or not username.strip():
+        return []
+    try:
+        return get_auth_provider().list_memberships(username=username.strip())
+    except (AuthProviderError, ValueError):
+        logger.warning(
+            "tenant_finalization: directory membership enrichment failed for %s",
+            username,
+            exc_info=True,
+        )
+        return []
+
+
 def on_login_or_token_enrichment(
     session: Session,
     *,
@@ -144,22 +296,33 @@ def require_current_user() -> UserModel:
 def install_auth_middleware(app: Flask) -> None:
     @app.before_request
     def _authenticate() -> None:
-        from m8flow_backend.tenancy import TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
-
-        path = request.path or ""
-        if any(path.startswith(prefix) for prefix in TENANT_CONTEXT_EXEMPT_PATH_PREFIXES):
-            return
         header = request.headers.get("Authorization") or ""
         token = header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else None
         if not token:
             token = request.cookies.get("access_token")
+        # Tenant-exempt prefixes skip tenant-cookie resolution, not authentication.
+        # A present Bearer/cookie must still set g.user so /tenants/{id}/members
+        # and invitations work. Truly public callers (no token) stay anonymous.
         if not token:
+            return
+        from m8flow_backend.auth.service_accounts import authenticate_api_key, looks_like_api_key
+        from m8flow_backend.tenancy import set_context_tenant_id
+
+        session: Session = g.db_session
+        if looks_like_api_key(token):
+            resolved = authenticate_api_key(session, token)
+            if resolved is None:
+                return
+            user, tenant_id = resolved
+            g.user = user
+            g.m8flow_tenant_id = tenant_id
+            g.service_account_tenant_id = tenant_id
+            g._m8flow_ctx_token = set_context_tenant_id(tenant_id)
             return
         try:
             decoded = decode_auth_token(token)
         except jwt.PyJWTError:
             return
-        session: Session = g.db_session
         user = user_from_internal_token(session, decoded)
         if user is None:
             from sqlalchemy.exc import IntegrityError

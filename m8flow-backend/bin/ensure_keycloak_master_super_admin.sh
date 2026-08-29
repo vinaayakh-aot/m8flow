@@ -17,7 +17,7 @@ frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 # Optional comma-separated extra origins (e.g. m8flow-designer on :6853). Must
 # stay in sync with docker/keycloak-entrypoint.sh — this script runs after
 # Keycloak is healthy and would otherwise clobber import-time post-logout URIs.
-additional_logout_uris="${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-}"
+additional_logout_uris="${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-http://localhost:6853}"
 if [ -n "${additional_logout_uris}" ]; then
   old_ifs="${IFS}"
   IFS=","

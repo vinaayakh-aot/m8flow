@@ -544,13 +544,11 @@
         {
           "type": "password",
           "value": "admin",
-          "temporary": true
+          "temporary": false
         }
       ],
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -593,9 +591,7 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -605,7 +601,7 @@
         {
           "type": "password",
           "value": "editor",
-          "temporary": true
+          "temporary": false
         }
       ]
     },
@@ -618,9 +614,7 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -630,7 +624,7 @@
         {
           "type": "password",
           "value": "integrator",
-          "temporary": true
+          "temporary": false
         }
       ]
     },
@@ -643,9 +637,7 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -655,7 +647,7 @@
         {
           "type": "password",
           "value": "reviewer",
-          "temporary": true
+          "temporary": false
         }
       ]
     },
@@ -668,9 +660,7 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -680,7 +670,7 @@
         {
           "type": "password",
           "value": "viewer",
-          "temporary": true
+          "temporary": false
         }
       ]
     },
@@ -693,9 +683,7 @@
       "enabled": true,
       "totp": false,
       "disableableCredentialTypes": [],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
+      "requiredActions": [],
       "realmRoles": [
         "default-roles-m8flow"
       ],
@@ -705,7 +693,7 @@
         {
           "type": "password",
           "value": "submitter",
-          "temporary": true
+          "temporary": false
         }
       ]
     }

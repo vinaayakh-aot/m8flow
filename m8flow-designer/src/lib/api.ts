@@ -1,4 +1,8 @@
-import { ensureSelectedTenantCookie, getAccessToken, resumeLoginAfterLogout } from './auth';
+import {
+  getAccessToken,
+  type OrganizationMembership,
+  resumeLoginAfterLogout,
+} from './auth';
 
 /**
  * Absolute backend for direct calls; empty string = same-origin Vite proxy.
@@ -139,7 +143,6 @@ async function fetchWithAuthRetry(
  * the real HTTP method on failure, not a hardcoded 'GET'.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  ensureSelectedTenantCookie();
   const response = await fetchWithAuthRetry(path, init);
   if (!response.ok) {
     throw new ApiError(path, response.status, init.method ?? 'GET', await readServerMessage(response));
@@ -152,9 +155,6 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
  * as a Bearer header (same pattern as m8flow-frontend HttpService).
  */
 export async function apiGet<T>(path: string): Promise<T> {
-  // Home (and most tenant-scoped) routes require m8flow_selected_tenant; designer
-  // has no tenant-picker for regular users, so finalize from the JWT claim.
-  ensureSelectedTenantCookie();
   const response = await fetchWithAuthRetry(path, {
     method: 'GET',
     headers: { Accept: 'application/json' },
@@ -163,6 +163,36 @@ export async function apiGet<T>(path: string): Promise<T> {
     throw new ApiError(path, response.status);
   }
   return (await response.json()) as T;
+}
+
+const ORGANIZATION_MEMBERSHIPS_PATH = '/v1.0/m8flow/organization-memberships';
+
+function asMembership(value: unknown): OrganizationMembership | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const alias = typeof record.alias === 'string' ? record.alias.trim() : '';
+  if (!alias) {
+    return null;
+  }
+  return {
+    alias,
+    id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null,
+    name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null,
+  };
+}
+
+/** Display names for the current user's shared-realm organizations. Tenant-cookie exempt. */
+export async function fetchOrganizationMemberships(): Promise<OrganizationMembership[]> {
+  const body = await apiGet<{ organizations?: unknown }>(ORGANIZATION_MEMBERSHIPS_PATH);
+  if (!Array.isArray(body.organizations)) {
+    return [];
+  }
+  return body.organizations.flatMap((item) => {
+    const membership = asMembership(item);
+    return membership ? [membership] : [];
+  });
 }
 
 export function homeStatsPath(tenantId: string | null | undefined): string {
@@ -181,7 +211,11 @@ export function fetchTenants(): Promise<TenantSummary[]> {
   return apiGet<TenantSummary[]>('/v1.0/m8flow/tenants');
 }
 
-export type Capabilities = { can_manage_processes: boolean };
+export type Capabilities = {
+  can_manage_processes: boolean;
+  can_read_authentications?: boolean;
+  can_manage_authentications?: boolean;
+};
 
 /** UI capability hints from the backend (authoritative — computed from the
  * same allow_uri gate the routes enforce). Used to show/hide Start/Delete on
@@ -363,7 +397,6 @@ export async function fetchProcessModelFileContent(
   fileName: string,
   tenantId?: string | null,
 ): Promise<string> {
-  ensureSelectedTenantCookie();
   const path = processModelFilePath(modifiedId, fileName, tenantId);
   const response = await fetchWithAuthRetry(path, { method: 'GET' });
   if (!response.ok) {
@@ -385,7 +418,6 @@ export async function saveProcessModelFileContent(
   content: string,
   tenantId?: string | null,
 ): Promise<ProcessModelFileSaveResult> {
-  ensureSelectedTenantCookie();
   const path = processModelFilePath(modifiedId, fileName, tenantId);
   const response = await fetchWithAuthRetry(path, {
     method: 'PUT',

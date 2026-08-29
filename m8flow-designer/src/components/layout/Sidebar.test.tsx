@@ -35,6 +35,29 @@ describe('Sidebar live nav', () => {
     );
     expect(screen.getByText('Configuration')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Authentications' })).not.toBeInTheDocument();
+  });
+
+  it('shows Setup → Authentications when the role can read them', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showAuthentications />,
+        },
+        {
+          path: '/authentications',
+          element: <Sidebar showAuthentications />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Authentications' })).toHaveAttribute(
+      'href',
+      '/authentications',
+    );
   });
 
   it('stays inert (no links) outside a router for prototypes', () => {

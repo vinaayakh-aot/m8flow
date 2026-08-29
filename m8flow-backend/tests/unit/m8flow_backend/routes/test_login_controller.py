@@ -290,3 +290,306 @@ def test_refresh_fails_when_keycloak_rejects_the_refresh_token(client, monkeypat
     response = client.post("/v1.0/refresh")
     assert response.status_code == 401
     assert response.get_json()["error_code"] == "keycloak_refresh_failed"
+
+
+def _finalization_token(*, username: str, organizations: dict) -> str:
+    from m8flow_backend.auth import encode_auth_token
+    from m8flow_bpmn_core.models.user import UserModel
+
+    user = UserModel(
+        username=username,
+        email=f"{username}@example.test",
+        service="https://example.test/realms/m8flow",
+        service_id=username,
+        display_name=username,
+        created_at_in_seconds=0,
+        updated_at_in_seconds=0,
+    )
+    return encode_auth_token(user=user, extra={"organization": organizations, "iss": user.service})
+
+
+class _DirectoryProvider:
+    def __init__(self, memberships):
+        self._memberships = memberships
+
+    def list_memberships(self, *, username: str):
+        del username
+        return list(self._memberships)
+
+
+def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_session, monkeypatch):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
+    db_session.commit()
+
+    token = _finalization_token(
+        username="editor",
+        organizations={"t1": {"id": "t1", "name": "Tenant 1"}},
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider(
+            [
+                Membership(
+                    tenant_ref=TenantRef(id="t1", alias="t1"),
+                    roles=["editor"],
+                    groups=["editor"],
+                )
+            ]
+        ),
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "t1",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"] == "http://localhost:6853/"
+    cookies = response.headers.getlist("Set-Cookie")
+    assert any(
+        header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=t1") and "Path=/" in header
+        for header in cookies
+    )
+
+    db_session.expire_all()
+    from m8flow_bpmn_core.models.user import UserModel
+    from sqlalchemy import select
+
+    user = db_session.scalars(select(UserModel).where(UserModel.username == "editor")).first()
+    assert user is not None
+    identifiers = {getattr(group, "identifier", "") for group in user.groups}
+    assert "t1:editor" in identifiers
+
+
+def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_session, monkeypatch):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+
+    token = _finalization_token(
+        username="reviewer",
+        organizations={
+            "t1": {"id": "t1"},
+            "t2": {"id": "t2"},
+        },
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider(
+            [
+                Membership(
+                    tenant_ref=TenantRef(id="t1", alias="t1"),
+                    roles=["reviewer"],
+                    groups=["reviewer"],
+                ),
+                Membership(
+                    tenant_ref=TenantRef(id="t2", alias="t2"),
+                    roles=["editor"],
+                    groups=["editor"],
+                ),
+            ]
+        ),
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/app",
+            "tenant": "t2",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"] == "http://localhost:6853/app"
+    cookies = response.headers.getlist("Set-Cookie")
+    assert any(header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=t2") for header in cookies)
+
+    db_session.expire_all()
+    from m8flow_bpmn_core.models.user import UserModel
+    from sqlalchemy import select
+
+    user = db_session.scalars(select(UserModel).where(UserModel.username == "reviewer")).first()
+    identifiers = {getattr(group, "identifier", "") for group in user.groups}
+    assert "t2:editor" in identifiers
+    assert "t1:reviewer" not in identifiers
+
+
+def test_tenant_finalization_forbidden_when_tenant_not_in_session(client, db_session, monkeypatch):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    ensure_tenant(db_session, tenant_id="t-other", slug="t-other")
+    db_session.commit()
+
+    token = _finalization_token(
+        username="editor",
+        organizations={"t1": {"id": "t1"}},
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider([]),
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "t-other",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error_code"] == "tenant_not_available"
+
+
+def test_tenant_finalization_falls_back_when_session_cannot_be_parsed(client, db_session):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from urllib.parse import urlparse
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    db_session.commit()
+
+    client.set_cookie("access_token", "not-a-jwt")
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "t1",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 302
+    parsed = urlparse(response.headers["Location"])
+    assert parsed.path.endswith("/protocol/openid-connect/auth")
+
+
+def test_tenant_finalization_enriches_thin_token_from_directory(client, db_session, monkeypatch):
+    from m8flow_backend.auth import encode_auth_token
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
+    user = ensure_user(
+        db_session,
+        username="editor",
+        service="https://example.test/realms/m8flow",
+        service_id="editor",
+    )
+    db_session.commit()
+    token = encode_auth_token(user=user)
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider(
+            [
+                Membership(
+                    tenant_ref=TenantRef(id="t1", alias="t1", name="Tenant 1"),
+                    roles=["editor"],
+                    groups=["editor"],
+                )
+            ]
+        ),
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "t1",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"] == "http://localhost:6853/"
+    cookies = response.headers.getlist("Set-Cookie")
+    assert any(header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=t1") for header in cookies)
+
+
+def test_tenant_finalization_falls_back_when_session_lacks_organizations(client, db_session, monkeypatch):
+    from m8flow_backend.auth import encode_auth_token
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from urllib.parse import urlparse
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="lonely",
+        service="https://example.test/realms/m8flow",
+        service_id="lonely",
+    )
+    db_session.commit()
+    token = encode_auth_token(user=user)
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider([]),
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "t1",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 302
+    parsed = urlparse(response.headers["Location"])
+    assert parsed.path.endswith("/protocol/openid-connect/auth")
+
+
+def test_tenant_finalization_not_found_when_tenant_missing(client, db_session):
+    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+
+    token = _finalization_token(
+        username="editor",
+        organizations={"missing": {"id": "missing"}},
+    )
+    client.set_cookie("access_token", token)
+    client.set_cookie("authentication_identifier", shared_realm_name())
+
+    response = client.get(
+        "/v1.0/login",
+        query_string={
+            "redirect_url": "http://localhost:6853/",
+            "tenant": "missing",
+            "tenant_finalization": "1",
+            "authentication_identifier": shared_realm_name(),
+        },
+    )
+    assert response.status_code == 404
+    assert response.get_json()["error_code"] == "tenant_not_found"

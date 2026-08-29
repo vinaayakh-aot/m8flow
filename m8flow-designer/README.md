@@ -17,10 +17,21 @@ once the user authenticates, with `access_token` / `id_token` cookies set by
 the backend. `src/auth.ts` here follows that same pattern:
 
 - `login()` / `loginAsPlatformAdmin()` send the browser to
-  `${VITE_BACKEND_BASE_URL}/v1.0/login?...`. Unauthenticated visits (including
-  after logout) auto-redirect to Keycloak. Platform admins use the Keycloak
-  page's **Platform admin sign in** link (master realm) — signing into the
-  shared realm as username `super-admin` will not unlock All Tenants.
+  `${VITE_BACKEND_BASE_URL}/v1.0/login?...`. Logged-out visits land on the
+  designer tenant selection gate: **Sign In** (shared realm) and **Platform
+  Admin Sign In** (master realm). After shared-realm login, a user with one
+  organization is finalized via `GET /v1.0/login?...&tenant=<alias>&tenant_finalization=1`;
+  a user with many organizations picks one on the same page. The active tenant
+  is the `m8flow_selected_tenant` cookie — not `localStorage`.
+  `/accept-invitation?token=…` is a public page (no tenant gate): validate,
+  set password (min 8), then **Go to login** — it does not auto-login.
+  Invitation emails and JSON `invitation_link` use this designer origin
+  (`M8FLOW_FRONTEND_BASE_URL`, default `http://localhost:6853`), not leftover
+  frontend `:6841`.
+  After the tenant cookie is set, **Setup → Authentications** lists tenant-scoped
+  service accounts for integrator / tenant-admin / viewer (read). Create shows
+  the API key once; list/revoke afterwards. Editor and reviewer do not see the
+  nav item.
 - Keycloak redirects to the backend's `/v1.0/login_return`, which exchanges
   the authorization code for tokens (server-side, via the confidential
   `m8flow-backend` Keycloak client) and sets `access_token` / `id_token`
@@ -66,5 +77,8 @@ npm run test:e2e
 # npm run test:e2e
 ```
 
-Journeys: shared-realm `editor` Home landing (no platform-admin chrome), and
-master-realm `super-admin` via **Platform admin sign in** (All Tenants + Total tenants).
+Journeys: `e2e/login.spec.ts` (CHK-01 editor Home, CHK-02 platform admin) and
+`e2e/identity-auth-parity.spec.ts` (PAR-01–08: landing, editor onboarding/tasks,
+multi-org picker, zero-org gate, auto-finalize, logout/cookie gate,
+accept-invitation, integrator service account). Requires docker compose
+(backend `:6840`, Keycloak `:6842`) plus designer `:6853`.
