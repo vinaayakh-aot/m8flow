@@ -31,7 +31,7 @@ export type SidebarTenant = {
   name: string;
 };
 
-export type LiveNavId = 'home' | 'processes' | 'process-instances' | 'task-review';
+export type LiveNavId = 'home' | 'tenants' | 'processes' | 'process-instances' | 'task-review';
 
 export type SidebarProps = {
   /** When true, show the Tenant selector (ticket 02: super-admin only). */
@@ -40,6 +40,11 @@ export type SidebarProps = {
   /** `null` means "All Tenants". Ignored when showTenantSelector is false. */
   selectedTenantId?: string | null;
   onTenantChange?: (tenantId: string | null) => void;
+  /**
+   * Read-only active-tenant chip for non-super-admin shared-realm users.
+   * Ignored when `showTenantSelector` is true. Not a switcher.
+   */
+  activeTenantLabel?: string | null;
   /** When set, Profile opens a menu with Log out (and optional user label). */
   onLogout?: () => void;
   /** Display name shown in the Profile menu (username / email). */
@@ -51,6 +56,8 @@ export type SidebarProps = {
   activeNavId?: LiveNavId | null;
   /** Setup → Authentications live link when the user has YAML authentications grants. */
   showAuthentications?: boolean;
+  /** Super-admin: Tenants nav is a live `/tenants` link. Everyone else: inert. */
+  showTenantsNav?: boolean;
   className?: string;
 };
 
@@ -99,6 +106,9 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
   if (pathname === '/' || pathname === '') {
     return 'home';
   }
+  if (pathname === '/tenants' || pathname.startsWith('/tenants/')) {
+    return 'tenants';
+  }
   if (pathname === '/processes' || pathname.startsWith('/processes/')) {
     return 'processes';
   }
@@ -112,10 +122,11 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
 }
 
 /**
- * App sidebar matching `m8flow Home copy.html`. Home and Processes are live
- * routes when a React Router context is present; every other item stays
- * visually present at full opacity but inert — no route, no click handler —
- * rather than `disabled`/greyed, which would read as a permission denial.
+ * App sidebar matching `m8flow Home copy.html`. Home, Processes, and (for
+ * super-admin) Tenants are live routes when a React Router context is
+ * present; other items stay visually present at full opacity but inert —
+ * no route, no click handler — rather than `disabled`/greyed, which would
+ * read as a permission denial.
  * Collapsible Setup/System groups still expand/collapse (chrome, not
  * navigation). Profile opens a small popout for Log out when `onLogout` is
  * provided.
@@ -149,6 +160,8 @@ function SidebarView({
   activeNavId = 'home',
   linkLiveNav = false,
   showAuthentications = false,
+  showTenantsNav = false,
+  activeTenantLabel = null,
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
   const [setupOpen, setSetupOpen] = useState(true);
@@ -156,6 +169,12 @@ function SidebarView({
   const setupChildren = showAuthentications
     ? [SETUP_CHILDREN[0], AUTHENTICATIONS_CHILD, ...SETUP_CHILDREN.slice(1)]
     : SETUP_CHILDREN;
+
+  const topNav = TOP_NAV.map((item) =>
+    item.id === 'tenants' && showTenantsNav
+      ? { ...item, to: '/tenants', live: true }
+      : item,
+  );
 
   const selectedLabel =
     selectedTenantId == null
@@ -208,10 +227,28 @@ function SidebarView({
             <span className="sr-only">{selectedLabel}</span>
           </label>
         </div>
+      ) : activeTenantLabel ? (
+        <div className="px-6 pb-4">
+          <div
+            data-testid="nav-tenant-name"
+            title={activeTenantLabel}
+            className="flex cursor-default items-center gap-2 rounded-lg border border-border bg-sidebar px-2.5 py-2 select-none"
+          >
+            <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <div className="min-w-0">
+              <div className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
+                Tenant
+              </div>
+              <div className="truncate text-sm font-semibold text-foreground">
+                {activeTenantLabel}
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
-        {TOP_NAV.map((item) => (
+        {topNav.map((item) => (
           <NavRow
             key={item.id}
             item={item}

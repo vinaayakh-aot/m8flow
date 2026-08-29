@@ -53,6 +53,7 @@ def require_authorized_user(
     *,
     forbidden_message: str,
     tenant_id: str | None = None,
+    group_fallback: bool = True,
 ):
     user = getattr(g, "user", None)
     if not user:
@@ -62,7 +63,13 @@ def require_authorized_user(
             status_code=401,
         )
 
-    if allow_uri(user, action, request.path, session=getattr(g, "db_session", None)):
+    if allow_uri(
+        user,
+        action,
+        request.path,
+        session=getattr(g, "db_session", None),
+        group_fallback=group_fallback,
+    ):
         return user
 
     # Fallback: check group membership directly (see _user_is_tenant_admin_or_super_admin

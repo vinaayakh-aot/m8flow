@@ -16,7 +16,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[5]
 _FRONTEND_ORIGIN = "http://localhost:6841"
 _DESIGNER_ORIGIN = "http://localhost:6853"
 _VITE_ORIGIN = "http://localhost:5173"
-_ALLOWED_HEADERS = ("authorization", "content-type", "accept")
+_ALLOWED_HEADERS = ("authorization", "content-type", "accept", "x-m8flow-tenant-id")
 
 
 def _preflight(client, path, *, origin, request_method="GET", request_headers="Authorization, Content-Type, Accept"):

@@ -6,6 +6,7 @@ import {
   clearSelectedTenantCookie,
   finalizeTenantLogin,
   getOrganizationMemberships,
+  GLOBAL_ADMIN_LANDING_PATH,
   isLoggedIn,
   login,
   loginAsPlatformAdmin,
@@ -15,6 +16,10 @@ import {
 
 function designerRootUrl(): string {
   return `${window.location.origin}/`;
+}
+
+function globalAdminLandingUrl(): string {
+  return `${window.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
 }
 
 function mergeOrganizationMemberships(
@@ -116,7 +121,7 @@ export default function TenantSelectPage() {
 
   function handlePlatformAdminSignIn() {
     clearSelectedTenantCookie();
-    loginAsPlatformAdmin({ redirectUrl: designerRootUrl() });
+    loginAsPlatformAdmin({ redirectUrl: globalAdminLandingUrl() });
   }
 
   if (!loggedIn) {

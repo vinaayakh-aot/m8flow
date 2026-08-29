@@ -120,6 +120,7 @@ export function isSuperAdmin(): boolean {
 
 export const MASTER_REALM_IDENTIFIER = 'master';
 export const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
+export const GLOBAL_ADMIN_LANDING_PATH = '/tenants';
 
 const TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS = new Set(['/', '/tenant']);
 
@@ -131,6 +132,27 @@ export type OrganizationMembership = {
 
 export function getSelectedTenantId(): string | null {
   return readCookie(SELECTED_TENANT_COOKIE);
+}
+
+/**
+ * Label for the non-super-admin shell badge. Cookie is the active tenant;
+ * membership name is display-only. Never reads localStorage.
+ */
+export function getActiveTenantDisplayLabel(): string | null {
+  const selected = getSelectedTenantId()?.trim();
+  if (!selected) {
+    return null;
+  }
+  for (const membership of getOrganizationMemberships()) {
+    if (membership.id === selected || membership.alias === selected) {
+      const name = membership.name?.trim();
+      if (name) {
+        return name;
+      }
+      return membership.alias || selected;
+    }
+  }
+  return selected;
 }
 
 export function clearSelectedTenantCookie(): void {
@@ -301,7 +323,7 @@ export function login(options?: {
   window.location.href = `${BACKEND_BASE_URL}/v1.0/login?${params.toString()}`;
 }
 
-/** Master-realm platform admin login (Keycloak `super-admin` role). Lands in designer. */
+/** Master-realm platform admin login (Keycloak `super-admin` role). Lands on the tenant registry. */
 export function loginAsPlatformAdmin(options?: {
   promptLogin?: boolean;
   redirectUrl?: string;
@@ -309,7 +331,8 @@ export function loginAsPlatformAdmin(options?: {
   login({
     authenticationIdentifier: MASTER_REALM_IDENTIFIER,
     promptLogin: options?.promptLogin,
-    redirectUrl: options?.redirectUrl,
+    redirectUrl:
+      options?.redirectUrl ?? `${window.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`,
   });
 }
 

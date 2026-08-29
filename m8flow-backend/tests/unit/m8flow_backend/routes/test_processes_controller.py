@@ -162,6 +162,28 @@ def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkey
     assert hire["runs_30d"] == 0
 
 
+def test_catalog_list_does_not_include_another_tenants_files(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    other = tmp_path / "bpmn" / "t2" / "secret" / "payroll"
+    other.mkdir(parents=True)
+    (other / "payroll.bpmn").write_text(
+        '<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"/>',
+        encoding="utf-8",
+    )
+
+    _user, token = _login_user(
+        client, db_session, username="editor-files", groups=["t1:editor"], tenant_id="t1"
+    )
+    response = client.get(
+        "/v1.0/m8flow/process-models",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.get_json()}
+    assert "secret/payroll" not in ids
+    assert "finance/invoice-approval" in ids
+
+
 def test_group_filter_and_unknown_group(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(

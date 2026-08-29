@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  getActiveTenantDisplayLabel,
   getOrganizationMemberships,
   getSelectedTenantId,
   login,
+  loginAsPlatformAdmin,
   shouldShowTenantSelectionGate,
 } from './auth';
 
@@ -67,6 +69,7 @@ describe('auth tenant gate', () => {
     localStorage.setItem('m8f_tenant_id', 'tenant-acme');
 
     expect(getSelectedTenantId()).toBeNull();
+    expect(getActiveTenantDisplayLabel()).toBeNull();
     expect(shouldShowTenantSelectionGate('/')).toBe(true);
     expect(shouldShowTenantSelectionGate('/processes')).toBe(true);
   });
@@ -95,6 +98,29 @@ describe('auth tenant gate', () => {
     expect(shouldShowTenantSelectionGate('/accept-invitation/')).toBe(false);
   });
 
+  it('labels the active tenant from the cookie, using membership name when present', () => {
+    setCookie(
+      'id_token',
+      encodeJwt({
+        exp: futureExp,
+        organization: {
+          acme: { id: 'tenant-acme', name: 'Acme Corp' },
+          other: { id: 'tenant-other', name: 'Other' },
+        },
+      }),
+    );
+    setCookie('m8flow_selected_tenant', 'tenant-acme');
+    expect(getActiveTenantDisplayLabel()).toBe('Acme Corp');
+
+    setCookie('m8flow_selected_tenant', 'other');
+    expect(getActiveTenantDisplayLabel()).toBe('Other');
+  });
+
+  it('falls back to the cookie value when memberships have no display name', () => {
+    setCookie('m8flow_selected_tenant', 'tenant-orphan');
+    expect(getActiveTenantDisplayLabel()).toBe('tenant-orphan');
+  });
+
   it('builds a tenant finalization login URL without copying a JWT tenant id', () => {
     const loc = {
       href: 'http://localhost:6853/tenant',
@@ -116,5 +142,21 @@ describe('auth tenant gate', () => {
     expect(loc.href).toContain('tenant_finalization=1');
     expect(loc.href).toContain(`redirect_url=${encodeURIComponent('http://localhost:6853/')}`);
     expect(document.cookie).not.toContain('m8flow_selected_tenant=');
+  });
+
+  it('sends platform-admin login to the tenant registry', () => {
+    const loc = {
+      href: 'http://localhost:6853/',
+      origin: 'http://localhost:6853',
+      pathname: '/',
+      search: '',
+    };
+    vi.stubGlobal('location', loc);
+
+    loginAsPlatformAdmin();
+
+    expect(loc.href).toContain('/v1.0/login?');
+    expect(loc.href).toContain('authentication_identifier=master');
+    expect(loc.href).toContain(`redirect_url=${encodeURIComponent('http://localhost:6853/tenants')}`);
   });
 });

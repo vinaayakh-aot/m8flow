@@ -52,8 +52,13 @@ export class ApiError extends Error {
 async function readServerMessage(response: Response): Promise<string | undefined> {
   try {
     const data = await response.clone().json();
-    const message = (data as { message?: unknown })?.message;
-    return typeof message === 'string' && message.trim() ? message : undefined;
+    const record = data as { message?: unknown; detail?: unknown };
+    const message = record?.message;
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+    const detail = record?.detail;
+    return typeof detail === 'string' && detail.trim() ? detail.trim() : undefined;
   } catch {
     return undefined;
   }

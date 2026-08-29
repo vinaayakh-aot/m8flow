@@ -14,7 +14,7 @@ from m8flow_backend.services.tenant_management_authorization import ensure_reque
 from m8flow_backend.services.tenant_management_authorization import require_authorized_user
 from sqlalchemy.exc import IntegrityError
 from m8flow_backend.errors import ApiError
-from m8flow_backend.authorization import user_has_permission
+from m8flow_backend.authorization import allow_uri, user_has_permission
 from m8flow_backend.helpers.response_helper import handle_api_errors
 
 from m8flow_backend.tenancy import create_tenant_if_not_exists
@@ -61,8 +61,14 @@ def create_realm(body: dict) -> tuple[dict, int]:
     if not user:
         raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
     
-    is_authorized = user_has_permission(user, "create", request.path)
-        
+    is_authorized = allow_uri(
+        user,
+        "POST",
+        request.path,
+        session=getattr(g, "db_session", None),
+        group_fallback=False,
+    )
+
     if not is_authorized:
         logger.warning(
             "User %s (groups: %s) attempted to create a tenant organization without required permissions",
@@ -340,6 +346,7 @@ def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
         "update",
         tenant_id=tenant_id,
         forbidden_message="Not authorized to update the tenant name.",
+        group_fallback=False,
     )
 
     ensure_request_can_access_tenant(

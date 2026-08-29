@@ -20,6 +20,7 @@ vi.mock('@/lib/auth', () => ({
   logout: () => mockLogout(),
   clearSelectedTenantCookie: () => mockClearSelectedTenantCookie(),
   finalizeTenantLogin: (...args: unknown[]) => mockFinalizeTenantLogin(...args),
+  GLOBAL_ADMIN_LANDING_PATH: '/tenants',
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -52,6 +53,9 @@ describe('TenantSelectPage', () => {
 
     fireEvent.click(screen.getByTestId('global-admin-sign-in-button'));
     expect(mockLoginAsPlatformAdmin).toHaveBeenCalledTimes(1);
+    expect(mockLoginAsPlatformAdmin).toHaveBeenCalledWith({
+      redirectUrl: `${window.location.origin}/tenants`,
+    });
   });
 
   it('blocks a logged-in user with zero organizations and logs out from Back to login', async () => {

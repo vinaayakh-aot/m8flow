@@ -17,6 +17,10 @@ TENANT_CLAIM = (os.getenv("M8FLOW_TENANT_CLAIM") or "").strip() or "m8flow_tenan
 # across auth redirects and expired-session retries.
 SELECTED_TENANT_COOKIE_NAME = "m8flow_selected_tenant"
 
+# Optional request header for an explicit tenant when the caller belongs to it.
+# Distinct from the active-tenant cookie and from the super-admin tenantId query.
+TENANT_SELECTION_HEADER_NAME = "x-m8flow-tenant-id"
+
 # Single source of truth: base path prefixes when no WSGI path prefix is set.
 # When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
 # prefix + each path so both prefixed and unprefixed deployments work.
@@ -189,8 +193,14 @@ def is_concrete_tenant_id(tenant_id: object) -> bool:
 def clear_tenant_context() -> None:
     """Clear tenant context variables to prevent cross-request leakage."""
     _CONTEXT_TENANT_ID.set(None)
-    if has_request_context() and hasattr(g, "_m8flow_global_request"):
-        g._m8flow_global_request = False
+    if has_request_context():
+        for flag in (
+            "_m8flow_global_request",
+            "_m8flow_public_request",
+            "_m8flow_tenant_context_exempt_request",
+        ):
+            if hasattr(g, flag):
+                setattr(g, flag, False)
 
 
 def _request_uses_master_realm_without_tenant_context() -> bool:

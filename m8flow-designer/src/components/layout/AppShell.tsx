@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 
 import { fetchCapabilities, fetchTenants, type TenantSummary } from '@/lib/api';
-import { getCurrentUser, isSuperAdmin, logout } from '@/lib/auth';
+import { getActiveTenantDisplayLabel, getCurrentUser, isSuperAdmin, logout } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { persistTenantId, readPersistedTenantId } from '@/lib/selectedTenant';
 
@@ -24,6 +24,8 @@ export type AppShellOutletContext = {
   /** YAML authentications grants (integrator / tenant-admin / viewer read). */
   canReadAuthentications?: boolean;
   canManageAuthentications?: boolean;
+  /** Super-admin switcher should reload after registry create/rename. */
+  refreshTenants?: () => void;
 };
 
 /**
@@ -36,6 +38,7 @@ export function AppShell() {
     () => readPersistedTenantId(),
   );
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
   const [canManage, setCanManage] = useState(false);
   const [canReadAuthentications, setCanReadAuthentications] = useState(false);
   const [canManageAuthentications, setCanManageAuthentications] = useState(false);
@@ -86,10 +89,11 @@ export function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [superAdmin]);
+  }, [superAdmin, tenantsReloadKey]);
 
   const scopedTenantId = superAdmin ? selectedTenantId : null;
   const userLabel = user?.username ?? user?.email ?? 'unknown user';
+  const activeTenantLabel = superAdmin ? null : getActiveTenantDisplayLabel();
   const outletContext: AppShellOutletContext = {
     scopedTenantId,
     selectedTenantId,
@@ -97,6 +101,7 @@ export function AppShell() {
     canManageProcesses: canManage,
     canReadAuthentications,
     canManageAuthentications,
+    refreshTenants: () => setTenantsReloadKey((key) => key + 1),
   };
   const tenantOptions =
     selectedTenantId && !tenants.some((t) => t.id === selectedTenantId)
@@ -110,9 +115,11 @@ export function AppShell() {
         selectedTenantId={selectedTenantId}
         onTenantChange={setSelectedTenantId}
         tenants={tenantOptions}
+        activeTenantLabel={activeTenantLabel}
         onLogout={logout}
         userLabel={userLabel}
         showAuthentications={canReadAuthentications}
+        showTenantsNav={superAdmin}
       />
       <Outlet context={outletContext} />
     </div>

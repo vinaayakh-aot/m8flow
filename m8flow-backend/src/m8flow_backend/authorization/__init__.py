@@ -31,7 +31,14 @@ def _without_api_path_prefix(path: str) -> str:
     return path
 
 
-def allow_uri(user: UserModel, method: str, path: str, *, session: Session | None = None) -> bool:
+def allow_uri(
+    user: UserModel,
+    method: str,
+    path: str,
+    *,
+    session: Session | None = None,
+    group_fallback: bool = True,
+) -> bool:
     if user is None:
         return False
     if actor_is_super_admin(user):
@@ -44,9 +51,11 @@ def allow_uri(user: UserModel, method: str, path: str, *, session: Session | Non
 
         db_session = getattr(g, "db_session", None)
     if db_session is None:
-        return _group_identifier_fallback(user, path)
+        return group_fallback and _group_identifier_fallback(user, path)
     if _uri_permitted(db_session, user, action, path):
         return True
+    if not group_fallback:
+        return False
     return _group_identifier_fallback(user, path)
 
 

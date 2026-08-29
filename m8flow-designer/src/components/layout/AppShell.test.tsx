@@ -8,12 +8,14 @@ import { AppShell } from './AppShell';
 const mockGetCurrentUser = vi.fn();
 const mockLogout = vi.fn();
 const mockIsSuperAdmin = vi.fn();
+const mockGetActiveTenantDisplayLabel = vi.fn((): string | null => null);
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/auth', () => ({
   getCurrentUser: () => mockGetCurrentUser(),
   isSuperAdmin: () => mockIsSuperAdmin(),
   logout: () => mockLogout(),
+  getActiveTenantDisplayLabel: () => mockGetActiveTenantDisplayLabel(),
 }));
 
 const mockFetchCapabilities = vi.fn().mockResolvedValue({
@@ -52,6 +54,7 @@ describe('AppShell', () => {
   afterEach(() => {
     vi.clearAllMocks();
     mockIsSuperAdmin.mockReturnValue(false);
+    mockGetActiveTenantDisplayLabel.mockReturnValue(null);
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: false,
       can_read_authentications: false,
@@ -102,6 +105,20 @@ describe('AppShell', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(mockFetchTenants).not.toHaveBeenCalled();
     expect(screen.getByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
+  });
+
+  it('shows the cookie-backed active tenant badge for a non-admin editor', () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockIsSuperAdmin.mockReturnValue(false);
+    mockGetActiveTenantDisplayLabel.mockReturnValue('Acme Corp');
+    localStorage.setItem(GLOBAL_TENANT_STORAGE_KEY, 'stale-tenant');
+
+    renderShell();
+
+    expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(mockFetchTenants).not.toHaveBeenCalled();
   });
 
   it('shows Setup → Authentications when capabilities allow read', async () => {
@@ -129,6 +146,8 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(mockFetchTenants).toHaveBeenCalled();
+    expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
   });
 
   it('restores the persisted tenant on refresh', () => {

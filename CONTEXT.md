@@ -52,6 +52,14 @@ _Avoid_: localStorage tenant, selected tenant as a browser-storage value
 The post-login step that chooses the active tenant when a shared-realm user belongs to organizations. It is not the tenant registry or tenant-admin UI.
 _Avoid_: Tenants page, All Tenants, tenant switcher
 
+**Tenant registry**:
+The platform list of tenants (id, name, slug, status) that a super-admin manages. It is not the tenant selection gate, the tenant switcher, or tenant-admin RBAC.
+_Avoid_: All Tenants as the entity, tenant-admin
+
+**Tenant switcher**:
+The super-admin shell control that filters which tenant's data is shown (all tenants vs one). It does not set the active-tenant cookie.
+_Avoid_: tenant selection gate, selected tenant as a browser-storage value
+
 **Accept invitation**:
 The public path where an invited person sets a password and becomes a shared-realm user in an organization. Distinct from creating, resending, or revoking invitations. The emailed URL uses the designer origin.
 _Avoid_: invitation admin, tenant invite UI

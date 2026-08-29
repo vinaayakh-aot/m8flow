@@ -20,6 +20,7 @@ def require_permission(
     on_deny: OnDeny = "403",
     empty_response: object = None,
     forbidden_message: str | None = None,
+    group_fallback: bool = True,
 ):
     """Route decorator that authorizes the current request through the same
     `allow_uri` policy every controller already calls inline. Authentication
@@ -45,6 +46,11 @@ def require_permission(
     ApiError(..., 404) to avoid leaking whether a resource exists; "empty"
     returns `success_response(empty_response, 200)` for list endpoints that
     hide denial rather than surface it.
+
+    `group_fallback` is passed to `allow_uri` (default True). Pass False when
+    YAML must be the only non-super-admin grant — tenant registry reads are
+    super-admin-only, and the editor/tenant-admin identifier fallback would
+    otherwise allow those roles through.
 
     Where a controller already uses `@handle_api_errors`, apply it *outside*
     `@require_permission` so the ApiError raised on deny is still converted
@@ -75,7 +81,13 @@ def require_permission(
             session = getattr(g, "db_session", None)
             resolved_action = action or request.method
             resolved_uri = _resolve_uri(uri, kwargs)
-            if allow_uri(user, resolved_action, resolved_uri, session=session):
+            if allow_uri(
+                user,
+                resolved_action,
+                resolved_uri,
+                session=session,
+                group_fallback=group_fallback,
+            ):
                 return view(*args, **kwargs)
             return _deny(on_deny, forbidden_message, empty_response)
 

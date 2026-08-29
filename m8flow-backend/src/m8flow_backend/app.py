@@ -16,6 +16,7 @@ from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
 from m8flow_backend.observability.request_context import install_request_id_middleware
 from m8flow_backend.secrets import install_registry_at_boot
+from m8flow_backend.tenant_runtime import install_tenant_runtime
 from m8flow_backend.startup.error_handlers import (
     register_connexion_error_handlers,
     register_error_handlers,
@@ -132,6 +133,7 @@ def create_app() -> FlaskApp:
                 LOGGER.exception("Failed to close request-scoped DB session")
 
     install_auth_middleware(app)
+    install_tenant_runtime(app)
 
     from m8flow_backend.routes.v1 import register_v1_routes
 
@@ -171,7 +173,7 @@ def create_app() -> FlaskApp:
         allow_origins=_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "x-m8flow-tenant-id"],
     )
 
     return connexion_app

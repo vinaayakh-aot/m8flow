@@ -313,6 +313,12 @@ paths:
                 $ref: "#/components/schemas/TenantListResponse"
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
           content:
