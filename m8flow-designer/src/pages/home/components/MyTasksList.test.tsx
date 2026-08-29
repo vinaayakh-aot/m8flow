@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
 import { MyTasksList } from './MyTasksList';
@@ -21,6 +22,7 @@ describe('MyTasksList', () => {
           },
         ]}
       />,
+      { wrapper: MemoryRouter },
     );
 
     expect(screen.getByText('My tasks')).toBeInTheDocument();
@@ -28,6 +30,31 @@ describe('MyTasksList', () => {
     expect(screen.getByText('Submit WFH Request')).toBeInTheDocument();
     expect(screen.getByText('aot-demo · waiting on aot-demo:reviewer')).toBeInTheDocument();
     expect(screen.getByText('about 10 hours ago')).toBeInTheDocument();
+  });
+
+  it('links "View all" to the inbox and each row to its task detail', () => {
+    render(
+      <MyTasksList
+        tasks={[
+          {
+            id: 42,
+            task_title: 'Review Expense Claim',
+            task_name: 'review',
+            tenant_id: 't1',
+            tenant_name: 't1',
+            lane_name: null,
+            created_at_in_seconds: null,
+            process_instance_id: 7,
+          },
+        ]}
+      />,
+      { wrapper: MemoryRouter },
+    );
+    expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/task-review');
+    expect(screen.getByRole('link', { name: /Review Expense Claim/ })).toHaveAttribute(
+      'href',
+      '/task-review/42',
+    );
   });
 
   it('falls back to task_name when task_title is empty', () => {
@@ -46,13 +73,14 @@ describe('MyTasksList', () => {
           },
         ]}
       />,
+      { wrapper: MemoryRouter },
     );
     expect(screen.getByText('Approve')).toBeInTheDocument();
     expect(screen.getByText('t1 · waiting on —')).toBeInTheDocument();
   });
 
   it('shows empty copy when there are no tasks', () => {
-    render(<MyTasksList tasks={[]} />);
+    render(<MyTasksList tasks={[]} />, { wrapper: MemoryRouter });
     expect(screen.getByText('No pending tasks.')).toBeInTheDocument();
   });
 });

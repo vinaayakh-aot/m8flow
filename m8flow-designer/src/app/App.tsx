@@ -28,6 +28,10 @@ const TemplateModelerPage = lazy(() => import('@/pages/templates/TemplateModeler
 const ProcessInstancesPage = lazy(() => import('@/pages/process-instances/ProcessInstancesPage'));
 // Lazy, same bpmn-js reasoning as ProcessModelModelerPage/TemplateModelerPage.
 const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/ProcessInstanceDetailPage'));
+// Task Review — inbox list + single-task review detail. Lazy to keep them out
+// of the main entry chunk (same reasoning as the other page routes above).
+const TaskReviewInboxPage = lazy(() => import('@/pages/task-review/TaskReviewInboxPage'));
+const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDetailPage'));
 
 export default function App() {
   const loggedIn = isLoggedIn();
@@ -109,6 +113,22 @@ export default function App() {
             element={
               <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading process instance…</p>}>
                 <ProcessInstanceDetailPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="task-review"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading tasks…</p>}>
+                <TaskReviewInboxPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="task-review/:taskId"
+            element={
+              <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading task…</p>}>
+                <TaskReviewDetailPage />
               </Suspense>
             }
           />

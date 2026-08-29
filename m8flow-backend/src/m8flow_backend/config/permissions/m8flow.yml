@@ -338,7 +338,12 @@ permissions:
     uri: /m8flow/templates/process-models/*
   manage-tasks:
     groups: ["tenant-admin", "editor", "reviewer","submitter"]
-    actions: [all]
+    # `all` expands to CRUD (create/read/update/delete) only -- NOT `execute`,
+    # which core's task.claim/task.complete commands require
+    # (CommandAuthorizationSpec permission=execute on /tasks/%). Without listing
+    # `execute` explicitly, these task-working roles cannot claim or complete a
+    # task via any route (Task Review submit, external-forms submit, etc.).
+    actions: [all, execute]
     uri: /tasks/*
   read-task-list:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]

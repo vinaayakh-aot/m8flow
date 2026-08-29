@@ -10,6 +10,7 @@ import {
   Activity,
   Building2,
   ChevronDown,
+  ClipboardCheck,
   Flag,
   GitBranch,
   Home,
@@ -30,7 +31,7 @@ export type SidebarTenant = {
   name: string;
 };
 
-export type LiveNavId = 'home' | 'processes' | 'process-instances';
+export type LiveNavId = 'home' | 'processes' | 'process-instances' | 'task-review';
 
 export type SidebarProps = {
   /** When true, show the Tenant selector (ticket 02: super-admin only). */
@@ -73,6 +74,7 @@ const TOP_NAV: NavItem[] = [
     to: '/process-instances',
     live: true,
   },
+  { id: 'task-review', label: 'Task Review', icon: ClipboardCheck, to: '/task-review', live: true },
   { id: 'messages', label: 'Messages', icon: Mail },
   { id: 'mcp', label: 'MCP Connection', icon: Link2 },
 ];
@@ -99,6 +101,9 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
   }
   if (pathname === '/process-instances' || pathname.startsWith('/process-instances/')) {
     return 'process-instances';
+  }
+  if (pathname === '/task-review' || pathname.startsWith('/task-review/')) {
+    return 'task-review';
   }
   return null;
 }

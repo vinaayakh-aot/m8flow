@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { fetchHomeMyTasks, type HomeMyTask } from '@/lib/api';
 import { Card } from '@/components/ui/card';
@@ -20,7 +21,8 @@ function waitingOn(task: HomeMyTask): string {
 
 /**
  * Home "My tasks" list — title, "tenant · waiting on lane", verbose relative
- * created time. "View all" is inert (no tasks inbox route in this map).
+ * created time. "View all" links to the Task Review inbox; each row links to
+ * its Task Review detail (`/task-review/:taskId`, keyed by human_task id).
  */
 export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksListProps) {
   const [tasks, setTasks] = useState<HomeMyTask[]>(tasksOverride ?? []);
@@ -65,12 +67,9 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
     <Card variant="bordered" className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-[22px] py-[18px]">
         <h2 className="text-[15px] font-semibold text-foreground">My tasks</h2>
-        <span
-          aria-disabled="true"
-          className="cursor-default text-[13px] font-semibold text-info select-none"
-        >
+        <Link to="/task-review" className="text-[13px] font-semibold text-info hover:underline">
           View all
-        </span>
+        </Link>
       </div>
 
       {error ? (
@@ -93,7 +92,11 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
         ) : null}
 
         {tasks.map((task) => (
-          <div key={task.id} className="border-t border-border px-[22px] py-3.5">
+          <Link
+            key={task.id}
+            to={`/task-review/${task.id}`}
+            className="block border-t border-border px-[22px] py-3.5 hover:bg-muted/50"
+          >
             <div className="mb-1 text-[13.5px] font-semibold text-foreground">
               {taskTitle(task)}
             </div>
@@ -103,7 +106,7 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
             <div className="mt-0.5 text-xs text-muted-foreground/80">
               {formatRelativeTimeVerbose(task.created_at_in_seconds)}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </Card>

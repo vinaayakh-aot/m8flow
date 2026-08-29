@@ -1381,6 +1381,190 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
 
+  /task-review:
+    get:
+      summary: Task Review inbox — pending tasks list
+      description: >-
+        The caller's pending human tasks for the Task Review inbox
+        (human_task_id, titles, process model display name, process
+        instance id, initiator display name, status, created epoch
+        seconds, tenant name). Non-super-admins see only their own
+        active-tenant assignments (m8flow_selected_tenant cookie
+        required). Super-admins see every tenant's pending tasks, optionally
+        scoped with tenantId. Authorized on the /v1.0/tasks surface
+        (mirrors home_controller); denied callers get an empty page
+        (200), not a 403.
+      operationId: m8flow_backend.routes.task_review_controller.list_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only cross-tenant scope override. Omitted/empty
+            means "all tenants" for a super-admin; ignored for non-super-admins.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Pending task-review rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      per_page:
+                        type: integer
+                      total:
+                        type: integer
+        "400":
+          description: Missing m8flow_selected_tenant cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /task-review/{human_task_id}:
+    get:
+      summary: Task Review — composite detail
+      description: >-
+        One payload for the whole Task Review detail page: task header,
+        form (schema + ui-schema + prior values), derived outcome buttons,
+        approval chain (completed + current human tasks), activity feed
+        (process instance events), and the instance summary. Denied or
+        not-visible/missing (including cross-tenant) -> 404, mirroring the
+        bare GET /v1.0/tasks/{id} route and GET /process-instances/{id}.
+      operationId: m8flow_backend.routes.task_review_controller.get_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: human_task_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Task review detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    type: object
+                  form:
+                    type: object
+                  outcomes:
+                    type: array
+                    items:
+                      type: object
+                  approval_chain:
+                    type: array
+                    items:
+                      type: object
+                  activity:
+                    type: array
+                    items:
+                      type: object
+                  instance:
+                    type: object
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Task not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /task-review/{human_task_id}/submit:
+    post:
+      summary: Task Review — submit (claim-then-complete)
+      description: >-
+        Atomic claim-then-complete of a Task Review task (reuses
+        human_task.submit_external_form). Body accepts optional outcome and
+        comment, round-tripped into task data as task_payload (absent keys
+        omitted). Authorized on the task-complete surface like
+        complete_task. Returns the process instance id + status. Forbidden
+        -> 403, not-visible -> 404, already-completed / invalid state -> 409.
+      operationId: m8flow_backend.routes.task_review_controller.submit_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: human_task_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outcome:
+                  type: string
+                  description: Selected gateway outcome value (omit for linear tasks).
+                comment:
+                  type: string
+                  description: Optional reviewer comment.
+      responses:
+        "200":
+          description: Task submitted; process instance advanced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  process_instance_id:
+                    type: integer
+                  status:
+                    type: string
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to submit this task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Task not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Task already completed or invalid state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /capabilities:
     get:
       summary: Current-user UI capability hints

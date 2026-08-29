@@ -628,6 +628,116 @@ def get_instance_detail_for_designer(
     }
 
 
+def list_human_tasks_for_instance(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> list[dict[str, Any]]:
+    """Approval chain for a process instance: every human task (completed +
+    current), oldest-first. Raw ORM read -- m8flow_bpmn_core exposes no query
+    for this shape (its own catalog only returns pending tasks or a bare
+    instance row), so this mirrors get_instance_detail_for_designer's
+    direct-select + UserModel-join posture.
+
+    `actual_owner_id` and `completed_by_user_id` are bare FK columns (no ORM
+    relationships), so UserModel is outer-joined twice under aliases. `name`
+    resolves the owner's display name (falling back to the completer's); it is
+    None for a system-inactivated task (completed with no human completer and
+    no owner). Ordered by `created_at_in_seconds, id` (id is the stable
+    tiebreaker -- there is no BPMN step number). `completed_at_in_seconds` is
+    `updated_at_in_seconds` for completed rows (core stamps it at completion),
+    None while the task is still current.
+    """
+    from sqlalchemy.orm import aliased
+
+    from m8flow_bpmn_core.models.user import UserModel
+
+    owner = aliased(UserModel)
+    completer = aliased(UserModel)
+    stmt = (
+        select(
+            HumanTaskModel,
+            owner.display_name,
+            owner.username,
+            completer.display_name,
+            completer.username,
+        )
+        .outerjoin(owner, owner.id == HumanTaskModel.actual_owner_id)
+        .outerjoin(completer, completer.id == HumanTaskModel.completed_by_user_id)
+        .where(
+            HumanTaskModel.process_instance_id == process_instance_id,
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+        )
+        .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
+    )
+    rows: list[dict[str, Any]] = []
+    for human_task, owner_display, owner_username, completer_display, completer_username in (
+        session.execute(stmt)
+    ):
+        owner_name = owner_display or owner_username
+        completer_name = completer_display or completer_username
+        rows.append(
+            {
+                "name": owner_name or completer_name,
+                "status": human_task.task_status,
+                "completed": human_task.completed,
+                "is_current": not human_task.completed,
+                "lane_name": human_task.lane_name,
+                "completed_at_in_seconds": (
+                    human_task.updated_at_in_seconds if human_task.completed else None
+                ),
+            }
+        )
+    return rows
+
+
+def list_instance_events(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> list[dict[str, Any]]:
+    """Activity feed for a process instance: the real, ordered event log
+    (`ProcessInstanceEventModel`), oldest-first. Replicates core's own
+    `get_process_instance_events` select (ordered `timestamp, id`) directly
+    rather than going through the query dispatcher.
+
+    `actor_name` resolves the event's user via an outer join (None for system
+    events with no user). `task_title` is an optional label from the matching
+    `HumanTaskModel` (outer-joined on `task_guid`, tenant-scoped). `event_type`
+    is the raw core enum string; presentation is the frontend's job.
+    """
+    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_bpmn_core.models.user import UserModel
+
+    stmt = (
+        select(
+            ProcessInstanceEventModel,
+            UserModel.display_name,
+            UserModel.username,
+            HumanTaskModel.task_title,
+        )
+        .outerjoin(UserModel, UserModel.id == ProcessInstanceEventModel.user_id)
+        .outerjoin(
+            HumanTaskModel,
+            (HumanTaskModel.task_guid == ProcessInstanceEventModel.task_guid)
+            & (HumanTaskModel.m8f_tenant_id == tenant_id),
+        )
+        .where(
+            ProcessInstanceEventModel.process_instance_id == process_instance_id,
+            ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+        )
+        .order_by(ProcessInstanceEventModel.timestamp, ProcessInstanceEventModel.id)
+    )
+    rows: list[dict[str, Any]] = []
+    for event, actor_display, actor_username, task_title in session.execute(stmt):
+        rows.append(
+            {
+                "event_type": event.event_type,
+                "actor_name": actor_display or actor_username,
+                "timestamp": float(event.timestamp) if event.timestamp is not None else None,
+                "task_guid": event.task_guid,
+                "task_title": task_title,
+            }
+        )
+    return rows
+
+
 def list_pending_tasks_for_user(
     session: Session, *, tenant_id: str | None, user_id: int, limit: int = 10
 ) -> list[HumanTaskModel]:
