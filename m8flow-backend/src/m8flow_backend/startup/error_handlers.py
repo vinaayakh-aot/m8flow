@@ -50,6 +50,51 @@ def register_error_handlers(app: Flask) -> None:
         return jsonify({"error_code": "internal_error", "message": "An unexpected error occurred."}), 500
 
 
+def register_connexion_error_handlers(connexion_app) -> None:
+    """Map Connexion's ASGI-layer problem responses to the app's JSON shape.
+
+    Connexion routes + validates the request before Flask sees it, so its
+    validation/routing errors (ProblemException -> problem+json) never reach the
+    Flask error handlers above. Without this, a validation failure returns
+    Connexion's ``{type,title,detail,status}`` instead of the ``{error_code,
+    message}`` shape the rest of the API (and the Flask handlers) use. This
+    handler renders every ProblemException in that shape so error output is
+    consistent no matter which layer rejects the request.
+    """
+    import json
+
+    from connexion.exceptions import ProblemException
+    from connexion.lifecycle import ConnexionResponse
+
+    def _handle_problem(request, error: ProblemException) -> ConnexionResponse:
+        status_code = getattr(error, "status", None) or getattr(error, "status_code", None) or 500
+        title = (getattr(error, "title", None) or "error").strip()
+        error_code = title.lower().replace(" ", "_") or "error"
+        message = getattr(error, "detail", None) or title
+        method = getattr(request, "method", "?")
+        url = getattr(request, "url", None)
+        path = getattr(url, "path", None) or getattr(request, "path", "?")
+        level = logging.ERROR if status_code >= 500 else logging.WARNING
+        LOGGER.log(
+            level,
+            "%s %s -> %s: ProblemException %s: %s",
+            method,
+            path,
+            status_code,
+            error_code,
+            message,
+            exc_info=status_code >= 500,
+            extra={"m8flow_status_code": status_code},
+        )
+        return ConnexionResponse(
+            status_code=status_code,
+            mimetype="application/json",
+            body=json.dumps({"error_code": error_code, "message": message}),
+        )
+
+    connexion_app.add_error_handler(ProblemException, _handle_problem)
+
+
 def _log_error(*, status_code: int, summary: str, exc_info: bool = False) -> None:
     level = logging.ERROR if status_code >= 500 else logging.WARNING
     LOGGER.log(

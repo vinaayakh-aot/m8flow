@@ -6,13 +6,10 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from m8flow_bpmn_core.models.base import Base as CoreBase
-from m8flow_backend.models.host_base import HostBase
-import m8flow_bpmn_core.models  # noqa: F401
-import m8flow_backend.models.native  # noqa: F401
+from m8flow_backend.db import alembic_target_metadata
 
 config = context.config
-target_metadata = [CoreBase.metadata, HostBase.metadata]
+target_metadata = alembic_target_metadata()
 
 for name in ("alembic", "alembic.runtime.migration"):
     lg = logging.getLogger(name)
@@ -36,7 +33,7 @@ def run_migrations_online():
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=CoreBase.metadata,
+            target_metadata=target_metadata,
             version_table="alembic_version_m8flow",
             compare_type=True,
         )

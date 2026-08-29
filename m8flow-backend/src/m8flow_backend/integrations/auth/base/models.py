@@ -52,8 +52,8 @@ class VerifiedClaims:
     email: str | None = None
     roles: list[str] = field(default_factory=list)
     memberships: list[Membership] = field(default_factory=list)
-    # Verified JWT payload. Permanent bridge read directly by
-    # ``tenant_context_middleware`` alongside the typed fields above.
+    # Verified JWT payload. Permanent bridge read directly by tenant-resolution
+    # and identity-claims code alongside the typed fields above.
     jwt_claims: dict[str, object] = field(default_factory=dict, compare=False, repr=False)
 
 

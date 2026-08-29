@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, and_, create_engine, event, func, or_
+from sqlalchemy import Engine, MetaData, and_, create_engine, event, func, or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from m8flow_bpmn_core.models.base import Base as CoreBase
@@ -25,12 +25,18 @@ def database_url() -> str:
     )
 
 
+def _sqlalchemy_echo_enabled() -> bool:
+    return (os.environ.get("M8FLOW_SQLALCHEMY_ECHO") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
         url = database_url()
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        _engine = create_engine(url, echo=False, future=True, connect_args=connect_args)
+        _engine = create_engine(
+            url, echo=_sqlalchemy_echo_enabled(), future=True, connect_args=connect_args
+        )
         assert_disjoint_table_names()
     return _engine
 
@@ -90,9 +96,20 @@ def reset_engine() -> None:
     _session_factory = None
 
 
-def assert_disjoint_table_names() -> None:
+def alembic_target_metadata() -> list[MetaData]:
+    """Both core and host metadatas, with every host model imported.
+
+    Alembic autogenerate and ``create_all`` must see the full host surface,
+    including models that live outside ``models/native.py``.
+    """
     import m8flow_bpmn_core.models  # noqa: F401
-    import m8flow_backend.models.native  # noqa: F401
+    import m8flow_backend.models  # noqa: F401
+
+    return [CoreBase.metadata, HostBase.metadata]
+
+
+def assert_disjoint_table_names() -> None:
+    alembic_target_metadata()
 
     overlap = set(CoreBase.metadata.tables) & set(HostBase.metadata.tables)
     if overlap:
@@ -100,13 +117,11 @@ def assert_disjoint_table_names() -> None:
 
 
 def create_all(engine: Engine | None = None) -> None:
-    import m8flow_bpmn_core.models  # noqa: F401
-    import m8flow_backend.models.native  # noqa: F401
-
+    metadatas = alembic_target_metadata()
     bind = engine or get_engine()
     assert_disjoint_table_names()
-    CoreBase.metadata.create_all(bind)
-    HostBase.metadata.create_all(bind)
+    for metadata in metadatas:
+        metadata.create_all(bind)
 
 
 @contextmanager

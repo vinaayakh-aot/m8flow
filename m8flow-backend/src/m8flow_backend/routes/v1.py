@@ -19,17 +19,23 @@ from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.tenancy import (
     SELECTED_TENANT_COOKIE_NAME,
     get_healthy_response,
+    get_ready_response,
     is_super_admin_request,
     require_tenant_id,
 )
 
 
 def register_v1_routes(app: Flask) -> None:
-    @app.get("/v1.0/status")
     @app.get("/v1.0/ping")
     @app.get("/v1.0/healthy")
-    def status():
+    def liveness():
         payload, code = get_healthy_response()
+        return jsonify(payload), code
+
+    @app.get("/v1.0/status")
+    @app.get("/v1.0/readyz")
+    def readiness():
+        payload, code = get_ready_response()
         return jsonify(payload), code
 
     @app.get("/v1.0/onboarding")

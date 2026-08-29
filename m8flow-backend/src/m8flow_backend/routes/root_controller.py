@@ -151,9 +151,10 @@ def _request_prefers_html() -> bool:
 def root() -> Response:
     """Public landing endpoint for the backend root path."""
     api_prefix = _api_path_prefix()
-    swagger_ui_url = f"{api_prefix}/ui/"
+    # Connexion serves the spec + Swagger UI under the /m8flow api base path.
+    swagger_ui_url = f"{api_prefix}/m8flow/ui/"
     ping_url = f"{api_prefix}/ping"
-    openapi_url = f"{api_prefix}/openapi.json"
+    openapi_url = f"{api_prefix}/m8flow/openapi.json"
     status_url = f"{api_prefix}/status"
 
     if _request_prefers_html():

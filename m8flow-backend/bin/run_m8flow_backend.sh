@@ -226,7 +226,9 @@ default_backend_port="6840"
 backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-$default_backend_port}}"
 
 # In Docker, Compose already injects env; avoid uvicorn --env-file overriding OTEL_* and other vars.
-uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --interface wsgi --app-dir "$repo_root/m8flow-backend/src" --log-config "$log_config")
+# m8flow_backend.app:app is now a Connexion FlaskApp (ASGI), so uvicorn serves it
+# natively — no --interface wsgi (that flag was for the previous plain-Flask app).
+uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root/m8flow-backend/src" --log-config "$log_config")
 if [[ -f "$env_file" ]] && ! is_running_in_container; then
   uvicorn_args+=(--env-file "$env_file")
 fi

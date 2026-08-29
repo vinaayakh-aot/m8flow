@@ -30,11 +30,16 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/m8flow/ping",
     "/v1.0/healthy",
     "/v1.0/status",
+    "/v1.0/readyz",
     "/v1.0/openapi.json",
     "/v1.0/openapi.yaml",
     "/openapi.yaml",
     "/v1.0/ui",
     "/v1.0/static",
+    # Connexion serves the spec + Swagger UI under the api base path.
+    "/v1.0/m8flow/openapi.json",
+    "/v1.0/m8flow/openapi.yaml",
+    "/v1.0/m8flow/ui",
     "/v1.0/logout",
     "/v1.0/authentication-options",
     "/v1.0/login",
@@ -91,12 +96,27 @@ class TenantContextFilter(logging.Filter):
 _REQUEST_ACTIVE: ContextVar[bool] = ContextVar("m8flow_request_active", default=False)
 
 def get_healthy_response() -> tuple[dict, int]:
-    """Return the canonical healthy response (payload, status_code) for reuse by health endpoints and callers."""
+    """Return the canonical liveness response (payload, status_code)."""
+    return ({"status": "ok", "ok": True, "healthy": True}, 200)
+
+
+def get_ready_response() -> tuple[dict, int]:
+    """Return 200 when the database answers SELECT 1, else 503."""
+    from sqlalchemy import text
+
+    from m8flow_backend.db import get_engine
+
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        LOGGER.exception("Readiness probe: database unreachable")
+        return ({"status": "unavailable", "ok": False, "healthy": False}, 503)
     return ({"status": "ok", "ok": True, "healthy": True}, 200)
 
 
 def health_check():
-    """Public health check for load balancers and monitoring. Returns 200 when the process is up."""
+    """Public liveness check for load balancers. Returns 200 when the process is up."""
     return get_healthy_response()
 
 
@@ -224,12 +244,15 @@ def is_tenant_context_exempt_request() -> bool:
         getattr(g, "_m8flow_tenant_context_exempt_request", False)
         or getattr(g, "_m8flow_public_request", False)
         # Master-realm sign-ins, /login_return callbacks, and other
-        # intentionally tenant-less requests are tagged via
-        # ``g._m8flow_global_request`` by the tenant resolver.  Treat them
-        # the same as path-exempt requests: tenant-scoped DB queries (e.g.
+        # intentionally tenant-less requests are treated the same as
+        # path-exempt requests: tenant-scoped DB queries (e.g.
         # ReferenceCacheModel.basic_query) skip the tenant filter and
         # return the global view, instead of raising "missing tenant
-        # context" for users who legitimately have no tenant.
+        # context" for users who legitimately have no tenant. That is now
+        # detected by _request_uses_master_realm_without_tenant_context();
+        # the ``g._m8flow_global_request`` flag below is a legacy no-op (the
+        # sync global tenant resolver that set it was retired) kept as a
+        # defensive hook — see the platform-host-100 map follow-up.
         or getattr(g, "_m8flow_global_request", False)
         or _request_uses_master_realm_without_tenant_context()
     )

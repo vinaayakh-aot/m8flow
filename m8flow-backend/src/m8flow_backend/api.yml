@@ -1711,10 +1711,12 @@ paths:
           in: query
           schema:
             type: string
-            enum: [newest, oldest, recent_start, status]
             default: newest
           description: >-
-            Result ordering. Unknown values fall back to newest-first.
+            Result ordering: newest, oldest, recent_start, or status. Unknown
+            values fall back to newest-first (the controller degrades gracefully,
+            so no enum constraint is enforced here — ticket 03 owns any decision
+            to tighten this into a validated enum).
         - name: page
           in: query
           schema:

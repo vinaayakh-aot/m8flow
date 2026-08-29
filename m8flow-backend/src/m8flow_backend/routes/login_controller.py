@@ -68,10 +68,8 @@ def _redirect_uri() -> str:
 def _encode_state(*, authentication_identifier: str, redirect_url: str, nonce: str) -> str:
     """Base64-encode a Python dict repr for the OAuth `state` param.
 
-    This matches the format m8flow_backend.services.tenant_context_middleware
-    already decodes (base64 -> ast.literal_eval) so a `state` minted here stays
-    readable by that tenant-resolution code if it's ever wired back in — at no
-    extra cost today, since nothing currently requires it.
+    The format (base64 -> ast.literal_eval) is decoded back by login_return in
+    this controller.
     """
     state_dict = {
         "authentication_identifier": authentication_identifier,

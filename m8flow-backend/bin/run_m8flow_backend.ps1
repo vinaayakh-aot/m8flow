@@ -258,7 +258,7 @@ $uvicornArgs = @(
   '--host'; '0.0.0.0'
   '--port'; $backendPort.ToString()
   '--app-dir'; (Join-Path $repoRoot 'm8flow-backend\src')
-  '--interface'; 'wsgi'
+  # m8flow_backend.app:app is a Connexion FlaskApp (ASGI); no --interface wsgi.
   '--log-config'; $logConfig
 )
 if ($env:UVICORN_LOG_LEVEL) {

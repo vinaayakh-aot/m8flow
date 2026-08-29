@@ -151,10 +151,10 @@ def ensure_request_can_access_tenant(
     if is_super_admin_request():
         return
 
-    # Master-realm requests are treated as global (no tenant scope).
-    # _is_master_super_admin_request() may return False when g.user is not yet
-    # populated or when the master-realm token lacks the expected role claim,
-    # so we fall back to the global-request flag set by resolve_request_tenant().
+    # Master-realm requests are treated as global (no tenant scope). The
+    # ``_m8flow_global_request`` flag is a legacy no-op (the sync global tenant
+    # resolver that set it was retired); kept as a defensive hook. Master
+    # super-admin access is covered by is_super_admin_request() above.
     if getattr(g, "_m8flow_global_request", False):
         return
 

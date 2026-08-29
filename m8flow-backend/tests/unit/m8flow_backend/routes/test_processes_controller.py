@@ -679,8 +679,13 @@ def test_save_file_path_traversal_is_rejected(client, db_session, tmp_path, monk
         client, db_session, username="editor-save-traversal", groups=["t1:editor"], tenant_id="t1"
     )
 
+    # A non-leaf (slash-bearing) file name must be rejected by the controller's
+    # validate_leaf_file_name guard. NB: a literal "../" vector is collapsed by
+    # the ASGI transport (Starlette/uvicorn, like most HTTP clients/proxies)
+    # before it reaches the app, so a subdir-style name is the vector that
+    # actually exercises the guard here.
     response = client.put(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/files/../evil.json",
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files/sub/evil.json",
         data=b"{}",
         headers={"Authorization": f"Bearer {token}"},
         content_type="application/octet-stream",
