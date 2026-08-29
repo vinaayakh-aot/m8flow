@@ -104,6 +104,22 @@ permissions:
     groups: ["tenant-admin"]
     actions: [update]
     uri: /m8flow/tenants/*
+  # Brace placeholders: core forbids a wildcard except at the end, so
+  # `/m8flow/tenants/*/members*` cannot be stored. `{tenant_id}` is one path
+  # segment in allow_uri so these grants do not open registry GET or invitations.
+  tenant-admin-manage-members:
+    groups: ["tenant-admin"]
+    actions: [read, create, update, delete]
+    uri: /m8flow/tenants/{tenant_id}/members*
+  tenant-admin-manage-groups:
+    groups: ["tenant-admin"]
+    actions: [read, create, update, delete]
+    uri: /m8flow/tenants/{tenant_id}/groups*
+  tenant-admin-read-available-users:
+    groups: ["tenant-admin"]
+    actions: [read]
+    uri: /m8flow/tenants/{tenant_id}/available-users*
+  manage-tenant-realms:
   manage-tenant-realms:
     groups: ["super-admin"]
     actions: [all]

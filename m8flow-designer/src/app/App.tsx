@@ -36,6 +36,7 @@ const TaskReviewInboxPage = lazy(() => import('@/pages/task-review/TaskReviewInb
 const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDetailPage'));
 const AuthenticationsPage = lazy(() => import('@/pages/authentications/AuthenticationsPage'));
 const TenantsPage = lazy(() => import('@/pages/tenants/TenantsPage'));
+const TenantManagementPage = lazy(() => import('@/pages/tenant-management/TenantManagementPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -133,6 +134,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading tenants…" />}>
               <TenantsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="tenant-management"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading tenant management…" />}>
+              <TenantManagementPage />
             </Suspense>
           }
         />

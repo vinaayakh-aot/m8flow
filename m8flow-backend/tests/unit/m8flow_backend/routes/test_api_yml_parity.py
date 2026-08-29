@@ -47,3 +47,24 @@ def test_every_operation_id_resolves_to_a_callable():
         if not callable(view):
             unresolved.append(f"{method} {raw_path} ({operation_id}): not callable")
     assert not unresolved, "api.yml operationIds not resolvable:\n" + "\n".join(unresolved)
+
+
+_TENANT_ROLE_ENUM = ["tenant-admin", "editor", "integrator", "reviewer", "submitter", "viewer"]
+
+
+def test_tenant_role_enums_include_submitter():
+    """Member-role path params and TenantMember.roles omitted submitter while
+    group-role params and the service layer already accept it."""
+    document = yaml.safe_load(_SPEC.read_text(encoding="utf-8"))
+    paths = document["paths"]
+    for raw_path in (
+        "/tenants/{tenant_id}/members/{username}/roles/{role_name}",
+        "/tenants/{tenant_id}/groups/{group_name}/roles/{role_name}",
+    ):
+        for method in ("put", "delete"):
+            params = paths[raw_path][method]["parameters"]
+            role_param = next(p for p in params if p.get("name") == "role_name")
+            assert role_param["schema"]["enum"] == _TENANT_ROLE_ENUM, f"{method} {raw_path}"
+
+    member_roles = document["components"]["schemas"]["TenantMember"]["properties"]["roles"]["items"]["enum"]
+    assert member_roles == _TENANT_ROLE_ENUM

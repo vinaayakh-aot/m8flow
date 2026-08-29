@@ -45,6 +45,10 @@ vi.mock('@/pages/tenants/TenantsPage', () => ({
   default: () => <div>tenants-page</div>,
 }));
 
+vi.mock('@/pages/tenant-management/TenantManagementPage', () => ({
+  default: () => <div>tenant-management-page</div>,
+}));
+
 vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
@@ -108,5 +112,14 @@ describe('AppRoutes tenant gate', () => {
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(await screen.findByText('tenants-page')).toBeInTheDocument();
+  });
+
+  it('renders Tenant Management when the gate is not shown', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/tenant-management');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('tenant-management-page')).toBeInTheDocument();
   });
 });

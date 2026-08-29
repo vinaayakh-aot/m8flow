@@ -21,6 +21,7 @@ import {
   Server,
   Sun,
   User,
+  Users,
 } from 'lucide-react';
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
@@ -31,7 +32,7 @@ export type SidebarTenant = {
   name: string;
 };
 
-export type LiveNavId = 'home' | 'tenants' | 'processes' | 'process-instances' | 'task-review';
+export type LiveNavId = 'home' | 'tenants' | 'tenant-management' | 'processes' | 'process-instances' | 'task-review';
 
 export type SidebarProps = {
   /** When true, show the Tenant selector (ticket 02: super-admin only). */
@@ -58,6 +59,8 @@ export type SidebarProps = {
   showAuthentications?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Everyone else: inert. */
   showTenantsNav?: boolean;
+  /** Tenant-admin / super-admin: Tenant Management is a live `/tenant-management` link. Hidden otherwise. */
+  showTenantManagement?: boolean;
   className?: string;
 };
 
@@ -75,6 +78,13 @@ type NavItem = {
 const TOP_NAV: NavItem[] = [
   { id: 'home', label: 'Home', icon: Home, to: '/', live: true },
   { id: 'tenants', label: 'Tenants', icon: Building2 },
+  {
+    id: 'tenant-management',
+    label: 'Tenant Management',
+    icon: Users,
+    to: '/tenant-management',
+    live: true,
+  },
   { id: 'processes', label: 'Processes', icon: GitBranch, to: '/processes', live: true },
   {
     id: 'process-instances',
@@ -108,6 +118,9 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
   }
   if (pathname === '/tenants' || pathname.startsWith('/tenants/')) {
     return 'tenants';
+  }
+  if (pathname === '/tenant-management' || pathname.startsWith('/tenant-management/')) {
+    return 'tenant-management';
   }
   if (pathname === '/processes' || pathname.startsWith('/processes/')) {
     return 'processes';
@@ -161,6 +174,7 @@ function SidebarView({
   linkLiveNav = false,
   showAuthentications = false,
   showTenantsNav = false,
+  showTenantManagement = false,
   activeTenantLabel = null,
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
@@ -174,7 +188,7 @@ function SidebarView({
     item.id === 'tenants' && showTenantsNav
       ? { ...item, to: '/tenants', live: true }
       : item,
-  );
+  ).filter((item) => item.id !== 'tenant-management' || showTenantManagement);
 
   const selectedLabel =
     selectedTenantId == null

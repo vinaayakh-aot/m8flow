@@ -961,7 +961,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Role assigned successfully
@@ -1004,7 +1004,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Role removed successfully
@@ -1597,6 +1597,12 @@ paths:
                     type: boolean
                   can_manage_authentications:
                     type: boolean
+                  can_manage_tenant:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin of the active tenant, or super-admin,
+                      may open Tenant Management. Not the members/groups
+                      authorization gate.
         "401":
           description: Unauthorized - user not authenticated
 
@@ -3594,7 +3600,7 @@ components:
           type: array
           items:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
         groups:
           type: array
           items:

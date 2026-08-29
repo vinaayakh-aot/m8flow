@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { ArrowDown, ArrowUp, Building2, Plus, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, ChevronDown, Plus, Search } from 'lucide-react';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,7 @@ import {
   type TenantStatus,
 } from '@/lib/tenantsApi';
 import { cn } from '@/lib/utils';
+import TenantAdminPanel from '@/pages/tenant-management/TenantAdminPanel';
 
 type SearchField = 'name' | 'slug';
 type SortField = 'name' | 'slug';
@@ -46,8 +47,9 @@ const SELECT_CLASS =
   'appearance-none rounded-full border border-border bg-card px-3.5 py-2 pr-8 text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40';
 
 /**
- * Super-admin tenant registry (Module C). List / search / sort / status filter
- * / create / rename — not members, groups, roles, status mutation, or delete.
+ * Super-admin tenant registry. List / search / sort / status filter / create
+ * / rename, plus row expansion into tenant admin (members, groups, invites).
+ * Does not set `m8flow_selected_tenant`, mutate status, or delete.
  */
 export default function TenantsPage() {
   const { isSuperAdmin, refreshTenants } = useOutletContext<AppShellOutletContext>();
@@ -68,6 +70,7 @@ export default function TenantsPage() {
   const [dialogTenant, setDialogTenant] = useState<Tenant | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -123,6 +126,16 @@ export default function TenantsPage() {
       return sortDirection === 'asc' ? compared : -compared;
     });
   }, [rows, searchQuery, searchField, statusFilter, sortField, sortDirection]);
+
+  useEffect(() => {
+    if (expandedTenantId && !visible.some((tenant) => tenant.id === expandedTenantId)) {
+      setExpandedTenantId(null);
+    }
+  }, [expandedTenantId, visible]);
+
+  function toggleExpansion(tenantId: string) {
+    setExpandedTenantId((current) => (current === tenantId ? null : tenantId));
+  }
 
   function toggleSort(field: SortField) {
     if (sortField === field) {
@@ -228,7 +241,8 @@ export default function TenantsPage() {
         <div>
           <h1 className="font-display text-[32px] font-semibold tracking-tight">Tenants</h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Register and rename the organizations that back access in Keycloak.
+            Register and rename the organizations that back access in Keycloak. Expand a
+            row to manage members, groups, roles, and invitations for that tenant.
           </p>
         </div>
         <Button
@@ -330,28 +344,88 @@ export default function TenantsPage() {
             <tbody>
               {visible.map((tenant) => {
                 const canRename = tenant.status !== 'DELETED';
+                const isExpanded = expandedTenantId === tenant.id;
                 return (
-                  <tr key={tenant.id} className="border-b border-border last:border-b-0">
-                    <td className="px-[22px] py-3 font-medium text-foreground">{tenant.name}</td>
-                    <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
-                      {tenant.slug}
-                    </td>
-                    <td className="px-[22px] py-3">
-                      <Badge variant={STATUS_BADGE[tenant.status]}>{tenant.status}</Badge>
-                    </td>
-                    <td className="px-[22px] py-3 text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canRename}
-                        onClick={() => openRename(tenant)}
-                        data-testid={`tenant-rename-${tenant.id}`}
-                      >
-                        Rename
-                      </Button>
-                    </td>
-                  </tr>
+                  <Fragment key={tenant.id}>
+                    <tr
+                      className="border-b border-border last:border-b-0"
+                      data-testid={`tenant-row-${tenant.id}`}
+                    >
+                      <td className="px-[22px] py-3 font-medium text-foreground">
+                        <button
+                          type="button"
+                          className="text-left font-medium"
+                          onClick={() => toggleExpansion(tenant.id)}
+                          data-testid={`tenant-accordion-summary-${tenant.id}`}
+                          aria-expanded={isExpanded}
+                          aria-controls={`tenant-accordion-details-${tenant.id}`}
+                        >
+                          {tenant.name}
+                        </button>
+                      </td>
+                      <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
+                        {tenant.slug}
+                      </td>
+                      <td className="px-[22px] py-3">
+                        <Badge variant={STATUS_BADGE[tenant.status]}>{tenant.status}</Badge>
+                      </td>
+                      <td className="px-[22px] py-3 text-right whitespace-nowrap">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canRename}
+                          onClick={() => openRename(tenant)}
+                          data-testid={`tenant-rename-${tenant.id}`}
+                        >
+                          Rename
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleExpansion(tenant.id)}
+                          data-testid={`tenant-accordion-toggle-${tenant.id}`}
+                          aria-expanded={isExpanded}
+                          aria-controls={`tenant-accordion-details-${tenant.id}`}
+                          aria-label={isExpanded ? `Collapse ${tenant.name}` : `Expand ${tenant.name}`}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              'size-4 transition-transform',
+                              isExpanded ? 'rotate-180' : 'rotate-0',
+                            )}
+                            aria-hidden
+                          />
+                        </Button>
+                      </td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr className="border-b border-border last:border-b-0 bg-muted/30">
+                        <td
+                          colSpan={4}
+                          className="px-[22px] py-4"
+                          id={`tenant-accordion-details-${tenant.id}`}
+                          data-testid={`tenant-accordion-details-${tenant.id}`}
+                        >
+                          <TenantAdminPanel
+                            tenantId={tenant.id}
+                            tenantName={tenant.name}
+                            isSuperAdmin
+                            embedded
+                            refreshTenants={refreshTenants}
+                            onTenantNameChange={(name) => {
+                              setRows((current) =>
+                                current.map((row) =>
+                                  row.id === tenant.id ? { ...row, name } : row,
+                                ),
+                              );
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>

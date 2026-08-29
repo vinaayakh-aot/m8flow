@@ -8,6 +8,7 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 
 _AUTH_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
 _AUTH_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
+_TENANT_MANAGE_ROLES = frozenset({"tenant-admin"})
 
 
 def _local_role_names(user) -> set[str]:
@@ -39,6 +40,10 @@ def get_capabilities():
     Authentications flags follow `m8flow.yml` role grants (integrator /
     tenant-admin manage; viewer + those roles read), not the editor/tenant-admin
     allow_uri fallback that would otherwise light up every URI.
+
+    `can_manage_tenant` is the same kind of advisory hint for Tenant Management
+    (tenant-admin of the active tenant, or super-admin). It is not the
+    members/groups/roles authorization gate.
     """
     user = require_current_user()
     session = g.db_session
@@ -49,11 +54,13 @@ def get_capabilities():
     super_admin = actor_is_super_admin(user)
     can_read_authentications = super_admin or bool(roles & _AUTH_READ_ROLES)
     can_manage_authentications = super_admin or bool(roles & _AUTH_MANAGE_ROLES)
+    can_manage_tenant = super_admin or bool(roles & _TENANT_MANAGE_ROLES)
     return success_response(
         {
             "can_manage_processes": bool(can_manage),
             "can_read_authentications": can_read_authentications,
             "can_manage_authentications": can_manage_authentications,
+            "can_manage_tenant": can_manage_tenant,
         },
         200,
     )

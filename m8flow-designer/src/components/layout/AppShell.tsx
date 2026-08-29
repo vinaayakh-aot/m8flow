@@ -24,6 +24,8 @@ export type AppShellOutletContext = {
   /** YAML authentications grants (integrator / tenant-admin / viewer read). */
   canReadAuthentications?: boolean;
   canManageAuthentications?: boolean;
+  /** Advisory Tenant Management hint. Members/groups APIs still enforce allow_uri. */
+  canManageTenant?: boolean;
   /** Super-admin switcher should reload after registry create/rename. */
   refreshTenants?: () => void;
 };
@@ -42,6 +44,7 @@ export function AppShell() {
   const [canManage, setCanManage] = useState(false);
   const [canReadAuthentications, setCanReadAuthentications] = useState(false);
   const [canManageAuthentications, setCanManageAuthentications] = useState(false);
+  const [canManageTenant, setCanManageTenant] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +54,7 @@ export function AppShell() {
           setCanManage(Boolean(caps.can_manage_processes));
           setCanReadAuthentications(Boolean(caps.can_read_authentications));
           setCanManageAuthentications(Boolean(caps.can_manage_authentications));
+          setCanManageTenant(Boolean(caps.can_manage_tenant));
         }
       })
       .catch(() => {
@@ -58,6 +62,7 @@ export function AppShell() {
           setCanManage(false);
           setCanReadAuthentications(false);
           setCanManageAuthentications(false);
+          setCanManageTenant(false);
         }
       });
     return () => {
@@ -101,6 +106,7 @@ export function AppShell() {
     canManageProcesses: canManage,
     canReadAuthentications,
     canManageAuthentications,
+    canManageTenant,
     refreshTenants: () => setTenantsReloadKey((key) => key + 1),
   };
   const tenantOptions =
@@ -120,6 +126,7 @@ export function AppShell() {
         userLabel={userLabel}
         showAuthentications={canReadAuthentications}
         showTenantsNav={superAdmin}
+        showTenantManagement={canManageTenant}
       />
       <Outlet context={outletContext} />
     </div>

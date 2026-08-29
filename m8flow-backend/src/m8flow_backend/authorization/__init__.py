@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -174,9 +176,35 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
 
 
 def _path_matches(path: str, uri_pattern: str) -> bool:
-    if uri_pattern.endswith("%"):
-        return path.startswith(uri_pattern[:-1])
-    return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
+    """Match a request path against a permission-target URI.
+
+    Core only stores a trailing ``%`` wildcard (``*`` in YAML). Brace
+    placeholders such as ``{tenant_id}`` are one path segment so YAML can
+    grant ``/m8flow/tenants/{tenant_id}/members*`` without also granting
+    registry GET ``/m8flow/tenants/{id}`` or invitation management.
+    """
+    if "%" not in uri_pattern and "{" not in uri_pattern:
+        return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
+    regex_parts: list[str] = []
+    i = 0
+    while i < len(uri_pattern):
+        char = uri_pattern[i]
+        if char == "%":
+            regex_parts.append(".*")
+            i += 1
+            continue
+        if char == "{":
+            close = uri_pattern.find("}", i)
+            if close == -1:
+                regex_parts.append(re.escape(char))
+                i += 1
+                continue
+            regex_parts.append("[^/]+")
+            i = close + 1
+            continue
+        regex_parts.append(re.escape(char))
+        i += 1
+    return re.fullmatch("".join(regex_parts), path) is not None
 
 
 def _group_identifier_fallback(user: UserModel, path: str) -> bool:

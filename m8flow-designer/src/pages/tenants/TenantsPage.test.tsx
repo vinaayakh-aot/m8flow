@@ -9,6 +9,10 @@ const mockFetchTenants = vi.fn();
 const mockCreateTenant = vi.fn();
 const mockUpdateTenantName = vi.fn();
 const mockRefreshTenants = vi.fn();
+const mockFetchTenantMembers = vi.fn();
+const mockFetchTenantGroups = vi.fn();
+const mockFetchTenantInvitations = vi.fn();
+const mockGetSelectedTenantId = vi.fn((): string | null => null);
 
 vi.mock('@/lib/tenantsApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tenantsApi')>('@/lib/tenantsApi');
@@ -17,6 +21,35 @@ vi.mock('@/lib/tenantsApi', async () => {
     fetchTenants: (...args: unknown[]) => mockFetchTenants(...args),
     createTenant: (...args: unknown[]) => mockCreateTenant(...args),
     updateTenantName: (...args: unknown[]) => mockUpdateTenantName(...args),
+  };
+});
+
+vi.mock('@/lib/tenantAdminApi', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tenantAdminApi')>(
+    '@/lib/tenantAdminApi',
+  );
+  return {
+    ...actual,
+    fetchTenantMembers: (...args: unknown[]) => mockFetchTenantMembers(...args),
+    fetchTenantGroups: (...args: unknown[]) => mockFetchTenantGroups(...args),
+  };
+});
+
+vi.mock('@/lib/invitationManagementApi', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/invitationManagementApi')>(
+    '@/lib/invitationManagementApi',
+  );
+  return {
+    ...actual,
+    fetchTenantInvitations: (...args: unknown[]) => mockFetchTenantInvitations(...args),
+  };
+});
+
+vi.mock('@/lib/auth', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/auth')>('@/lib/auth');
+  return {
+    ...actual,
+    getSelectedTenantId: () => mockGetSelectedTenantId(),
   };
 });
 
@@ -45,6 +78,38 @@ const BETA = { id: 't2', name: 'Beta Labs', slug: 'beta-labs', status: 'INACTIVE
 describe('TenantsPage', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    mockGetSelectedTenantId.mockReturnValue(null);
+    mockFetchTenantMembers.mockResolvedValue({
+      tenant_id: 't1',
+      search: '',
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      members: [
+        {
+          id: 'u1',
+          username: 'editor',
+          display_name: 'Ed Itor',
+          roles: ['editor'],
+          groups: [],
+        },
+      ],
+    });
+    mockFetchTenantGroups.mockResolvedValue({
+      tenant_id: 't1',
+      search: '',
+      offset: 0,
+      limit: 10,
+      has_more: false,
+      groups: [],
+    });
+    mockFetchTenantInvitations.mockResolvedValue({
+      tenant_id: 't1',
+      results: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+    });
   });
 
   it('explains denial and does not fetch for a non-super-admin', () => {
@@ -61,7 +126,8 @@ describe('TenantsPage', () => {
     expect(await screen.findByText('Acme Corp')).toBeInTheDocument();
     expect(screen.getByText('Beta Labs')).toBeInTheDocument();
     expect(screen.getByText('Showing 2 of 2 tenants')).toBeInTheDocument();
-    expect(screen.queryByText('Members')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-member-add-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-accordion-details-t1')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: 'acme' } });
@@ -137,5 +203,58 @@ describe('TenantsPage', () => {
     });
     expect(mockRefreshTenants).toHaveBeenCalled();
     expect(await screen.findByText('Acme Incorporated')).toBeInTheDocument();
+  });
+
+  it('expands a registry row into tenant admin for that tenant without setting the cookie', async () => {
+    mockFetchTenants.mockResolvedValue([ACME, BETA]);
+    renderWithOutlet({ isSuperAdmin: true, scopedTenantId: null, selectedTenantId: null });
+
+    await screen.findByText('Acme Corp');
+    expect(screen.queryByTestId('tenant-member-add-button')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tenant-accordion-toggle-t1'));
+
+    expect(await screen.findByTestId('tenant-accordion-details-t1')).toBeInTheDocument();
+    expect(await screen.findByText('Ed Itor')).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-member-add-button')).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-add-button')).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-invite-user-button')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-invitations-panel')).toBeInTheDocument();
+    expect(mockFetchTenantMembers).toHaveBeenCalledWith('t1', expect.any(Object));
+    expect(mockFetchTenantInvitations).toHaveBeenCalledWith('t1', { limit: 100 });
+    expect(mockGetSelectedTenantId).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps only one registry row expanded at a time', async () => {
+    mockFetchTenants.mockResolvedValue([ACME, BETA]);
+    mockFetchTenantMembers.mockImplementation((tenantId: string) =>
+      Promise.resolve({
+        tenant_id: tenantId,
+        search: '',
+        offset: 0,
+        limit: 10,
+        has_more: false,
+        members: [
+          {
+            id: 'u1',
+            username: 'editor',
+            display_name: tenantId === 't2' ? 'Beta Editor' : 'Ed Itor',
+            roles: ['editor'],
+            groups: [],
+          },
+        ],
+      }),
+    );
+    renderWithOutlet({ isSuperAdmin: true });
+
+    await screen.findByText('Acme Corp');
+    fireEvent.click(screen.getByTestId('tenant-accordion-toggle-t1'));
+    expect(await screen.findByTestId('tenant-accordion-details-t1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tenant-accordion-toggle-t2'));
+    expect(await screen.findByTestId('tenant-accordion-details-t2')).toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-accordion-details-t1')).not.toBeInTheDocument();
+    expect(mockFetchTenantMembers).toHaveBeenCalledWith('t2', expect.any(Object));
   });
 });

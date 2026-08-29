@@ -38,6 +38,7 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('link', { name: 'Authentications' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(screen.getByText('Tenants')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant Management')).not.toBeInTheDocument();
   });
 
   it('shows a read-only active tenant badge and no tenant combobox', () => {
@@ -118,6 +119,32 @@ describe('Sidebar live nav', () => {
 
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('shows Tenant Management as a live link when the role can manage the tenant', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showTenantManagement />,
+        },
+        {
+          path: '/tenant-management',
+          element: <Sidebar showTenantManagement />,
+        },
+      ],
+      { initialEntries: ['/tenant-management'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Tenant Management' })).toHaveAttribute(
+      'href',
+      '/tenant-management',
+    );
+    expect(screen.getByRole('link', { name: 'Tenant Management' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('stays inert (no links) outside a router for prototypes', () => {

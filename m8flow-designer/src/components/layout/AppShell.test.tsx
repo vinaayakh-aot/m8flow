@@ -22,6 +22,7 @@ const mockFetchCapabilities = vi.fn().mockResolvedValue({
   can_manage_processes: false,
   can_read_authentications: false,
   can_manage_authentications: false,
+  can_manage_tenant: false,
 });
 
 vi.mock('@/lib/api', () => ({
@@ -59,6 +60,7 @@ describe('AppShell', () => {
       can_manage_processes: false,
       can_read_authentications: false,
       can_manage_authentications: false,
+      can_manage_tenant: false,
     });
     try {
       localStorage.clear();
@@ -106,6 +108,7 @@ describe('AppShell', () => {
     expect(mockFetchTenants).not.toHaveBeenCalled();
     expect(screen.getByText('home-outlet')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
   it('shows the cookie-backed active tenant badge for a non-admin editor', () => {
@@ -134,6 +137,23 @@ describe('AppShell', () => {
     expect(await screen.findByRole('link', { name: 'Authentications' })).toHaveAttribute(
       'href',
       '/authentications',
+    );
+  });
+
+  it('shows Tenant Management when capabilities allow manage tenant', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'tenant-admin', email: null });
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: true,
+      can_read_authentications: true,
+      can_manage_authentications: true,
+      can_manage_tenant: true,
+    });
+
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'Tenant Management' })).toHaveAttribute(
+      'href',
+      '/tenant-management',
     );
   });
 

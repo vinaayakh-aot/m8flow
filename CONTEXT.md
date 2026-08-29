@@ -49,12 +49,16 @@ The organization a shared-realm user is working in for the current session.
 _Avoid_: localStorage tenant, selected tenant as a browser-storage value
 
 **Tenant selection gate**:
-The post-login step that chooses the active tenant when a shared-realm user belongs to organizations. It is not the tenant registry or tenant-admin UI.
+The post-login step that chooses the active tenant when a shared-realm user belongs to organizations. It is not the tenant registry or tenant admin.
 _Avoid_: Tenants page, All Tenants, tenant switcher
 
 **Tenant registry**:
-The platform list of tenants (id, name, slug, status) that a super-admin manages. It is not the tenant selection gate, the tenant switcher, or tenant-admin RBAC.
-_Avoid_: All Tenants as the entity, tenant-admin
+The platform list of tenants (id, name, slug, status) that a super-admin manages. It is not the tenant selection gate, the tenant switcher, or tenant admin.
+_Avoid_: All Tenants as the entity, tenant-admin, Tenant Management
+
+**Tenant admin**:
+The per-tenant surface for members, groups, and role grants. A tenant-admin uses it for the active tenant; a super-admin can use it for any tenant. It is not the tenant registry, tenant selection gate, or tenant switcher.
+_Avoid_: Tenants page, All Tenants, tenant-admin as the tenant registry
 
 **Tenant switcher**:
 The super-admin shell control that filters which tenant's data is shown (all tenants vs one). It does not set the active-tenant cookie.
@@ -63,6 +67,10 @@ _Avoid_: tenant selection gate, selected tenant as a browser-storage value
 **Accept invitation**:
 The public path where an invited person sets a password and becomes a shared-realm user in an organization. Distinct from creating, resending, or revoking invitations. The emailed URL uses the designer origin.
 _Avoid_: invitation admin, tenant invite UI
+
+**Invitation management**:
+The super-admin path that creates, lists, resends, and revokes invitations for a tenant. Distinct from Accept invitation. A tenant-admin cannot do this.
+_Avoid_: Accept invitation, tenant invite UI as the public path
 
 **Service account**:
 A tenant-scoped machine credential for API access, not a human Keycloak login.
