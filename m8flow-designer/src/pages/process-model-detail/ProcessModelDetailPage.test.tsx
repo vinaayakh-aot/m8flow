@@ -24,6 +24,7 @@ function renderDetail(context: AppShellOutletContext, path = '/processes/finance
       <Routes>
         <Route element={<Outlet context={context} />}>
           <Route path="/processes/:processModelId" element={<ProcessModelDetailPage />} />
+          <Route path="/process-instances/:instanceId" element={<p>Instance started</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -170,5 +171,183 @@ describe('ProcessModelDetailPage', () => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
     });
     expect(screen.getByRole('alert').textContent).toMatch(/failed: 500/i);
+  });
+
+  it('starts an instance and navigates for a user who can start', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (String(url).includes('/start') || init?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              id: 99,
+              status: 'running',
+              process_model_identifier: 'finance/invoice-approval',
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...DETAIL,
+            files: [
+              {
+                name: 'invoice-approval.bpmn',
+                size_bytes: 12,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: true,
+              },
+            ],
+          }),
+        });
+      }),
+    );
+
+    renderDetail({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    });
+    const start = screen.getByRole('button', { name: 'Start process' });
+    expect(start).not.toBeDisabled();
+    fireEvent.click(start);
+    await waitFor(() => {
+      expect(screen.getByText('Instance started')).toBeInTheDocument();
+    });
+    const startUrl = vi
+      .mocked(fetch)
+      .mock.calls.map((c) => String(c[0]))
+      .find((url) => url.includes('/start'));
+    expect(startUrl).toContain('/v1.0/m8flow/process-models/finance:invoice-approval/start');
+  });
+
+  it('copies a process model and navigates to the copy overview', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/copy')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              id: 'finance/invoice-approval-copy',
+              display_name: 'Invoice Approval (copy)',
+              description: 'Two-step',
+              group_id: 'finance',
+              group_display_name: 'Finance',
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...DETAIL,
+            ...(String(url).includes('invoice-approval-copy')
+              ? { id: 'finance/invoice-approval-copy', display_name: 'Invoice Approval (copy)' }
+              : {}),
+            files: [
+              {
+                name: 'invoice-approval.bpmn',
+                size_bytes: 12,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: true,
+              },
+            ],
+          }),
+        });
+      }),
+    );
+
+    renderDetail({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval (copy)' })).toBeInTheDocument();
+    });
+    const copyUrl = vi
+      .mocked(fetch)
+      .mock.calls.map((c) => String(c[0]))
+      .find((url) => url.includes('/copy'));
+    expect(copyUrl).toContain('/v1.0/m8flow/process-models/finance:invoice-approval/copy');
+  });
+
+  it('runs BPMN tests from the overview for a catalog manager', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/tests/run')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              all_passed: true,
+              passing: [{ passed: true, bpmn_file: 'invoice-approval.bpmn', test_case_identifier: 'happy_path' }],
+              failing: [],
+            }),
+          });
+        }
+        if (String(url).includes('/script-unit-tests')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ tests: [] }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...DETAIL,
+            files: [
+              {
+                name: 'invoice-approval.bpmn',
+                size_bytes: 12,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: true,
+              },
+              {
+                name: 'test_invoice-approval.json',
+                size_bytes: 40,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: false,
+              },
+            ],
+          }),
+        });
+      }),
+    );
+
+    renderDetail({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    });
+    const run = screen.getByRole('button', { name: 'Run BPMN tests' });
+    expect(run).not.toBeDisabled();
+    fireEvent.click(run);
+    await waitFor(() => {
+      expect(screen.getByText('All 1 test passed.')).toBeInTheDocument();
+    });
+    const testUrl = vi
+      .mocked(fetch)
+      .mock.calls.map((c) => String(c[0]))
+      .find((url) => url.includes('/tests/run'));
+    expect(testUrl).toContain('/v1.0/m8flow/process-models/finance:invoice-approval/tests/run');
   });
 });

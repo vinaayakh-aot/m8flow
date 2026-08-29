@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 
-import { ApiError, fetchProcessModelDetail, type ProcessModelDetail } from '@/lib/api';
+import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
 import { Card } from '@/components/ui/card';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
@@ -12,7 +12,11 @@ import type { AppShellOutletContext } from '@/components/layout/AppShell';
  */
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, canManageProcesses } =
+    useOutletContext<AppShellOutletContext>();
+  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
+  const canStart = Boolean(canManageProcesses);
+  const navigate = useNavigate();
   const needsTenant = isSuperAdmin && !scopedTenantId;
   const modifiedId = processModelId ?? '';
 
@@ -119,7 +123,84 @@ export default function ProcessModelDetailPage() {
 
   return (
     <main className="flex-1 px-11 py-10 pb-14">
-      <ProcessModelOverview detail={detail} tenantId={scopedTenantId} />
+      <ProcessModelOverview
+        detail={detail}
+        tenantId={scopedTenantId}
+        canManage={canManageCatalog}
+        onUpdateIdentity={
+          canManageCatalog
+            ? async (patch) => {
+                const identity = await updateProcessModel(modifiedId, patch, scopedTenantId);
+                setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
+              }
+            : undefined
+        }
+        onAddFile={
+          canManageCatalog
+            ? async (input) => {
+                await createProcessModelFile(modifiedId, input, scopedTenantId);
+                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+              }
+            : undefined
+        }
+        onDeleteFile={
+          canManageCatalog
+            ? async (fileName) => {
+                await deleteProcessModelFile(modifiedId, fileName, scopedTenantId);
+                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+              }
+            : undefined
+        }
+        onSetPrimary={
+          canManageCatalog
+            ? async (fileName) => {
+                await updateProcessModel(
+                  modifiedId,
+                  { primary_file_name: fileName },
+                  scopedTenantId,
+                );
+                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+              }
+            : undefined
+        }
+        onStart={
+          canStart
+            ? async () => {
+                const result = await startProcessInstance(modifiedId, scopedTenantId);
+                navigate(`/process-instances/${result.id}`);
+              }
+            : undefined
+        }
+        onCopy={
+          canManageCatalog
+            ? async (input) => {
+                const identity = await copyProcessModel(modifiedId, input, scopedTenantId);
+                navigate(`/processes/${identity.id.split('/').join(':')}`);
+                return identity;
+              }
+            : undefined
+        }
+        onRunBpmnTests={
+          canManageCatalog
+            ? () => runProcessModelTests(modifiedId, scopedTenantId)
+            : undefined
+        }
+        onFetchScriptUnitTests={
+          canManageCatalog
+            ? () => fetchScriptUnitTests(modifiedId, scopedTenantId)
+            : undefined
+        }
+        onCreateScriptUnitTest={
+          canManageCatalog
+            ? (input) => createScriptUnitTest(modifiedId, input, scopedTenantId)
+            : undefined
+        }
+        onRunScriptUnitTest={
+          canManageCatalog
+            ? (input) => runScriptUnitTest(modifiedId, input, scopedTenantId)
+            : undefined
+        }
+      />
     </main>
   );
 }

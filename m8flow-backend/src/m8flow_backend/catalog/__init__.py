@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,6 +25,74 @@ UNSUPPORTED_CONSTRUCTS = (
     "compensateEventDefinition",
     "multiInstanceLoopCharacteristics",
 )
+
+_GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+# Startable seed diagram for a newly created process model. `{process_id}` is
+# replaced with an NCName derived from the model leaf. StartEvent_1 is the
+# start the designer can open in the modeler.
+_DEFAULT_BPMN_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="{process_id}" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_1" name="Task">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_1">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Activity_1" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Activity_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="{process_id}">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1_di" bpmnElement="Activity_1">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="430" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="430" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+# Seed DMN for Add file — not the old public/new_dmn_diagram.dmn. `{decision_id}`
+# is replaced the same way as the BPMN template (not str.format).
+_DEFAULT_DMN_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Definitions_1" name="{decision_id}" namespace="https://m8flow.example/dmn">
+  <decision id="{decision_id}" name="{decision_id}">
+    <decisionTable id="DecisionTable_1">
+      <input id="Input_1">
+        <inputExpression id="InputExpression_1" typeRef="string">
+          <text></text>
+        </inputExpression>
+      </input>
+      <output id="Output_1" typeRef="string" />
+    </decisionTable>
+  </decision>
+</definitions>
+"""
+
+_RESERVED_MODEL_FILE_NAMES = frozenset({"process_model.json", "process_group.json"})
+_DEFAULT_CREATE_SUFFIXES = frozenset({".bpmn", ".dmn", ".json", ".md"})
+_UPLOAD_SUFFIXES = _DEFAULT_CREATE_SUFFIXES | {".txt", ".xml", ".svg", ".html", ".css"}
 
 
 def save(
@@ -49,7 +120,6 @@ def save(
     )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     disk_path.write_text(xml, encoding="utf-8")
-    _best_effort_git_commit(disk_path, message=f"Save process model {path}")
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:
@@ -72,18 +142,15 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
 
 
 def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> None:
-    """Remove a process model's directory from the tenant's spec dir and
-    git-commit the removal. Destructive and non-reversible from the API
-    (recoverable only via git history). Callers must have already checked
-    permissions and that no process instances reference the model — this only
-    touches the on-disk BPMN spec, not the DB.
+    """Remove a process model's directory from the tenant's spec dir.
+    Destructive and non-reversible from the API. Callers must have already
+    checked permissions and that no process instances reference the model —
+    this only touches the on-disk BPMN spec, not the DB.
 
     Path-traversal guarded: the resolved target must stay inside the tenant's
     own models root, mirroring validate_leaf_file_name's concern for the
     file-level routes.
     """
-    import shutil
-
     root = _tenant_models_root(tenant_id).resolve()
     target = (root / process_model_identifier).resolve()
     if target == root or root not in target.parents:
@@ -92,25 +159,6 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
         raise ApiError("not_found", "Process model not found", 404)
 
     shutil.rmtree(target)
-    # Commit the removal (git rm equivalent) from the tenant root so the
-    # deleted paths are staged; best-effort, same posture as save().
-    try:
-        subprocess.run(["git", "add", "-A", "."], cwd=root, check=False, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", f"Delete process model {process_model_identifier}"],
-            cwd=root,
-            check=False,
-            capture_output=True,
-        )
-    except OSError:
-        # Best-effort git commit of the deletion; the model directory is
-        # already removed from disk above regardless of git's exit status.
-        LOGGER.debug(
-            "Failed to commit process model deletion to git (root=%s, model=%s)",
-            root,
-            process_model_identifier,
-            exc_info=True,
-        )
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
@@ -140,11 +188,6 @@ def update_file(process_model_info: Any, file_name: str, content: bytes, *, tena
         xml = content.decode("utf-8") if isinstance(content, bytes) else content
         user = require_current_user()
         save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
-    else:
-        # save() (the .bpmn branch above) already git-commits via its own call.
-        # Non-bpmn files (e.g. .dmn) previously wrote straight to disk with no
-        # commit at all — same audit-trail guarantee for every file type now.
-        _best_effort_git_commit(path, message=f"Save {file_name} in {model_id}")
     return path
 
 
@@ -202,8 +245,6 @@ def read_json_file(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
-        import json
-
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
@@ -297,6 +338,404 @@ def list_group_rows(*, tenant_id: str) -> list[dict[str, Any]]:
     return rows
 
 
+def validate_process_group_id(group_id: str) -> str:
+    """A process-group id is a `/`-separated path of identifier segments.
+
+    Path traversal, empty segments, and colon (the API's slash stand-in) are
+    rejected so the resolved directory cannot leave the tenant spec dir.
+    """
+    if not isinstance(group_id, str) or not group_id.strip():
+        raise ApiError("invalid_process_group", "Process group id is required", 400)
+    cleaned = group_id.strip().strip("/")
+    if not cleaned or "\\" in cleaned or ":" in cleaned:
+        raise ApiError("invalid_process_group", "Invalid process group identifier", 400)
+    segments = cleaned.split("/")
+    if any(not _GROUP_SEGMENT_RE.match(segment) for segment in segments):
+        raise ApiError("invalid_process_group", "Invalid process group identifier", 400)
+    return cleaned
+
+
+def process_group_exists(*, tenant_id: str, group_id: str) -> bool:
+    """True when `group_id` is a directory in the tenant catalog that is not a process model."""
+    try:
+        cleaned = validate_process_group_id(group_id)
+        target = _resolved_inside_tenant(tenant_id, cleaned)
+    except ApiError:
+        return False
+    if not target.is_dir():
+        return False
+    return not is_process_model_identifier(cleaned, tenant_id=tenant_id)
+
+
+def create_process_group(
+    *,
+    tenant_id: str,
+    group_id: str,
+    display_name: str | None = None,
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Create a process group directory and write process_group.json. No git."""
+    cleaned = validate_process_group_id(group_id)
+    target = _resolved_inside_tenant(tenant_id, cleaned)
+    if is_process_model_identifier(cleaned, tenant_id=tenant_id):
+        raise ApiError("process_model_exists", "A process model already uses this id", 409)
+    if target.exists():
+        raise ApiError("process_group_exists", "Process group already exists", 409)
+    target.mkdir(parents=True, exist_ok=True)
+    leaf = cleaned.rsplit("/", 1)[-1]
+    name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else leaf
+    desc = description.strip() if isinstance(description, str) else ""
+    _write_process_group_json(tenant_id, cleaned, {"display_name": name, "description": desc})
+    return {
+        "id": cleaned,
+        "display_name": name,
+        "description": desc,
+        "model_count": 0,
+    }
+
+
+def update_process_group(
+    *,
+    tenant_id: str,
+    group_id: str,
+    display_name: str | None = None,
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Update process_group.json metadata. Id / path does not change."""
+    cleaned = validate_process_group_id(group_id)
+    if not process_group_exists(tenant_id=tenant_id, group_id=cleaned):
+        raise ApiError("not_found", "Process group not found", 404)
+    meta = read_json_file(_tenant_models_root(tenant_id) / cleaned / "process_group.json")
+    leaf = cleaned.rsplit("/", 1)[-1]
+    if isinstance(display_name, str):
+        name = display_name.strip() or leaf
+    else:
+        existing = meta.get("display_name")
+        name = existing.strip() if isinstance(existing, str) and existing.strip() else leaf
+    if isinstance(description, str):
+        desc = description.strip()
+    else:
+        existing_desc = meta.get("description")
+        desc = existing_desc.strip() if isinstance(existing_desc, str) else ""
+    _write_process_group_json(tenant_id, cleaned, {"display_name": name, "description": desc})
+    return {
+        "id": cleaned,
+        "display_name": name,
+        "description": desc,
+        "model_count": len(list_models(cleaned, tenant_id=tenant_id)),
+    }
+
+
+def delete_process_group(*, tenant_id: str, group_id: str) -> None:
+    """Remove a process group directory (and nested models) from the tenant spec dir.
+
+    Callers must have already checked permissions and that no process
+    instances reference models under this group. No git commit.
+    """
+    cleaned = validate_process_group_id(group_id)
+    target = _resolved_inside_tenant(tenant_id, cleaned)
+    if not process_group_exists(tenant_id=tenant_id, group_id=cleaned):
+        raise ApiError("not_found", "Process group not found", 404)
+    shutil.rmtree(target)
+
+
+def validate_process_model_leaf(leaf_id: str) -> str:
+    """A process-model id is a single path segment (the leaf under its group)."""
+    cleaned = validate_process_group_id(leaf_id) if isinstance(leaf_id, str) else ""
+    if not cleaned or "/" in cleaned:
+        raise ApiError("invalid_process_model", "Process model id must be a single path segment", 400)
+    return cleaned
+
+
+def default_bpmn_xml(*, process_id: str) -> str:
+    return _DEFAULT_BPMN_TEMPLATE.replace("{process_id}", process_id)
+
+
+def _bpmn_process_id(leaf: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "_", leaf)
+    if not cleaned or not re.match(r"^[A-Za-z_]", cleaned):
+        return f"Process_{cleaned or 'model'}"
+    return cleaned
+
+
+def create_process_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    group_id: str,
+    leaf_id: str,
+    display_name: str | None = None,
+    description: str | None = None,
+    user_id: int,
+) -> dict[str, Any]:
+    """Create a process model under an existing group, with a default BPMN. No git."""
+    group = validate_process_group_id(group_id)
+    leaf = validate_process_model_leaf(leaf_id)
+    if not process_group_exists(tenant_id=tenant_id, group_id=group):
+        raise ApiError("not_found", "Process group not found", 404)
+    model_id = f"{group}/{leaf}"
+    target = _resolved_inside_tenant(tenant_id, model_id)
+    if model_exists(tenant_id=tenant_id, process_model_identifier=model_id) or target.exists():
+        raise ApiError("process_model_exists", "Process model already exists", 409)
+    name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else leaf
+    desc = description.strip() if isinstance(description, str) else ""
+    process_id = _bpmn_process_id(leaf)
+    file_name = f"{leaf}.bpmn"
+    xml = default_bpmn_xml(process_id=process_id)
+    _reject_unsupported_constructs(xml)
+    workflow.import_definition(
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        bpmn_identifier=model_id,
+        source_bpmn_xml=xml,
+        bpmn_name=file_name,
+    )
+    add_process_model(
+        {
+            "id": model_id,
+            "display_name": name,
+            "description": desc,
+            "primary_file_name": file_name,
+            "primary_process_id": process_id,
+        },
+        tenant_id=tenant_id,
+    )
+    write_spec_file(
+        tenant_id=tenant_id, path=model_id, file_name=file_name, content=xml.encode("utf-8")
+    )
+    identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=model_id)
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+    return identity
+
+
+def update_process_model_metadata(
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    display_name: str | None = None,
+    description: str | None = None,
+    primary_file_name: str | None = None,
+) -> dict[str, Any]:
+    """Update process_model.json metadata. Id / group / files do not change."""
+    if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
+    meta = read_json_file(_tenant_models_root(tenant_id) / process_model_identifier / "process_model.json")
+    leaf = process_model_identifier.rsplit("/", 1)[-1]
+    if isinstance(display_name, str):
+        name = display_name.strip() or leaf
+    else:
+        existing = meta.get("display_name")
+        name = existing.strip() if isinstance(existing, str) and existing.strip() else leaf
+    if isinstance(description, str):
+        desc = description.strip()
+    else:
+        existing_desc = meta.get("description")
+        desc = existing_desc.strip() if isinstance(existing_desc, str) else ""
+    primary = meta.get("primary_file_name")
+    primary_name = primary.strip() if isinstance(primary, str) else ""
+    if isinstance(primary_file_name, str):
+        candidate = validate_leaf_file_name(primary_file_name.strip())
+        file_path = _tenant_models_root(tenant_id) / process_model_identifier / candidate
+        if not file_path.is_file():
+            raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
+        primary_name = candidate
+    payload: dict[str, Any] = {"display_name": name, "description": desc}
+    if primary_name:
+        payload["primary_file_name"] = primary_name
+    if isinstance(meta.get("primary_process_id"), str) and meta["primary_process_id"].strip():
+        payload["primary_process_id"] = meta["primary_process_id"].strip()
+    _write_process_model_json(tenant_id, process_model_identifier, payload)
+    identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+    return identity
+
+
+def _first_bpmn_name(model_dir: Path) -> str:
+    names = sorted(
+        path.name
+        for path in model_dir.iterdir()
+        if path.is_file() and path.suffix.lower() == ".bpmn"
+    )
+    return names[0] if names else ""
+
+
+def copy_process_model(
+    session: Session,
+    *,
+    tenant_id: str,
+    source_identifier: str,
+    leaf_id: str,
+    display_name: str | None,
+    user_id: int,
+) -> dict[str, Any]:
+    """Duplicate a process model under the same group. Copies files; not instances. No git."""
+    if not model_exists(tenant_id=tenant_id, process_model_identifier=source_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
+    group = process_group_id_for_model(source_identifier)
+    leaf = validate_process_model_leaf(leaf_id)
+    dest_id = f"{group}/{leaf}" if group else leaf
+    dest = _resolved_inside_tenant(tenant_id, dest_id)
+    if model_exists(tenant_id=tenant_id, process_model_identifier=dest_id) or dest.exists():
+        raise ApiError("process_model_exists", "Process model already exists", 409)
+    source_dir = _tenant_models_root(tenant_id) / source_identifier
+    dest.mkdir(parents=True)
+    try:
+        for path in source_dir.iterdir():
+            if path.is_file() and path.name != "process_model.json":
+                shutil.copy2(path, dest / path.name)
+        source_meta = read_json_file(source_dir / "process_model.json")
+        name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else leaf
+        existing_desc = source_meta.get("description")
+        desc = existing_desc.strip() if isinstance(existing_desc, str) else ""
+        primary = source_meta.get("primary_file_name")
+        primary_name = primary.strip() if isinstance(primary, str) else ""
+        if primary_name and not (dest / primary_name).is_file():
+            primary_name = ""
+        if not primary_name:
+            primary_name = _first_bpmn_name(dest)
+        payload: dict[str, Any] = {"display_name": name, "description": desc}
+        if primary_name:
+            payload["primary_file_name"] = primary_name
+        process_id = source_meta.get("primary_process_id")
+        if isinstance(process_id, str) and process_id.strip():
+            payload["primary_process_id"] = process_id.strip()
+        _write_process_model_json(tenant_id, dest_id, payload)
+        bpmn_name = primary_name if primary_name.lower().endswith(".bpmn") else _first_bpmn_name(dest)
+        if bpmn_name:
+            try:
+                xml = (dest / bpmn_name).read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
+            _reject_unsupported_constructs(xml)
+            workflow.import_definition(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                bpmn_identifier=dest_id,
+                source_bpmn_xml=xml,
+                bpmn_name=bpmn_name,
+            )
+    except Exception:
+        if dest.exists():
+            shutil.rmtree(dest)
+        raise
+    identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=dest_id)
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+    return identity
+
+
+def default_dmn_xml(*, decision_id: str) -> str:
+    return _DEFAULT_DMN_TEMPLATE.replace("{decision_id}", decision_id)
+
+
+def _file_suffix(file_name: str) -> str:
+    lower = file_name.lower()
+    dot = lower.rfind(".")
+    return lower[dot:] if dot >= 0 else ""
+
+
+def _default_file_bytes(file_name: str) -> bytes:
+    suffix = _file_suffix(file_name)
+    stem = file_name[: -len(suffix)] if suffix else file_name
+    if suffix == ".bpmn":
+        return default_bpmn_xml(process_id=_bpmn_process_id(stem)).encode("utf-8")
+    if suffix == ".dmn":
+        return default_dmn_xml(decision_id=_bpmn_process_id(stem)).encode("utf-8")
+    if suffix == ".json":
+        return b"{}\n"
+    if suffix == ".md":
+        return b""
+    return b""
+
+
+def _file_payload(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "size_bytes": int(stat.st_size),
+        "updated_at_in_seconds": int(stat.st_mtime),
+    }
+
+
+def create_model_file(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    file_name: str,
+    content: bytes | None,
+    user_id: int,
+) -> dict[str, Any]:
+    """Create one file in an existing process model. No git. .bpmn is imported."""
+    if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
+    name = validate_leaf_file_name(file_name.strip() if isinstance(file_name, str) else "")
+    if name.lower() in _RESERVED_MODEL_FILE_NAMES:
+        raise ApiError("reserved_file_name", "That file name is reserved", 400)
+    suffix = _file_suffix(name)
+    if content is None:
+        if suffix not in _DEFAULT_CREATE_SUFFIXES:
+            raise ApiError(
+                "unsupported_file_type",
+                "Add file without content must be .bpmn, .dmn, .json, or .md",
+                400,
+            )
+        body = _default_file_bytes(name)
+    else:
+        if suffix not in _UPLOAD_SUFFIXES:
+            raise ApiError("unsupported_file_type", "That file type is not allowed", 400)
+        if not content:
+            raise ApiError("missing_content", "Request body is required", 400)
+        body = content
+    target = _tenant_models_root(tenant_id) / process_model_identifier / name
+    if target.exists():
+        raise ApiError("file_exists", "A file with this name already exists", 409)
+    if suffix == ".bpmn":
+        try:
+            xml = body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
+        _reject_unsupported_constructs(xml)
+        workflow.import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=xml,
+            bpmn_name=name,
+        )
+    write_spec_file(
+        tenant_id=tenant_id, path=process_model_identifier, file_name=name, content=body
+    )
+    return _file_payload(target)
+
+
+def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_name: str) -> None:
+    """Remove one file from a process model. Primary file is 409. No git."""
+    if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
+    name = validate_leaf_file_name(file_name)
+    if name.lower() in _RESERVED_MODEL_FILE_NAMES:
+        raise ApiError("reserved_file_name", "That file name is reserved", 400)
+    path = _tenant_models_root(tenant_id) / process_model_identifier / name
+    if not path.is_file():
+        raise ApiError("not_found", f"File not found: {name}", 404)
+    meta = read_json_file(_tenant_models_root(tenant_id) / process_model_identifier / "process_model.json")
+    primary = meta.get("primary_file_name")
+    primary_name = primary.strip() if isinstance(primary, str) else ""
+    if primary_name and path.name == primary_name:
+        raise ApiError(
+            "cannot_delete_primary",
+            "Set another file as primary before deleting this one.",
+            409,
+        )
+    path.unlink()
+
+
 def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
     return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
 
@@ -378,6 +817,21 @@ def _tenant_models_root(tenant_id: str) -> Path:
     return Path(base) / tenant_id
 
 
+def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:
+    """Resolve `relative` under the tenant spec dir; reject escapes."""
+    root = _tenant_models_root(tenant_id).resolve()
+    target = (root / relative).resolve()
+    if target == root or root not in target.parents:
+        raise ApiError("invalid_process_group", "Invalid process group identifier", 400)
+    return target
+
+
+def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:
+    path = _tenant_models_root(tenant_id) / group_id / "process_group.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(info, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def _model_file_path(tenant_id: str, path: str) -> Path:
     """Best-effort default disk path for a model's primary .bpmn file when the
     caller didn't pass an explicit file_name. Prefers process_model.json's
@@ -400,8 +854,6 @@ def _write_process_model_json(tenant_id: str, model_id: str, info: dict[str, Any
     payload = {key: value for key, value in info.items() if key != "id" and value is not None}
     if not payload:
         return
-    import json
-
     path = _tenant_models_root(tenant_id) / model_id / "process_model.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

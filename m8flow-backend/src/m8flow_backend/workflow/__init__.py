@@ -16,6 +16,13 @@ from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, Proce
 from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.tenancy import is_super_admin_request
+from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
+from m8flow_backend.workflow.script_unit_tests import (
+    add_script_unit_test as add_script_unit_test,
+    list_script_unit_tests as list_script_unit_tests,
+    run_script_unit_test as run_script_unit_test,
+    run_stored_script_unit_test as run_stored_script_unit_test,
+)
 
 
 def import_definition(
@@ -385,6 +392,29 @@ def count_instances_for_process_model(
             .where(
                 ProcessInstanceModel.m8f_tenant_id == tenant_id,
                 ProcessInstanceModel.process_model_identifier == process_model_identifier,
+            )
+        )
+        or 0
+    )
+
+
+def count_instances_for_process_group(
+    session: Session, *, tenant_id: str, group_id: str
+) -> int:
+    """How many process instances exist for models in this group (this id or
+    nested under `group_id/`). Guards process-group deletion so run history
+    is never orphaned when the group's models are removed from disk."""
+    prefix = group_id.rstrip("/") + "/"
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(ProcessInstanceModel)
+            .where(
+                ProcessInstanceModel.m8f_tenant_id == tenant_id,
+                or_(
+                    ProcessInstanceModel.process_model_identifier == group_id,
+                    ProcessInstanceModel.process_model_identifier.startswith(prefix),
+                ),
             )
         )
         or 0

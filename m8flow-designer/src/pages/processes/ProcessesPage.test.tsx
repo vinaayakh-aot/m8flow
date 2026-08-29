@@ -173,4 +173,71 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
   });
+
+  it('hides New group for super-admin and shows it for an editor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.includes('/v1.0/m8flow/process-groups')) {
+          return {
+            ok: true,
+            json: async () => [
+              {
+                id: 'finance',
+                display_name: 'Finance',
+                description: 'Invoice approvals',
+                model_count: 1,
+                last_run_in_seconds: null,
+              },
+            ],
+          };
+        }
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'finance/invoice-approval',
+              display_name: 'Invoice Approval',
+              group_id: 'finance',
+              group_display_name: 'Finance',
+              last_run_in_seconds: null,
+              runs_30d: 0,
+            },
+          ],
+        };
+      }),
+    );
+
+    const superAdmin = renderWithOutlet(
+      {
+        scopedTenantId: 't1',
+        selectedTenantId: 't1',
+        isSuperAdmin: true,
+        canManageProcesses: true,
+      },
+      '/processes',
+    );
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /New group/i })).not.toBeInTheDocument();
+    superAdmin.unmount();
+
+    renderWithOutlet(
+      {
+        scopedTenantId: 't1',
+        selectedTenantId: 't1',
+        isSuperAdmin: false,
+        canManageProcesses: true,
+      },
+      '/processes',
+    );
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+  });
 });

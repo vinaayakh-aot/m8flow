@@ -28,6 +28,10 @@ _Avoid_: modeler, current events, events page, ReactDiagramEditor
 The side panel of element fields shown while designing a process model (or a DMN file).
 _Avoid_: inspector, attributes panel, settings
 
+**Catalog**:
+The tenant's tree of process groups and process models.
+_Avoid_: templates gallery, process instances, connector catalog
+
 **Process group**:
 A folder of process models in a tenant catalog.
 _Avoid_: folder, directory, tenant

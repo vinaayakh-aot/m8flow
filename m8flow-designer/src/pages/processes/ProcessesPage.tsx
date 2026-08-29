@@ -2,39 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 
 import {
-  ApiError,
+  createProcessGroup,
+  createProcessModel,
+  deleteProcessGroup,
   deleteProcessModel,
   fetchProcessGroups,
   fetchProcessModels,
   startProcessInstance,
+  updateProcessGroup,
   type ProcessGroupListItem,
   type ProcessModelListItem,
 } from '@/lib/api';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
 import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
 import { ProcessesModelsList } from './components/ProcessesModelsList';
 import { Card } from '@/components/ui/card';
 import { encodeProcessModelId } from '@/lib/processModelId';
-
-/** Turns a start-instance failure into a message the user can act on. The
- * backend returns 422 for an unstartable model (e.g. no start event), 403
- * when the caller lacks the start permission. */
-function startErrorMessage(err: unknown, displayName: string): string {
-  if (err instanceof ApiError) {
-    // The backend's own reason is the most specific (e.g. a lane with no
-    // owners, a missing start event) — show it verbatim when available.
-    if (err.serverMessage) {
-      return err.serverMessage;
-    }
-    if (err.status === 422) {
-      return `“${displayName}” can’t be started — its diagram may be missing a start event.`;
-    }
-    if (err.status === 403) {
-      return `You don’t have permission to start “${displayName}”.`;
-    }
-  }
-  return err instanceof Error ? err.message : 'Failed to start process';
-}
+import { startErrorMessage } from '@/lib/startProcessError';
 
 /**
  * Processes models list — wired to GET /v1.0/m8flow/process-models.
@@ -43,6 +28,7 @@ function startErrorMessage(err: unknown, displayName: string): string {
 export default function ProcessesPage() {
   const { scopedTenantId, isSuperAdmin, canManageProcesses } =
     useOutletContext<AppShellOutletContext>();
+  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -56,11 +42,14 @@ export default function ProcessesPage() {
   const [allCount, setAllCount] = useState(0);
 
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState<string | null>(null);
   /** Bumped after a successful delete to re-run the models fetch effect. */
   const [refreshKey, setRefreshKey] = useState(0);
+  /** Bumped after group create/edit/delete while the picker is open. */
+  const [groupsRefreshKey, setGroupsRefreshKey] = useState(0);
 
   useEffect(() => {
     if (needsTenant) {
@@ -134,7 +123,7 @@ export default function ProcessesPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupsOpen, scopedTenantId, needsTenant]);
+  }, [groupsOpen, scopedTenantId, needsTenant, groupsRefreshKey]);
 
   const scopeLabel = useMemo(() => {
     if (!groupFilter) {
@@ -183,6 +172,32 @@ export default function ProcessesPage() {
     setRefreshKey((k) => k + 1);
   }
 
+  async function handleCreateGroup(input: {
+    id: string;
+    display_name: string;
+    description: string;
+  }) {
+    await createProcessGroup(input, scopedTenantId);
+    setGroupsRefreshKey((k) => k + 1);
+  }
+
+  async function handleUpdateGroup(
+    groupId: string,
+    patch: { display_name: string; description: string },
+  ) {
+    await updateProcessGroup(groupId, patch, scopedTenantId);
+    setGroupsRefreshKey((k) => k + 1);
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    await deleteProcessGroup(groupId, scopedTenantId);
+    if (groupFilter === groupId) {
+      setGroup(null);
+    }
+    setGroupsRefreshKey((k) => k + 1);
+    setRefreshKey((k) => k + 1);
+  }
+
   if (needsTenant) {
     return (
       <main className="flex-1 px-11 py-10">
@@ -217,6 +232,18 @@ export default function ProcessesPage() {
         }}
         onStartModel={canManageProcesses ? handleStartModel : undefined}
         onDeleteModel={canManageProcesses ? handleDeleteModel : undefined}
+        onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
+      />
+      <CreateProcessModelDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        scopedTenantId={scopedTenantId}
+        defaultGroupId={groupFilter}
+        onCreate={(input) => createProcessModel(input, scopedTenantId)}
+        onCreated={(encodedId) => {
+          setCreateOpen(false);
+          navigate(`/processes/${encodedId}`);
+        }}
       />
       <ProcessGroupsPicker
         open={groupsOpen}
@@ -224,6 +251,7 @@ export default function ProcessesPage() {
         loading={groupsLoading}
         error={groupsError}
         selectedGroupId={groupFilter}
+        canManage={canManageCatalog}
         onClose={closeGroups}
         onSelectAll={() => {
           setGroup(null);
@@ -233,6 +261,9 @@ export default function ProcessesPage() {
           setGroup(groupId);
           setGroupsOpen(false);
         }}
+        onCreateGroup={canManageCatalog ? handleCreateGroup : undefined}
+        onUpdateGroup={canManageCatalog ? handleUpdateGroup : undefined}
+        onDeleteGroup={canManageCatalog ? handleDeleteGroup : undefined}
       />
     </main>
   );

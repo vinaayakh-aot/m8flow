@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ProcessModelDetail } from '@/lib/api';
 import {
@@ -63,6 +63,7 @@ describe('formatDuration / formatBytes / fileKind', () => {
 
   it('maps file extensions', () => {
     expect(fileKind('a.bpmn')).toEqual({ ext: 'BPMN', label: 'BPMN' });
+    expect(fileKind('test_notes.json')).toEqual({ ext: 'JSON', label: 'BPMN test' });
     expect(fileKind('form-schema.json')).toEqual({ ext: 'JSON', label: 'Form schema' });
     expect(fileKind('form-uischema.json')).toEqual({ ext: 'JSON', label: 'UI schema' });
     expect(fileKind('notes.md')).toEqual({ ext: 'MD', label: 'Markdown' });
@@ -111,8 +112,150 @@ describe('ProcessModelOverview', () => {
       '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
     );
     expect(screen.getByRole('button', { name: 'Save as template' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'More actions' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add file' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run BPMN tests' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Create script unit test' })).toBeDisabled();
+  });
+
+  it('starts a process when onStart is provided', async () => {
+    const onStart = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} onStart={onStart} />
+      </MemoryRouter>,
+    );
+    const start = screen.getByRole('button', { name: 'Start process' });
+    expect(start).not.toBeDisabled();
+    fireEvent.click(start);
+    await waitFor(() => {
+      expect(onStart).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('shows the shared unstartable message when start fails with 422', async () => {
+    const { ApiError } = await import('@/lib/api');
+    const onStart = vi.fn().mockRejectedValue(new ApiError('/start', 422, 'POST'));
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} onStart={onStart} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start process' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/missing a start event/);
+    });
+  });
+
+  it('opens copy when onCopy is provided', async () => {
+    const onCopy = vi.fn().mockResolvedValue({ id: 'finance/invoice-approval-copy' });
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} canManage onCopy={onCopy} />
+      </MemoryRouter>,
+    );
+    const copy = screen.getByRole('button', { name: 'Copy' });
+    expect(copy).not.toBeDisabled();
+    fireEvent.click(copy);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
+    await waitFor(() => {
+      expect(onCopy).toHaveBeenCalledWith({
+        id: 'invoice-approval-copy',
+        display_name: 'Invoice Approval (copy)',
+      });
+    });
+  });
+
+  it('runs BPMN tests when a test_*.json file is present', async () => {
+    const onRunBpmnTests = vi.fn().mockResolvedValue({
+      all_passed: true,
+      passing: [{ passed: true, bpmn_file: 'invoice-approval.bpmn', test_case_identifier: 'happy_path' }],
+      failing: [],
+    });
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{
+            ...DETAIL,
+            files: [
+              ...DETAIL.files,
+              {
+                name: 'test_invoice-approval.json',
+                size_bytes: 40,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: false,
+              },
+            ],
+          }}
+          canManage
+          onRunBpmnTests={onRunBpmnTests}
+        />
+      </MemoryRouter>,
+    );
+    const run = screen.getByRole('button', { name: 'Run BPMN tests' });
+    expect(run).not.toBeDisabled();
+    fireEvent.click(run);
+    await waitFor(() => {
+      expect(onRunBpmnTests).toHaveBeenCalled();
+    });
+    expect(screen.getByText('All 1 test passed.')).toBeInTheDocument();
+  });
+
+  it('lets an editor add, set primary, and delete files', async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    const onSetPrimary = vi.fn().mockResolvedValue(undefined);
+    const files = [
+      ...DETAIL.files,
+      {
+        name: 'extra.bpmn',
+        size_bytes: 100,
+        updated_at_in_seconds: 1_700_000_000,
+        primary: false,
+      },
+    ];
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, files }}
+          canManage
+          onAddFile={onAdd}
+          onDeleteFile={onDelete}
+          onSetPrimary={onSetPrimary}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Add file' })).not.toBeDisabled();
+    fireEvent.click(screen.getByTitle('Set as primary'));
+    await waitFor(() => {
+      expect(onSetPrimary).toHaveBeenCalledWith('extra.bpmn');
+    });
+    fireEvent.click(screen.getAllByTitle('Delete file')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(onDelete).toHaveBeenCalledWith('invoice-form-schema.json');
+    });
+  });
+
+  it('lets an editor edit display name and description', async () => {
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} canManage onUpdateIdentity={onUpdate} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit identity' }));
+    fireEvent.change(screen.getByLabelText('Process model display name'), {
+      target: { value: 'Invoices' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith({
+        display_name: 'Invoices',
+        description: 'Two-step',
+      });
+    });
   });
 
   it('wires the recent-instances "View all" link and each row id to Process Instances (ticket 04 capstone)', () => {

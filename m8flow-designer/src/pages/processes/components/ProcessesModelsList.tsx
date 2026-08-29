@@ -43,6 +43,8 @@ export type ProcessesModelsListProps = {
   /** Deletes the model. Should reject (throw) on failure so the confirmation
    * dialog can surface the reason (e.g. a 409 when instances still exist). */
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
+  /** Opens the create dialog. Absent for viewers / super-admin. */
+  onCreateModel?: () => void;
 };
 
 type SortDir = 'desc' | 'asc';
@@ -64,6 +66,7 @@ export function ProcessesModelsList({
   onFilterByGroup,
   onStartModel,
   onDeleteModel,
+  onCreateModel,
 }: ProcessesModelsListProps) {
   const [search, setSearch] = useState('');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -153,21 +156,16 @@ export function ProcessesModelsList({
         <div className="flex flex-wrap items-center gap-2.5">
           {/* "Browse groups" removed — the "Showing [scope] ▾" pill below opens
               the same group picker, so a second entry point was redundant. */}
-          {/* Not converted to Button: this "coming soon" chrome uses
-              aria-disabled (not the native disabled attribute) to stay
-              focusable-but-inert — Button's disabled: styling hooks key off
-              the real attribute, so they wouldn't engage here anyway. Left
-              as-is rather than force a native `disabled` that would change
-              its focus/interaction semantics — see this ticket's
-              resolution. */}
-          <button
-            type="button"
-            aria-disabled="true"
-            className="inline-flex cursor-default items-center gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs select-none"
-          >
-            <Plus className="size-[15px]" strokeWidth={2.2} />
-            New process model
-          </button>
+          {onCreateModel ? (
+            <button
+              type="button"
+              onClick={onCreateModel}
+              className="inline-flex items-center gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs"
+            >
+              <Plus className="size-[15px]" strokeWidth={2.2} />
+              New process model
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -297,15 +295,15 @@ export function ProcessesModelsList({
                     : 'No models are available for this tenant yet.'}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2.5">
-                {/* Not converted to Button: aria-disabled chrome, same
-                    reasoning as the header's "New process model" above. */}
+              {onCreateModel ? (
                 <button
                   type="button"
-                  aria-disabled="true"
-                  className="cursor-default rounded-full bg-nav-active px-5 py-2.5 text-xs font-semibold tracking-[0.04em] text-foreground uppercase select-none"
+                  onClick={onCreateModel}
+                  className="rounded-full bg-nav-active px-5 py-2.5 text-xs font-semibold tracking-[0.04em] text-foreground uppercase"
                 >
                   New process model
                 </button>
+              ) : null}
                 {groupFilterOn ? (
                   <Button
                     type="button"

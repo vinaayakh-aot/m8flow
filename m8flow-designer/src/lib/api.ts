@@ -333,6 +333,199 @@ export function fetchProcessGroups(
   return apiGet<ProcessGroupListItem[]>(processGroupsPath(tenantId));
 }
 
+export type ProcessGroupWriteInput = {
+  id: string;
+  display_name: string;
+  description: string;
+};
+
+function processGroupWritePath(groupId: string, tenantId?: string | null): string {
+  const encodedId = groupId.split('/').map(encodeURIComponent).join(':');
+  const base = `/v1.0/m8flow/process-groups/${encodedId}`;
+  if (tenantId) {
+    return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
+  }
+  return base;
+}
+
+export async function createProcessGroup(
+  input: ProcessGroupWriteInput,
+  tenantId?: string | null,
+): Promise<ProcessGroupListItem> {
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-groups${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as ProcessGroupListItem;
+}
+
+export async function updateProcessGroup(
+  groupId: string,
+  patch: { display_name: string; description: string },
+  tenantId?: string | null,
+): Promise<ProcessGroupListItem> {
+  const path = processGroupWritePath(groupId, tenantId);
+  const response = await apiFetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return (await response.json()) as ProcessGroupListItem;
+}
+
+export async function deleteProcessGroup(
+  groupId: string,
+  tenantId?: string | null,
+): Promise<void> {
+  await apiFetch(processGroupWritePath(groupId, tenantId), { method: 'DELETE' });
+}
+
+export type ProcessModelIdentity = {
+  id: string;
+  display_name: string;
+  description: string;
+  group_id: string;
+  group_display_name: string;
+};
+
+export type ProcessModelCreateInput = {
+  group_id: string;
+  id: string;
+  display_name: string;
+  description: string;
+};
+
+export async function createProcessModel(
+  input: ProcessModelCreateInput,
+  tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as ProcessModelIdentity;
+}
+
+export async function updateProcessModel(
+  modifiedId: string,
+  patch: { display_name?: string; description?: string; primary_file_name?: string },
+  tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const path = processModelDetailPath(modifiedId, tenantId);
+  const response = await apiFetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return (await response.json()) as ProcessModelIdentity;
+}
+
+export async function copyProcessModel(
+  modifiedId: string,
+  input: { id: string; display_name: string },
+  tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/copy${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as ProcessModelIdentity;
+}
+
+export type ProcessModelTestCaseResult = {
+  passed: boolean;
+  bpmn_file: string;
+  test_case_identifier: string;
+  test_case_error_details?: { error_messages?: string[] } | null;
+};
+
+export type ProcessModelTestRunResult = {
+  all_passed: boolean;
+  passing: ProcessModelTestCaseResult[];
+  failing: ProcessModelTestCaseResult[];
+};
+
+export async function runProcessModelTests(
+  modifiedId: string,
+  tenantId?: string | null,
+): Promise<ProcessModelTestRunResult> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/tests/run${suffix}`;
+  const response = await apiFetch(path, { method: 'POST' });
+  return (await response.json()) as ProcessModelTestRunResult;
+}
+
+export type ScriptUnitTest = {
+  id: string;
+  bpmn_task_identifier: string;
+};
+
+export async function fetchScriptUnitTests(
+  modifiedId: string,
+  tenantId?: string | null,
+): Promise<ScriptUnitTest[]> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
+  const response = await apiFetch(path);
+  const body = (await response.json()) as { tests?: ScriptUnitTest[] };
+  return Array.isArray(body.tests) ? body.tests : [];
+}
+
+export async function createScriptUnitTest(
+  modifiedId: string,
+  input: {
+    bpmn_task_identifier: string;
+    input_json: Record<string, unknown>;
+    expected_output_json: Record<string, unknown>;
+  },
+  tenantId?: string | null,
+): Promise<{ ok: boolean; id: string }> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as { ok: boolean; id: string };
+}
+
+export type ScriptUnitTestRunResult = {
+  result: boolean;
+  context?: Record<string, unknown> | null;
+  error?: string | null;
+  line_number?: number | null;
+};
+
+export async function runScriptUnitTest(
+  modifiedId: string,
+  input: { unit_test_id?: string; python_script?: string; input_json?: Record<string, unknown>; expected_output_json?: Record<string, unknown> },
+  tenantId?: string | null,
+): Promise<ScriptUnitTestRunResult> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests/run${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as ScriptUnitTestRunResult;
+}
+
 export type ProcessModelDetailInstance = {
   id: number;
   started_by: string;
@@ -435,6 +628,31 @@ export async function saveProcessModelFileContent(
     throw new ApiError(path, response.status, 'PUT');
   }
   return (await response.json()) as ProcessModelFileSaveResult;
+}
+
+export async function createProcessModelFile(
+  modifiedId: string,
+  input: { file_name: string; content?: string },
+  tenantId?: string | null,
+): Promise<ProcessModelFileSaveResult> {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  const path = `/v1.0/m8flow/process-models/${encodedId}/files${suffix}`;
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return (await response.json()) as ProcessModelFileSaveResult;
+}
+
+export async function deleteProcessModelFile(
+  modifiedId: string,
+  fileName: string,
+  tenantId?: string | null,
+): Promise<void> {
+  const path = processModelFilePath(modifiedId, fileName, tenantId);
+  await apiFetch(path, { method: 'DELETE' });
 }
 
 export type StartProcessInstanceResult = {

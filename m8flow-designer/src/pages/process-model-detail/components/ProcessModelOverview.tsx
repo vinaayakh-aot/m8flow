@@ -1,22 +1,41 @@
-import { Download, Folder, MoreVertical, Pencil, Plus } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { Download, Folder, MoreVertical, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState, type FormEvent, type ReactNode } from 'react';
 
-import { fetchProcessModelFileContent, type ProcessModelDetail, type ProcessModelDetailFile } from '@/lib/api';
+import {
+  fetchProcessModelFileContent,
+  type ProcessModelDetail,
+  type ProcessModelDetailFile,
+  type ProcessModelTestRunResult,
+  type ScriptUnitTest,
+  type ScriptUnitTestRunResult,
+} from '@/lib/api';
+import { startErrorMessage } from '@/lib/startProcessError';
+import { AddProcessModelFileDialog, fileOpensInModeler } from './AddProcessModelFileDialog';
+import { CopyProcessModelDialog } from './CopyProcessModelDialog';
+import { ProcessModelTestsCard } from './ProcessModelTestsCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 
-// This page's placeholder/"coming soon" actions (Start process, Open in
-// modeler when no file exists yet, Save as template, Add file, More
-// actions) render `disabled` but are meant to *look* fully live, matching
-// the mockup — not dimmed the way Button's own `disabled:opacity-50`
-// otherwise renders every other disabled Button in the app. This override
-// is the one deliberate exception to that rule.
+// This page's remaining placeholder actions (Open in modeler when no file
+// exists yet, Save as template, More actions) render `disabled` but are
+// meant to *look* fully live, matching the mockup — not dimmed the way
+// Button's own `disabled:opacity-50` otherwise renders every other disabled
+// Button in the app. This override is the one deliberate exception to that rule.
 const inertBtn = 'cursor-default select-none disabled:cursor-default disabled:opacity-100';
 
 export function formatDuration(seconds: number | null | undefined): string {
@@ -51,6 +70,9 @@ export function fileKind(name: string): { ext: string; label: string } {
     return { ext: 'MD', label: 'Markdown' };
   }
   if (lower.endsWith('.json')) {
+    if (/^test_/.test(lower)) {
+      return { ext: 'JSON', label: 'BPMN test' };
+    }
     if (lower.includes('uischema')) {
       return { ext: 'JSON', label: 'UI schema' };
     }
@@ -68,15 +90,22 @@ function FileRow({
   file,
   modelId,
   tenantId,
+  canManage,
+  onSetPrimary,
+  onDelete,
 }: {
   file: ProcessModelDetailFile;
   modelId: string;
   tenantId?: string | null;
+  canManage: boolean;
+  onSetPrimary?: (fileName: string) => Promise<void>;
+  onDelete?: (fileName: string) => Promise<void>;
 }) {
   const kind = fileKind(file.name);
   const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at_in_seconds)}`;
   const iconTone = kind.ext === 'BPMN' ? 'bg-nav-active/15 text-info' : 'bg-muted text-muted-foreground';
   const modelerHref = `/processes/${encodeProcessModelId(modelId)}/modeler/${encodeURIComponent(file.name)}`;
+  const canPrimary = canManage && Boolean(onSetPrimary) && kind.ext === 'BPMN' && !file.primary;
 
   async function handleDownload() {
     const content = await fetchProcessModelFileContent(encodeProcessModelId(modelId), file.name, tenantId);
@@ -118,6 +147,26 @@ function FileRow({
         >
           <Download className="size-4" strokeWidth={1.8} aria-hidden />
         </button>
+        {canPrimary ? (
+          <button
+            type="button"
+            title="Set as primary"
+            onClick={() => void onSetPrimary?.(file.name)}
+            className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-info"
+          >
+            <Star className="size-4" strokeWidth={1.8} aria-hidden />
+          </button>
+        ) : null}
+        {canManage && onDelete && !file.primary ? (
+          <button
+            type="button"
+            title="Delete file"
+            onClick={() => void onDelete(file.name)}
+            className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-destructive"
+          >
+            <Trash2 className="size-4" strokeWidth={1.8} aria-hidden />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -129,17 +178,60 @@ export type ProcessModelOverviewProps = {
    * detail fetch itself (super-admin's selected tenant, or null for
    * regular users whose tenant is cookie-scoped server-side). */
   tenantId?: string | null;
+  canManage?: boolean;
+  onUpdateIdentity?: (patch: { display_name: string; description: string }) => Promise<void>;
+  onAddFile?: (input: { file_name: string; content?: string }) => Promise<void>;
+  onDeleteFile?: (fileName: string) => Promise<void>;
+  onSetPrimary?: (fileName: string) => Promise<void>;
+  /** Same start permission as the processes list (`canManageProcesses`). */
+  onStart?: () => Promise<void>;
+  /** Catalog write: tenant-admin / editor; not super-admin. */
+  onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
+  onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
+  onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
+  onCreateScriptUnitTest?: (input: {
+    bpmn_task_identifier: string;
+    input_json: Record<string, unknown>;
+    expected_output_json: Record<string, unknown>;
+  }) => Promise<{ id: string }>;
+  onRunScriptUnitTest?: (input: { unit_test_id: string }) => Promise<ScriptUnitTestRunResult>;
 };
 
 /**
  * Process-model overview layout matching Processes.dc.html inModel.
  * Live fields come from the detail API; mockup-only extras are omitted or
- * placeholder. Header/instance-start controls stay inert chrome; file
- * rows' Edit/Download are live (per-file-row entry-points ticket), and so
- * is the Recent instances table's own "View all"/per-row id (Process
- * Instances + task-state map, ticket 04 capstone).
+ * placeholder. Header Copy is live when `onCopy` is provided; Save as
+ * template stays inert chrome; Start is live when `onStart` is provided
+ * (same gate as the processes list). Tests are live for catalog managers.
  */
-export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewProps) {
+export function ProcessModelOverview({
+  detail,
+  tenantId,
+  canManage = false,
+  onUpdateIdentity,
+  onAddFile,
+  onDeleteFile,
+  onSetPrimary,
+  onStart,
+  onCopy,
+  onRunBpmnTests,
+  onFetchScriptUnitTests,
+  onCreateScriptUnitTest,
+  onRunScriptUnitTest,
+}: ProcessModelOverviewProps) {
+  const navigate = useNavigate();
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState(detail.display_name);
+  const [editDescription, setEditDescription] = useState(detail.description);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [copyOpen, setCopyOpen] = useState(false);
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
   const viewAllLabel = `View all ${detail.runs_30d}`;
   // "View all" pre-filters the shared Process Instances list to this
@@ -168,11 +260,47 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
+          {canManage && onUpdateIdentity ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditName(detail.display_name);
+                setEditDescription(detail.description);
+                setEditError(null);
+                setEditOpen(true);
+              }}
+              className="mt-2 text-[13px] font-semibold text-info"
+            >
+              Edit identity
+            </button>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
-            Start process
-          </Button>
+          {onStart ? (
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              disabled={starting}
+              onClick={async () => {
+                setStarting(true);
+                setStartError(null);
+                try {
+                  await onStart();
+                } catch (err: unknown) {
+                  setStartError(startErrorMessage(err, detail.display_name));
+                } finally {
+                  setStarting(false);
+                }
+              }}
+            >
+              {starting ? 'Starting…' : 'Start process'}
+            </Button>
+          ) : (
+            <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
+              Start process
+            </Button>
+          )}
           {modelerHref ? (
             <Button asChild variant="pill-dark" size="pill">
               <Link to={modelerHref} className="no-underline">
@@ -184,6 +312,20 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
             <Button type="button" disabled variant="pill-dark" size="pill" className={inertBtn}>
               <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
               Open in modeler
+            </Button>
+          )}
+          {onCopy ? (
+            <Button
+              type="button"
+              variant="pill-outline"
+              size="pill"
+              onClick={() => setCopyOpen(true)}
+            >
+              Copy
+            </Button>
+          ) : (
+            <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
+              Copy
             </Button>
           )}
           <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
@@ -206,6 +348,12 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
           </button>
         </div>
       </div>
+
+      {startError ? (
+        <p className="mb-3 text-sm text-destructive" role="alert">
+          {startError}
+        </p>
+      ) : null}
 
       <div className="mb-3 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
         <Link
@@ -257,6 +405,12 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
           className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
         >
           Files ({detail.files.length})
+        </a>
+        <a
+          href="#tests"
+          className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
+        >
+          Tests
         </a>
       </div>
 
@@ -324,28 +478,196 @@ export function ProcessModelOverview({ detail, tenantId }: ProcessModelOverviewP
               <h2 className="text-[15px] font-semibold text-foreground">Files</h2>
               <p className="mt-0.5 text-[12.5px] text-muted-foreground">BPMN, form schema and UI schema</p>
             </div>
-            <Button
-              type="button"
-              disabled
-              variant="pill-outline"
-              size="pill"
-              className={cn(inertBtn, 'gap-1.5 px-3.5 py-1.5 text-xs')}
-            >
-              <Plus className="size-3.5" strokeWidth={2.2} aria-hidden />
-              Add file
-            </Button>
+            {canManage && onAddFile ? (
+              <Button
+                type="button"
+                variant="pill-outline"
+                size="pill"
+                className="gap-1.5 px-3.5 py-1.5 text-xs"
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus className="size-3.5" strokeWidth={2.2} aria-hidden />
+                Add file
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled
+                variant="pill-outline"
+                size="pill"
+                className={cn(inertBtn, 'gap-1.5 px-3.5 py-1.5 text-xs')}
+              >
+                <Plus className="size-3.5" strokeWidth={2.2} aria-hidden />
+                Add file
+              </Button>
+            )}
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             {detail.files.length === 0 ? (
               <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">No files yet.</p>
             ) : (
               detail.files.map((file) => (
-                <FileRow key={file.name} file={file} modelId={detail.id} tenantId={tenantId} />
+                <FileRow
+                  key={file.name}
+                  file={file}
+                  modelId={detail.id}
+                  tenantId={tenantId}
+                  canManage={canManage}
+                  onSetPrimary={onSetPrimary}
+                  onDelete={onDeleteFile ? (name) => { setDeleteError(null); setPendingDelete(name); } : undefined}
+                />
               ))
             )}
           </div>
         </div>
       </Card>
+      <ProcessModelTestsCard
+        canManage={canManage}
+        hasBpmnTests={detail.files.some((file) => /^test_.*\.json$/i.test(file.name))}
+        onRunBpmnTests={onRunBpmnTests}
+        onFetchScriptUnitTests={onFetchScriptUnitTests}
+        onCreateScriptUnitTest={onCreateScriptUnitTest}
+        onRunScriptUnitTest={onRunScriptUnitTest}
+      />
+      <Dialog open={editOpen} onOpenChange={(next) => { if (!next) setEditOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={async (event: FormEvent) => {
+              event.preventDefault();
+              if (!onUpdateIdentity) return;
+              setSaving(true);
+              setEditError(null);
+              try {
+                await onUpdateIdentity({
+                  display_name: editName.trim(),
+                  description: editDescription.trim(),
+                });
+                setEditOpen(false);
+              } catch (err: unknown) {
+                setEditError(err instanceof Error ? err.message : 'Failed to update process model');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Edit process model</DialogTitle>
+              <DialogDescription>Display name and description only. The identifier does not change.</DialogDescription>
+            </DialogHeader>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+              Display name
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                aria-label="Process model display name"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+              Description
+              <Input
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                aria-label="Process model description"
+              />
+            </label>
+            {editError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {editError}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {onCopy ? (
+        <CopyProcessModelDialog
+          open={copyOpen}
+          onClose={() => setCopyOpen(false)}
+          defaultLeaf={`${detail.id.split('/').pop() || 'model'}-copy`}
+          defaultDisplayName={`${detail.display_name} (copy)`}
+          onCopy={onCopy}
+          onCopied={() => setCopyOpen(false)}
+        />
+      ) : null}
+      {canManage && onAddFile ? (
+        <AddProcessModelFileDialog
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          existingNames={detail.files.map((f) => f.name)}
+          onCreate={onAddFile}
+          onCreated={(fileName) => {
+            setAddOpen(false);
+            if (fileOpensInModeler(fileName)) {
+              navigate(
+                `/processes/${encodeProcessModelId(detail.id)}/modeler/${encodeURIComponent(fileName)}`,
+              );
+            }
+          }}
+        />
+      ) : null}
+      <Dialog
+        open={pendingDelete != null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPendingDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete file</DialogTitle>
+            <DialogDescription>
+              {pendingDelete
+                ? `Delete ${pendingDelete}? This cannot be undone.`
+                : 'Delete this file?'}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleting || !pendingDelete || !onDeleteFile}
+              onClick={async () => {
+                if (!pendingDelete || !onDeleteFile) return;
+                setDeleting(true);
+                setDeleteError(null);
+                try {
+                  await onDeleteFile(pendingDelete);
+                  setPendingDelete(null);
+                } catch (err: unknown) {
+                  setDeleteError(err instanceof Error ? err.message : 'Failed to delete file');
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -51,6 +51,7 @@ def register_process_model_file_fallback_routes(app) -> None:
     through here to the same controller.
     """
     from m8flow_backend.routes.processes_controller import (
+        delete_process_model_file,
         get_process_model_file,
         put_process_model_file,
     )
@@ -64,9 +65,15 @@ def register_process_model_file_fallback_routes(app) -> None:
     def put_view(modified_process_model_identifier: str, file_name: str):
         return put_process_model_file(modified_process_model_identifier, file_name)
 
+    def delete_view(modified_process_model_identifier: str, file_name: str):
+        return delete_process_model_file(modified_process_model_identifier, file_name)
+
     try:
         app.add_url_rule(rule, "m8flow_process_model_get_file_fallback", get_view, methods=["GET"])
         app.add_url_rule(rule, "m8flow_process_model_put_file_fallback", put_view, methods=["PUT"])
+        app.add_url_rule(
+            rule, "m8flow_process_model_delete_file_fallback", delete_view, methods=["DELETE"]
+        )
     except Exception:
         logger.warning("Failed to register process-model file fallback routes – may already exist", exc_info=True)
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProcessGroupsPicker } from './ProcessGroupsPicker';
@@ -124,5 +124,104 @@ describe('ProcessGroupsPicker', () => {
     );
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it('hides New group unless canManage', () => {
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /New group/i })).not.toBeInTheDocument();
+  });
+
+  it('creates a group and returns to the list', async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+        onCreateGroup={onCreate}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /New group/i }));
+    expect(screen.getByRole('heading', { name: 'New process group' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Process group id'), { target: { value: 'legal' } });
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Legal' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith({
+        id: 'legal',
+        display_name: 'Legal',
+        description: '',
+      });
+    });
+    expect(screen.getByRole('heading', { name: 'Process groups' })).toBeInTheDocument();
+  });
+
+  it('prefixes a nested id from the selected group', () => {
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        selectedGroupId="finance"
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+        onCreateGroup={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /New group/i }));
+    expect(screen.getByLabelText('Process group id')).toHaveValue('finance/');
+  });
+
+  it('edits and deletes a group without selecting it', async () => {
+    const onSelect = vi.fn();
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={onSelect}
+        onUpdateGroup={onUpdate}
+        onDeleteGroup={onDelete}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Finance' }));
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Finance Ops' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save group' }));
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith('finance', {
+        display_name: 'Finance Ops',
+        description: 'Invoice approvals',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Onboarding' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete group' }));
+    await waitFor(() => {
+      expect(onDelete).toHaveBeenCalledWith('onboarding');
+    });
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

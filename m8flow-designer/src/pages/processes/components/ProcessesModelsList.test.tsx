@@ -69,11 +69,16 @@ describe('ProcessesModelsList', () => {
     expect(screen.queryByRole('button', { name: 'Browse groups' })).not.toBeInTheDocument();
   });
 
-  it('starts a model from the Start button', () => {
-    const onStart = vi.fn();
-    render(<ProcessesModelsList models={MODELS} onStartModel={onStart} />);
-    fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]);
-    expect(onStart).toHaveBeenCalledWith(MODELS[0]);
+  it('opens create when New process model is enabled', () => {
+    const onCreate = vi.fn();
+    render(<ProcessesModelsList models={MODELS} onCreateModel={onCreate} />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'New process model' })[0]);
+    expect(onCreate).toHaveBeenCalled();
+  });
+
+  it('hides New process model when create is not offered', () => {
+    render(<ProcessesModelsList models={MODELS} />);
+    expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
   });
 
   it('opens the overflow menu and confirms delete', async () => {
