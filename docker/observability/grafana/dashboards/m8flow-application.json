@@ -4,7 +4,7 @@
   "tags": ["m8flow", "application", "health"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "30s",
   "time": { "from": "now-6h", "to": "now" },
   "templating": {
@@ -671,6 +671,11 @@
     {
       "title": "M8Flow Backend Overview",
       "url": "/d/m8flow-backend/m8flow-backend-overview",
+      "type": "link"
+    },
+    {
+      "title": "M8Flow SQL / Postgres",
+      "url": "/d/m8flow-postgres/m8flow-sql-postgres",
       "type": "link"
     }
   ]

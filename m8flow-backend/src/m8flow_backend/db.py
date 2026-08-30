@@ -37,6 +37,9 @@ def get_engine() -> Engine:
         _engine = create_engine(
             url, echo=_sqlalchemy_echo_enabled(), future=True, connect_args=connect_args
         )
+        from m8flow_backend.observability.sql_timing import attach_sql_timing_listeners
+
+        attach_sql_timing_listeners(_engine)
         assert_disjoint_table_names()
     return _engine
 

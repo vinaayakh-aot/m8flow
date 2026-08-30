@@ -78,6 +78,8 @@ def install_request_id_middleware(app: Flask) -> None:
         g.m8flow_request_id = request_id
         g._m8flow_request_id_token = set_context_request_id(request_id)
         g._m8flow_request_started = time.perf_counter()
+        g._m8flow_sql_query_count = 0
+        g._m8flow_sql_duration_ms = 0.0
 
     @app.after_request
     def _echo_request_id(response: Response) -> Response:
@@ -88,15 +90,25 @@ def install_request_id_middleware(app: Flask) -> None:
         path = request.path or ""
         if started is not None and path not in _SKIP_DURATION_LOG_PATHS:
             duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
-            LOGGER.info(
-                "request completed",
-                extra={
-                    "http_status": response.status_code,
-                    "http_method": request.method,
-                    "http_path": path,
-                    "duration_ms": duration_ms,
-                },
-            )
+            sql_query_count = int(getattr(g, "_m8flow_sql_query_count", 0) or 0)
+            sql_duration_ms = round(float(getattr(g, "_m8flow_sql_duration_ms", 0.0) or 0.0), 3)
+            extra: dict[str, object] = {
+                "http_status": response.status_code,
+                "http_method": request.method,
+                "http_path": path,
+                "duration_ms": duration_ms,
+                "sql_query_count": sql_query_count,
+                "sql_duration_ms": sql_duration_ms,
+            }
+            try:
+                from m8flow_backend.db import get_engine
+
+                pool = get_engine().pool
+                extra["sql_pool_checkedout"] = int(pool.checkedout())
+                extra["sql_pool_size"] = int(pool.size())
+            except Exception:
+                pass
+            LOGGER.info("request completed", extra=extra)
         return response
 
     @app.teardown_request

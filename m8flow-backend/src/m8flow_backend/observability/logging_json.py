@@ -60,6 +60,12 @@ _PROMOTED_ATTRS = {
     "process_instance_id",
     "process_instance_status",
     "process_model_identifier",
+    "sql_query_count",
+    "sql_duration_ms",
+    "sql_pool_checkedout",
+    "sql_pool_size",
+    "sql_operation",
+    "sql_statement",
 }
 
 
@@ -142,6 +148,37 @@ class JsonLogFormatter(logging.Formatter):
         process_model_identifier = getattr(record, "process_model_identifier", None)
         if process_model_identifier:
             payload["process_model_identifier"] = str(process_model_identifier)
+
+        sql_query_count = getattr(record, "sql_query_count", None)
+        if sql_query_count is not None:
+            try:
+                payload["sql_query_count"] = int(sql_query_count)
+            except (TypeError, ValueError):
+                pass
+        sql_duration_ms = getattr(record, "sql_duration_ms", None)
+        if sql_duration_ms is not None:
+            try:
+                payload["sql_duration_ms"] = float(sql_duration_ms)
+            except (TypeError, ValueError):
+                pass
+        sql_pool_checkedout = getattr(record, "sql_pool_checkedout", None)
+        if sql_pool_checkedout is not None:
+            try:
+                payload["sql_pool_checkedout"] = int(sql_pool_checkedout)
+            except (TypeError, ValueError):
+                pass
+        sql_pool_size = getattr(record, "sql_pool_size", None)
+        if sql_pool_size is not None:
+            try:
+                payload["sql_pool_size"] = int(sql_pool_size)
+            except (TypeError, ValueError):
+                pass
+        sql_operation = getattr(record, "sql_operation", None)
+        if sql_operation:
+            payload["sql_operation"] = str(sql_operation)
+        sql_statement = getattr(record, "sql_statement", None)
+        if sql_statement:
+            payload["sql_statement"] = str(sql_statement)
 
         if record.exc_info:
             exc_type, exc_value, exc_tb = record.exc_info

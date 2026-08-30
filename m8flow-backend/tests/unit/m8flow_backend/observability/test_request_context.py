@@ -36,6 +36,8 @@ def test_request_completed_log_includes_duration_ms(client, caplog):
     assert records[-1].duration_ms >= 0
     assert records[-1].http_method == "GET"
     assert records[-1].http_path == "/v1.0/onboarding"
+    assert records[-1].sql_query_count >= 0
+    assert records[-1].sql_duration_ms >= 0
 
 
 def test_status_probe_does_not_emit_request_completed_log(client, caplog):

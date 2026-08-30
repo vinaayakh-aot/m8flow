@@ -97,6 +97,27 @@ def test_json_formatter_promotes_duration_ms():
     assert "duration_ms" not in payload.get("extra", {})
 
 
+def test_json_formatter_promotes_sql_timing_fields():
+    record = _make_record(msg="sql query slow")
+    record.duration_ms = 180.25
+    record.sql_query_count = 7
+    record.sql_duration_ms = 42.5
+    record.sql_pool_checkedout = 2
+    record.sql_pool_size = 5
+    record.sql_operation = "SELECT"
+    record.sql_statement = "SELECT id FROM process_instance"
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["sql_query_count"] == 7
+    assert payload["sql_duration_ms"] == 42.5
+    assert payload["sql_pool_checkedout"] == 2
+    assert payload["sql_pool_size"] == 5
+    assert payload["sql_operation"] == "SELECT"
+    assert payload["sql_statement"] == "SELECT id FROM process_instance"
+    extra = payload.get("extra", {})
+    assert "sql_query_count" not in extra
+    assert "sql_statement" not in extra
+
+
 def test_json_formatter_promotes_process_instance_duration():
     record = _make_record(msg="process instance completed")
     record.duration_seconds = 42.0
