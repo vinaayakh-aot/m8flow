@@ -49,6 +49,10 @@ vi.mock('@/pages/tenant-management/TenantManagementPage', () => ({
   default: () => <div>tenant-management-page</div>,
 }));
 
+vi.mock('@/pages/configuration/SecretListPage', () => ({
+  default: () => <div>secrets-list-page</div>,
+}));
+
 vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
@@ -121,5 +125,14 @@ describe('AppRoutes tenant gate', () => {
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(await screen.findByText('tenant-management-page')).toBeInTheDocument();
+  });
+
+  it('redirects /configuration to the secrets list', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/configuration');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('secrets-list-page')).toBeInTheDocument();
   });
 });

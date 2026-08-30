@@ -37,6 +37,9 @@ const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDe
 const AuthenticationsPage = lazy(() => import('@/pages/authentications/AuthenticationsPage'));
 const TenantsPage = lazy(() => import('@/pages/tenants/TenantsPage'));
 const TenantManagementPage = lazy(() => import('@/pages/tenant-management/TenantManagementPage'));
+const SecretListPage = lazy(() => import('@/pages/configuration/SecretListPage'));
+const SecretNewPage = lazy(() => import('@/pages/configuration/SecretNewPage'));
+const SecretShowPage = lazy(() => import('@/pages/configuration/SecretShowPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -142,6 +145,31 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading tenant management…" />}>
               <TenantManagementPage />
+            </Suspense>
+          }
+        />
+        <Route path="configuration" element={<Navigate to="/configuration/secrets" replace />} />
+        <Route
+          path="configuration/secrets"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading secrets…" />}>
+              <SecretListPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/secrets/new"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading secrets…" />}>
+              <SecretNewPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/secrets/:key"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading secret…" />}>
+              <SecretShowPage />
             </Suspense>
           }
         />

@@ -220,6 +220,8 @@ export type Capabilities = {
   can_manage_processes: boolean;
   can_read_authentications?: boolean;
   can_manage_authentications?: boolean;
+  can_read_secrets?: boolean;
+  can_manage_secrets?: boolean;
   /** Advisory Tenant Management hint. Not the members/groups API gate. */
   can_manage_tenant?: boolean;
 };

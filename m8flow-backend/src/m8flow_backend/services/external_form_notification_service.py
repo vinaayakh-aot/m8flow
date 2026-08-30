@@ -187,7 +187,7 @@ class ExternalFormNotificationService:
 
             from m8flow_backend.db import current_session
 
-            secret = SecretService.get_secret(
+            secret = SecretService.get_secret_value(
                 current_session(),
                 tenant_id=getattr(g, "m8flow_tenant_id", "") or "",
                 key=key,
@@ -196,7 +196,7 @@ class ExternalFormNotificationService:
             return None
         if secret is None:
             return None
-        value = (secret.value or "").strip()
+        value = secret.strip()
         return value or None
 
     @classmethod

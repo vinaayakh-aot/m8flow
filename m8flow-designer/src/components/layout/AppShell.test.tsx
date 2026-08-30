@@ -60,6 +60,8 @@ describe('AppShell', () => {
       can_manage_processes: false,
       can_read_authentications: false,
       can_manage_authentications: false,
+      can_read_secrets: false,
+      can_manage_secrets: false,
       can_manage_tenant: false,
     });
     try {
@@ -137,6 +139,24 @@ describe('AppShell', () => {
     expect(await screen.findByRole('link', { name: 'Authentications' })).toHaveAttribute(
       'href',
       '/authentications',
+    );
+  });
+
+  it('shows Setup → Configuration when capabilities allow secrets read', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: false,
+      can_read_authentications: true,
+      can_manage_authentications: true,
+      can_read_secrets: true,
+      can_manage_secrets: true,
+    });
+
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'Configuration' })).toHaveAttribute(
+      'href',
+      '/configuration/secrets',
     );
   });
 

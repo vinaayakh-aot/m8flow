@@ -8,6 +8,8 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 
 _AUTH_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
 _AUTH_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
+_SECRET_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
+_SECRET_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
 _TENANT_MANAGE_ROLES = frozenset({"tenant-admin"})
 
 
@@ -37,9 +39,11 @@ def get_capabilities():
     allow_uri resolves from the user's groups, so this also answers correctly
     for a super-admin in All-Tenants mode.
 
-    Authentications flags follow `m8flow.yml` role grants (integrator /
-    tenant-admin manage; viewer + those roles read), not the editor/tenant-admin
-    allow_uri fallback that would otherwise light up every URI.
+    Authentications and secrets flags follow `m8flow.yml` role grants
+    (integrator / tenant-admin manage; viewer + those roles read), not the
+    editor/tenant-admin allow_uri fallback that would otherwise light up every
+    URI. Tenant-admin is on the read hint because manage `actions: [all]`
+    already includes list/show.
 
     `can_manage_tenant` is the same kind of advisory hint for Tenant Management
     (tenant-admin of the active tenant, or super-admin). It is not the
@@ -54,12 +58,16 @@ def get_capabilities():
     super_admin = actor_is_super_admin(user)
     can_read_authentications = super_admin or bool(roles & _AUTH_READ_ROLES)
     can_manage_authentications = super_admin or bool(roles & _AUTH_MANAGE_ROLES)
+    can_read_secrets = super_admin or bool(roles & _SECRET_READ_ROLES)
+    can_manage_secrets = super_admin or bool(roles & _SECRET_MANAGE_ROLES)
     can_manage_tenant = super_admin or bool(roles & _TENANT_MANAGE_ROLES)
     return success_response(
         {
             "can_manage_processes": bool(can_manage),
             "can_read_authentications": can_read_authentications,
             "can_manage_authentications": can_manage_authentications,
+            "can_read_secrets": can_read_secrets,
+            "can_manage_secrets": can_manage_secrets,
             "can_manage_tenant": can_manage_tenant,
         },
         200,

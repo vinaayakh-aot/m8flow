@@ -7,6 +7,8 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
+from pathlib import Path
+
 __all__ = [
     "app_frontend_base_url",
     "app_public_base_url",
@@ -23,6 +25,23 @@ __all__ = [
     "redirect_uri_backend_host_and_path",
     "redirect_uri_frontend_host",
     "smtp_settings",
+    "vault_addr",
+    "vault_approle_mount_point",
+    "vault_enabled",
+    "vault_mount_point",
+    "vault_namespace",
+    "vault_role_id",
+    "vault_secret_id",
+    "vault_secret_path_prefix",
+    "vault_tenant_policy_prefix",
+    "vault_tenant_role_prefix",
+    "vault_tenant_secret_id_num_uses",
+    "vault_tenant_secret_id_ttl",
+    "vault_tenant_token_max_ttl",
+    "vault_tenant_token_ttl",
+    "vault_timeout_seconds",
+    "vault_token",
+    "vault_verify",
 ]
 
 
@@ -158,3 +177,111 @@ def smtp_settings() -> dict:
         "from_address": _get("M8FLOW_SMTP_FROM") or "no-reply@m8flow.local",
         "use_tls": use_tls_raw in ("1", "true", "yes", "on"),
     }
+
+
+def _env_truthy(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_secret_file(path: str | None) -> str | None:
+    if not path:
+        return None
+    try:
+        text = Path(path).expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def vault_enabled() -> bool:
+    return _env_truthy(_get("M8FLOW_VAULT_ENABLED"))
+
+
+def vault_addr() -> str | None:
+    return _get("M8FLOW_VAULT_ADDR") or _get("VAULT_ADDR")
+
+
+def vault_token() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_TOKEN")
+        or _get("VAULT_TOKEN")
+        or _read_secret_file(_get("M8FLOW_VAULT_TOKEN_FILE") or _get("VAULT_TOKEN_FILE"))
+    )
+
+
+def vault_role_id() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_ROLE_ID")
+        or _get("VAULT_ROLE_ID")
+        or _read_secret_file(_get("M8FLOW_VAULT_ROLE_ID_FILE") or _get("VAULT_ROLE_ID_FILE"))
+    )
+
+
+def vault_secret_id() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_SECRET_ID")
+        or _get("VAULT_SECRET_ID")
+        or _read_secret_file(_get("M8FLOW_VAULT_SECRET_ID_FILE") or _get("VAULT_SECRET_ID_FILE"))
+    )
+
+
+def vault_namespace() -> str | None:
+    return _get("M8FLOW_VAULT_NAMESPACE") or _get("VAULT_NAMESPACE")
+
+
+def vault_mount_point() -> str:
+    return _get("M8FLOW_VAULT_MOUNT_POINT") or "kv"
+
+
+def vault_secret_path_prefix() -> str:
+    return _get("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow"
+
+
+def vault_approle_mount_point() -> str:
+    return _get("M8FLOW_VAULT_APPROLE_MOUNT_POINT") or "approle"
+
+
+def vault_tenant_policy_prefix() -> str:
+    return _get("M8FLOW_VAULT_TENANT_POLICY_PREFIX") or "m8flow-tenant-policy"
+
+
+def vault_tenant_role_prefix() -> str:
+    return _get("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role"
+
+
+def vault_tenant_secret_id_num_uses() -> int:
+    raw = _get("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES") or "1"
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 1
+
+
+def vault_tenant_secret_id_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_SECRET_ID_TTL") or "10m"
+
+
+def vault_tenant_token_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_TTL") or "10m"
+
+
+def vault_tenant_token_max_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL") or "30m"
+
+
+def vault_timeout_seconds() -> float:
+    raw = _get("M8FLOW_VAULT_TIMEOUT_SECONDS") or "5"
+    try:
+        return float(raw)
+    except ValueError:
+        return 5.0
+
+
+def vault_verify() -> bool | str:
+    ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
+    if ca_cert:
+        path = Path(ca_cert)
+        return str(path if path.is_absolute() else Path.cwd() / path)
+    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
+        return False
+    return True

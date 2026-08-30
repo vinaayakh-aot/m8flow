@@ -24,6 +24,9 @@ export type AppShellOutletContext = {
   /** YAML authentications grants (integrator / tenant-admin / viewer read). */
   canReadAuthentications?: boolean;
   canManageAuthentications?: boolean;
+  /** YAML secrets grants (integrator / viewer / tenant-admin read). */
+  canReadSecrets?: boolean;
+  canManageSecrets?: boolean;
   /** Advisory Tenant Management hint. Members/groups APIs still enforce allow_uri. */
   canManageTenant?: boolean;
   /** Super-admin switcher should reload after registry create/rename. */
@@ -44,6 +47,8 @@ export function AppShell() {
   const [canManage, setCanManage] = useState(false);
   const [canReadAuthentications, setCanReadAuthentications] = useState(false);
   const [canManageAuthentications, setCanManageAuthentications] = useState(false);
+  const [canReadSecrets, setCanReadSecrets] = useState(false);
+  const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
 
   useEffect(() => {
@@ -54,6 +59,8 @@ export function AppShell() {
           setCanManage(Boolean(caps.can_manage_processes));
           setCanReadAuthentications(Boolean(caps.can_read_authentications));
           setCanManageAuthentications(Boolean(caps.can_manage_authentications));
+          setCanReadSecrets(Boolean(caps.can_read_secrets));
+          setCanManageSecrets(Boolean(caps.can_manage_secrets));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
         }
       })
@@ -62,6 +69,8 @@ export function AppShell() {
           setCanManage(false);
           setCanReadAuthentications(false);
           setCanManageAuthentications(false);
+          setCanReadSecrets(false);
+          setCanManageSecrets(false);
           setCanManageTenant(false);
         }
       });
@@ -106,6 +115,8 @@ export function AppShell() {
     canManageProcesses: canManage,
     canReadAuthentications,
     canManageAuthentications,
+    canReadSecrets,
+    canManageSecrets,
     canManageTenant,
     refreshTenants: () => setTenantsReloadKey((key) => key + 1),
   };
@@ -125,6 +136,7 @@ export function AppShell() {
         onLogout={logout}
         userLabel={userLabel}
         showAuthentications={canReadAuthentications}
+        showConfiguration={canReadSecrets}
         showTenantsNav={superAdmin}
         showTenantManagement={canManageTenant}
       />

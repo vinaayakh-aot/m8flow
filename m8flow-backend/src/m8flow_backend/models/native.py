@@ -13,6 +13,7 @@ class SecretModel(HostBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

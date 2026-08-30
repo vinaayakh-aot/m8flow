@@ -29,6 +29,8 @@ def test_editor_can_manage_processes(client, db_session):
     assert body["can_manage_processes"] is True
     assert body["can_read_authentications"] is False
     assert body["can_manage_authentications"] is False
+    assert body["can_read_secrets"] is False
+    assert body["can_manage_secrets"] is False
     assert body["can_manage_tenant"] is False
 
 
@@ -40,6 +42,8 @@ def test_viewer_cannot_manage_processes(client, db_session):
     assert body["can_manage_processes"] is False
     assert body["can_read_authentications"] is True
     assert body["can_manage_authentications"] is False
+    assert body["can_read_secrets"] is True
+    assert body["can_manage_secrets"] is False
     assert body["can_manage_tenant"] is False
 
 
@@ -50,6 +54,8 @@ def test_integrator_can_manage_authentications(client, db_session):
     body = resp.get_json()
     assert body["can_read_authentications"] is True
     assert body["can_manage_authentications"] is True
+    assert body["can_read_secrets"] is True
+    assert body["can_manage_secrets"] is True
     assert body["can_manage_tenant"] is False
 
 
@@ -60,27 +66,38 @@ def test_tenant_admin_can_manage_tenant(client, db_session):
     body = resp.get_json()
     assert body["can_manage_tenant"] is True
     assert body["can_manage_authentications"] is True
+    assert body["can_read_secrets"] is True
+    assert body["can_manage_secrets"] is True
 
 
 def test_super_admin_can_manage_tenant(client, db_session):
     _user, token = _login_user(client, db_session, username="cap-root", groups=["super-admin"])
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
-    assert resp.get_json()["can_manage_tenant"] is True
+    body = resp.get_json()
+    assert body["can_manage_tenant"] is True
+    assert body["can_read_secrets"] is True
+    assert body["can_manage_secrets"] is True
 
 
 def test_reviewer_cannot_manage_tenant(client, db_session):
     _user, token = _login_user(client, db_session, username="cap-reviewer", groups=["t1:reviewer"])
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
-    assert resp.get_json()["can_manage_tenant"] is False
+    body = resp.get_json()
+    assert body["can_manage_tenant"] is False
+    assert body["can_read_secrets"] is False
+    assert body["can_manage_secrets"] is False
 
 
 def test_submitter_cannot_manage_tenant(client, db_session):
     _user, token = _login_user(client, db_session, username="cap-submitter", groups=["t1:submitter"])
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
-    assert resp.get_json()["can_manage_tenant"] is False
+    body = resp.get_json()
+    assert body["can_manage_tenant"] is False
+    assert body["can_read_secrets"] is False
+    assert body["can_manage_secrets"] is False
 
 
 def test_capabilities_requires_auth(client, db_session):

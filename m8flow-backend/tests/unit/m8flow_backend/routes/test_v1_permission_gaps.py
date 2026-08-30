@@ -151,7 +151,10 @@ def test_list_secrets_route_hides_denial_as_empty_list(client, db_session):
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)
     response = client.get("/v1.0/secrets", headers=_headers(user))
     assert response.status_code == 200
-    assert response.get_json() == []
+    assert response.get_json() == {
+        "results": [],
+        "pagination": {"count": 0, "total": 0, "pages": 0},
+    }
 
 
 def test_put_secret_route_denies_viewer_with_403(client, db_session):
@@ -167,7 +170,9 @@ def test_put_secret_route_denies_viewer_with_403(client, db_session):
 def test_editor_still_reaches_all_eight_routes(client, db_session):
     """editor is covered unconditionally by _group_identifier_fallback, so
     this is a smoke test that the new gates didn't regress the one role
-    every route already worked for -- not proof of a real per-route grant."""
+    every route already worked for -- not proof of a real per-route grant.
+    Secrets writes are YAML-only (group_fallback=False), so editor PUT is 403.
+    """
     user = _provision_tenant_role(db_session, username="editor-smoke", group_name="editor")
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)
     headers = _headers(user)
@@ -181,4 +186,4 @@ def test_editor_still_reaches_all_eight_routes(client, db_session):
     assert client.post(
         "/v1.0/process-models", headers=headers, json={"path": "g:m", "xml": "<bpmn/>"}
     ).status_code != 403
-    assert client.put("/v1.0/secrets/api-key", headers=headers, json={"value": "shh"}).status_code != 403
+    assert client.put("/v1.0/secrets/api-key", headers=headers, json={"value": "shh"}).status_code == 403

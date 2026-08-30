@@ -27,8 +27,8 @@ describe('Sidebar live nav', () => {
       'href',
       '/process-instances',
     );
-    // Templates modeler map, ticket 02: Setup's "Templates" child is a real
-    // link now, unlike its still-inert siblings (Configuration/Connectors).
+    // Templates is a live Setup child; Configuration is inert until secrets
+    // read is granted (showConfiguration).
     expect(screen.getByRole('link', { name: 'Templates' })).toHaveAttribute(
       'href',
       '/templates',
@@ -98,6 +98,28 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Authentications' })).toHaveAttribute(
       'href',
       '/authentications',
+    );
+  });
+
+  it('makes Configuration a live /configuration/secrets link when secrets can be read', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showConfiguration />,
+        },
+        {
+          path: '/configuration/secrets',
+          element: <Sidebar showConfiguration />,
+        },
+      ],
+      { initialEntries: ['/configuration/secrets'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Configuration' })).toHaveAttribute(
+      'href',
+      '/configuration/secrets',
     );
   });
 

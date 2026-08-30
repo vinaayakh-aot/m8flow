@@ -217,6 +217,17 @@ def _exec_local(connection, sql: str, params: tuple | None = None) -> None:
         cursor.close()
 
 
+def _set_local_guc(connection, name: str, value: str) -> None:
+    """Apply a transaction-local GUC the way SET LOCAL would.
+
+    PostgreSQL ``SET`` / ``SET LOCAL`` cannot take bind parameters. psycopg3
+    still emits ``$1``, the server raises SyntaxError, and the request
+    transaction is aborted so every later query 500s. ``set_config(...,
+    is_local=true)`` is the parameterized equivalent.
+    """
+    _exec_local(connection, "SELECT set_config(%s, %s, true)", (name, value))
+
+
 def apply_postgres_rls(connection) -> None:
     """SET LOCAL RLS GUC values for the current PostgreSQL transaction."""
     dialect = getattr(getattr(connection, "dialect", None), "name", "")
@@ -229,16 +240,16 @@ def apply_postgres_rls(connection) -> None:
     super_admin = is_super_admin_request()
 
     if super_admin:
-        _exec_local(connection, "SET LOCAL app.bypass_rls = 'on'")
+        _set_local_guc(connection, "app.bypass_rls", "on")
         if tenant_id:
-            _exec_local(connection, "SET LOCAL app.current_tenant = %s", (tenant_id,))
+            _set_local_guc(connection, "app.current_tenant", tenant_id)
         return
 
     if is_tenant_context_exempt_request():
         return
     if not tenant_id:
         return
-    _exec_local(connection, "SET LOCAL app.current_tenant = %s", (tenant_id,))
+    _set_local_guc(connection, "app.current_tenant", tenant_id)
 
 
 def apply_postgres_rls_to_request_session() -> None:
@@ -251,6 +262,10 @@ def apply_postgres_rls_to_request_session() -> None:
         apply_postgres_rls(session.connection())
     except Exception:
         LOGGER.debug("Could not apply PostgreSQL RLS settings on the request session", exc_info=True)
+        try:
+            session.rollback()
+        except Exception:
+            LOGGER.debug("Could not roll back after RLS GUC failure", exc_info=True)
 
 
 def _on_session_after_begin(session: Session, _transaction, connection) -> None:

@@ -382,6 +382,33 @@ def ensure_tenant_exists(tenant_id: str | None) -> None:
         )
 
 
+def _tenant_row_exists(session, tenant_id: str, slug_value: str) -> bool:
+    from sqlalchemy import select
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+
+    if session.get(M8flowTenantModel, tenant_id) is not None:
+        return True
+    return (
+        session.scalars(select(M8flowTenantModel).where(M8flowTenantModel.slug == slug_value)).first() is not None
+    )
+
+
+def _ensure_tenant_and_vault_identity(session, *, tenant_id: str, display_name: str, slug_value: str) -> None:
+    from m8flow_backend import identity
+    from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError, provision_vault_identity_if_enabled
+
+    existed = _tenant_row_exists(session, tenant_id, slug_value)
+    tenant = identity.ensure_tenant(session, tenant_id=tenant_id, name=display_name, slug=slug_value)
+    if existed:
+        return
+    try:
+        provision_vault_identity_if_enabled(tenant_id)
+    except TenantVaultProvisioningError:
+        session.delete(tenant)
+        session.flush()
+        raise
+
+
 def create_tenant_if_not_exists(
     tenant_id: str,
     name: str | None = None,
@@ -398,17 +425,18 @@ def create_tenant_if_not_exists(
     slug_value = (slug or tenant_id).strip()
 
     from flask import g
-    from m8flow_backend import identity
 
     session = getattr(g, "db_session", None)
     if session is None:
         from m8flow_backend.db import session_scope
 
         with session_scope() as scoped:
-            identity.ensure_tenant(
-                scoped, tenant_id=tenant_id, name=display_name, slug=slug_value
+            _ensure_tenant_and_vault_identity(
+                scoped, tenant_id=tenant_id, display_name=display_name, slug_value=slug_value
             )
         LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)
         return
-    identity.ensure_tenant(session, tenant_id=tenant_id, name=display_name, slug=slug_value)
+    _ensure_tenant_and_vault_identity(
+        session, tenant_id=tenant_id, display_name=display_name, slug_value=slug_value
+    )
     LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)

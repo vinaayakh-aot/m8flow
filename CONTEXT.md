@@ -79,3 +79,23 @@ _Avoid_: Accept invitation, tenant invite UI as the public path
 **Service account**:
 A tenant-scoped machine credential for API access, not a human Keycloak login.
 _Avoid_: NATS API key, manage-token, spoke-realm client
+
+**Secret**:
+A tenant-scoped named credential stored by the host. After create, the value is never shown again on list or show.
+_Avoid_: environment variable, service account, NATS API key, Keycloak client secret
+
+**Secret key**:
+The `\w+` name of a secret (for example `SMTP_PASSWORD`). It is not the value and not the internal numeric id.
+_Avoid_: secret name as a display title, secret id as what the user types
+
+**Secret sentinel**:
+The BPMN and Jinja token `M8FLOW_SECRET:<secret key>` that the host replaces with the stored value at runtime.
+_Avoid_: SPIFF_SECRET, env-var interpolation
+
+**Secret backend**:
+The store that holds secret values for a tenant: the Postgres `secret` table by default, or HashiCorp Vault KV v2 when enabled.
+_Avoid_: connector proxy, Keycloak
+
+**Configuration**:
+The designer Setup surface whose product job is secrets (list, create, show, update, delete). It is not Authentications, Connectors, or tenant admin.
+_Avoid_: settings, preferences, Authentications

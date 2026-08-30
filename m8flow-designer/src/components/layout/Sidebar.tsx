@@ -57,6 +57,8 @@ export type SidebarProps = {
   activeNavId?: LiveNavId | null;
   /** Setup → Authentications live link when the user has YAML authentications grants. */
   showAuthentications?: boolean;
+  /** Setup → Configuration live link when the user has YAML secrets read. */
+  showConfiguration?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Everyone else: inert. */
   showTenantsNav?: boolean;
   /** Tenant-admin / super-admin: Tenant Management is a live `/tenant-management` link. Hidden otherwise. */
@@ -109,6 +111,10 @@ const SETUP_CHILDREN: SidebarChild[] = [
   { label: 'Connectors' },
   { label: 'Templates', to: '/templates' },
 ];
+const CONFIGURATION_CHILD: SidebarChild = {
+  label: 'Configuration',
+  to: '/configuration/secrets',
+};
 const AUTHENTICATIONS_CHILD: SidebarChild = { label: 'Authentications', to: '/authentications' };
 const SYSTEM_CHILDREN: SidebarChild[] = [{ label: 'Celery' }, { label: 'NATS' }];
 
@@ -173,6 +179,7 @@ function SidebarView({
   activeNavId = 'home',
   linkLiveNav = false,
   showAuthentications = false,
+  showConfiguration = false,
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
@@ -180,9 +187,11 @@ function SidebarView({
 }: SidebarProps & { linkLiveNav?: boolean }) {
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
-  const setupChildren = showAuthentications
-    ? [SETUP_CHILDREN[0], AUTHENTICATIONS_CHILD, ...SETUP_CHILDREN.slice(1)]
-    : SETUP_CHILDREN;
+  const setupChildren = [
+    showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
+    ...(showAuthentications ? [AUTHENTICATIONS_CHILD] : []),
+    ...SETUP_CHILDREN.slice(1),
+  ];
 
   const topNav = TOP_NAV.map((item) =>
     item.id === 'tenants' && showTenantsNav

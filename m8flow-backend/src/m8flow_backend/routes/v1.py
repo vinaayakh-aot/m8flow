@@ -165,22 +165,104 @@ def register_v1_routes(app: Flask) -> None:
         return jsonify([{"id": row.id, "status": row.status} for row in rows])
 
     @app.get("/v1.0/secrets")
-    @require_permission(on_deny="empty", empty_response=[])
+    @require_permission(
+        on_deny="empty",
+        empty_response=secrets.EMPTY_SECRET_LIST,
+        group_fallback=False,
+    )
     def list_secrets():
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        return jsonify([{"key": key} for key in secrets.list_secret_keys(session, tenant_id=tenant_id)])
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+            per_page = max(1, min(int(request.args.get("per_page", 100)), 100))
+        except (TypeError, ValueError):
+            page, per_page = 1, 100
+        listed = secrets.list_secrets(session, tenant_id=tenant_id, page=page, per_page=per_page)
+        return jsonify(secrets.serialize_secret_list(session, listed))
+
+    @app.post("/v1.0/secrets")
+    @require_permission(forbidden_message="Not allowed to manage secrets", group_fallback=False)
+    def create_secret():
+        user = require_current_user()
+        session = g.db_session
+        tenant_id = require_tenant_id(user)
+        body = request.get_json(force=True) or {}
+        if "key" not in body or "value" not in body:
+            raise ApiError("validation_error", "key and value are required", 400)
+        record = secrets.add_secret(
+            session,
+            tenant_id=tenant_id,
+            key=str(body.get("key") or ""),
+            value="" if body.get("value") is None else str(body["value"]),
+            user_id=user.id,
+        )
+        return jsonify(record.to_dict()), 201
+
+    @app.get("/v1.0/secrets/<key>/show")
+    @require_permission(
+        uri="/v1.0/secrets/{key}",
+        on_deny="404",
+        forbidden_message="Secret not found",
+        group_fallback=False,
+    )
+    def show_secret_value(key: str):
+        del key
+        raise ApiError(
+            "secret_value_retrieval_disabled",
+            "Retrieving secret values through this endpoint is disabled in M8Flow.",
+            404,
+        )
+
+    @app.get("/v1.0/secrets/<key>")
+    @require_permission(
+        uri="/v1.0/secrets/{key}",
+        on_deny="404",
+        forbidden_message="Secret not found",
+        group_fallback=False,
+    )
+    def show_secret(key: str):
+        if request.args.get("show_secret_value"):
+            raise ApiError(
+                "secret_value_retrieval_disabled",
+                "Retrieving secret values through this endpoint is disabled in M8Flow.",
+                404,
+            )
+        user = require_current_user()
+        session = g.db_session
+        tenant_id = require_tenant_id(user)
+        record = secrets.get_secret(session, tenant_id=tenant_id, key=key)
+        return jsonify(record.to_dict())
 
     @app.put("/v1.0/secrets/<key>")
-    @require_permission(uri="/v1.0/secrets/{key}", forbidden_message="Not allowed to manage secrets")
+    @require_permission(
+        uri="/v1.0/secrets/{key}",
+        forbidden_message="Not allowed to manage secrets",
+        group_fallback=False,
+    )
     def put_secret(key: str):
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        body = request.get_json(force=True)
-        secrets.put_secret(session, tenant_id=tenant_id, key=key, value=body["value"])
-        return jsonify({"key": key})
+        body = request.get_json(force=True) or {}
+        if "value" not in body:
+            raise ApiError("validation_error", "value is required", 400)
+        secrets.update_secret(session, tenant_id=tenant_id, key=key, value=str(body["value"]))
+        return jsonify({"ok": True})
+
+    @app.delete("/v1.0/secrets/<key>")
+    @require_permission(
+        uri="/v1.0/secrets/{key}",
+        forbidden_message="Not allowed to manage secrets",
+        group_fallback=False,
+    )
+    def delete_secret(key: str):
+        user = require_current_user()
+        session = g.db_session
+        tenant_id = require_tenant_id(user)
+        secrets.delete_secret(session, tenant_id=tenant_id, key=key)
+        return jsonify({"ok": True})
 
     @app.get("/v1.0/authentications")
     @require_permission(on_deny="empty", empty_response=[])

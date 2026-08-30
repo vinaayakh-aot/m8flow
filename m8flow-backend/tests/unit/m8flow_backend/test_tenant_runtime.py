@@ -42,6 +42,14 @@ class _FakeConnection:
     def cursor(self) -> _FakeCursor:
         return _FakeCursor(self)
 
+    def exec_driver_sql(self, sql: str, params: tuple | None = None) -> None:
+        # PostgreSQL SET / SET LOCAL cannot take bind parameters. psycopg3
+        # emits $1 and the server raises SyntaxError, aborting the request
+        # transaction so every subsequent query 500s.
+        if sql.strip().upper().startswith("SET ") and params:
+            raise RuntimeError("postgres SET does not accept bind parameters")
+        self.calls.append((sql, params))
+
 
 def _login(client, db_session, *, username: str, groups: list[str], tenant_id: str):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
@@ -192,8 +200,9 @@ def test_postgres_sets_current_tenant_from_request(app):
     with app.test_request_context("/v1.0/tasks"):
         g.m8flow_tenant_id = "tenant-a"
         apply_postgres_rls(connection)
-    assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("tenant-a",))]
-    assert connection.close_calls == 1
+    assert connection.calls == [
+        ("SELECT set_config(%s, %s, true)", ("app.current_tenant", "tenant-a")),
+    ]
 
 
 def test_postgres_sets_current_tenant_from_contextvar():
@@ -203,7 +212,9 @@ def test_postgres_sets_current_tenant_from_contextvar():
         apply_postgres_rls(connection)
     finally:
         reset_context_tenant_id(token)
-    assert connection.calls == [("SET LOCAL app.current_tenant = %s", ("tenant-b",))]
+    assert connection.calls == [
+        ("SELECT set_config(%s, %s, true)", ("app.current_tenant", "tenant-b")),
+    ]
 
 
 def test_postgres_missing_tenant_does_nothing():
@@ -228,7 +239,9 @@ def test_postgres_super_admin_without_tenant_sets_bypass_only(app, monkeypatch):
     with app.test_request_context("/v1.0/onboarding"):
         g._m8flow_tenant_context_exempt_request = True
         apply_postgres_rls(connection)
-    assert connection.calls == [("SET LOCAL app.bypass_rls = 'on'", None)]
+    assert connection.calls == [
+        ("SELECT set_config(%s, %s, true)", ("app.bypass_rls", "on")),
+    ]
 
 
 def test_postgres_super_admin_with_tenant_sets_bypass_and_current(app, monkeypatch):
@@ -241,8 +254,8 @@ def test_postgres_super_admin_with_tenant_sets_bypass_and_current(app, monkeypat
         g.m8flow_tenant_id = "t2"
         apply_postgres_rls(connection)
     assert connection.calls == [
-        ("SET LOCAL app.bypass_rls = 'on'", None),
-        ("SET LOCAL app.current_tenant = %s", ("t2",)),
+        ("SELECT set_config(%s, %s, true)", ("app.bypass_rls", "on")),
+        ("SELECT set_config(%s, %s, true)", ("app.current_tenant", "t2")),
     ]
 
 

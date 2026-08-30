@@ -8,6 +8,7 @@ import logging
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TenantNotFound, TokenInvalid
 from m8flow_backend.integrations.auth.base.models import TenantRef
+from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError
 from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.integrations.auth.keycloak.oidc import authorization_endpoint
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
@@ -54,6 +55,37 @@ def _tenant_provisioning_response(
     }
 
 
+def _abandon_failed_tenant_create(organization_id: str | None, alias: str | None) -> bool:
+    """Remove a half-created tenant so it cannot share another tenant's Vault paths."""
+    cleanup_ok = True
+    if not organization_id:
+        return cleanup_ok
+    try:
+        session = db.session
+        row = session.get(M8flowTenantModel, organization_id)
+        if row is None and alias:
+            row = (
+                session.query(M8flowTenantModel)
+                .filter(M8flowTenantModel.slug == alias)
+                .one_or_none()
+            )
+        if row is not None:
+            session.delete(row)
+            session.flush()
+    except Exception:
+        cleanup_ok = False
+        logger.exception("Failed to remove tenant row during Vault provisioning rollback of %s", organization_id)
+    try:
+        get_auth_provider().directory_admin.delete_tenant(TenantRef(id=organization_id, alias=alias))
+    except Exception:
+        cleanup_ok = False
+        logger.exception(
+            "Failed to remove Keycloak organization during Vault provisioning rollback of %s",
+            organization_id,
+        )
+    return cleanup_ok
+
+
 def create_realm(body: dict) -> tuple[dict, int]:
     """Create a tenant organization in the shared realm. Returns (response_dict, status_code)."""
 
@@ -87,6 +119,8 @@ def create_realm(body: dict) -> tuple[dict, int]:
             return {
                 "detail": "A tenant with this name already exists. Please choose a different name.",
             }, 409
+    organization_id: str | None = None
+    alias: str | None = None
     try:
         tenant = get_auth_provider().directory_admin.create_tenant(
             alias=str(organization_alias).strip(),
@@ -107,6 +141,19 @@ def create_realm(body: dict) -> tuple[dict, int]:
             alias=alias,
             name=name,
         ), 201
+    except TenantVaultProvisioningError:
+        cleanup_ok = _abandon_failed_tenant_create(organization_id, alias)
+        logger.exception(
+            "Tenant creation failed during Vault provisioning for organization_id=%s cleanup_ok=%s",
+            organization_id,
+            cleanup_ok,
+        )
+        detail = (
+            "Tenant creation failed because Vault provisioning could not be completed."
+            if cleanup_ok
+            else "Tenant creation failed because Vault provisioning could not be completed. Manual cleanup may be required."
+        )
+        return {"detail": detail}, 502
     except ProviderUnavailable as e:
         detail = str(e)
         logger.warning("Create tenant failed: %s", detail)

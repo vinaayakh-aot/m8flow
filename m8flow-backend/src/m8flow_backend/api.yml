@@ -1597,6 +1597,18 @@ paths:
                     type: boolean
                   can_manage_authentications:
                     type: boolean
+                  can_read_secrets:
+                    type: boolean
+                    description: >-
+                      Advisory: integrator, viewer, tenant-admin, or super-admin
+                      may open Configuration (secrets list/show). Not the HTTP
+                      authorization gate.
+                  can_manage_secrets:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, integrator, or super-admin may
+                      create/update/delete secrets. Editor must not. Not the
+                      HTTP authorization gate.
                   can_manage_tenant:
                     type: boolean
                     description: >-
