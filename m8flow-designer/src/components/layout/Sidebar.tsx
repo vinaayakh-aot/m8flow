@@ -59,7 +59,7 @@ export type SidebarProps = {
   showAuthentications?: boolean;
   /** Setup → Configuration live link when the user has YAML secrets read. */
   showConfiguration?: boolean;
-  /** Super-admin: Tenants nav is a live `/tenants` link. Everyone else: inert. */
+  /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
   /** Tenant-admin / super-admin: Tenant Management is a live `/tenant-management` link. Hidden otherwise. */
   showTenantManagement?: boolean;
@@ -79,7 +79,7 @@ type NavItem = {
 
 const TOP_NAV: NavItem[] = [
   { id: 'home', label: 'Home', icon: Home, to: '/', live: true },
-  { id: 'tenants', label: 'Tenants', icon: Building2 },
+  { id: 'tenants', label: 'Tenants', icon: Building2, to: '/tenants', live: true },
   {
     id: 'tenant-management',
     label: 'Tenant Management',
@@ -143,10 +143,10 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
 /**
  * App sidebar matching `m8flow Home copy.html`. Home, Processes, and (for
  * super-admin) Tenants are live routes when a React Router context is
- * present; other items stay visually present at full opacity but inert —
- * no route, no click handler — rather than `disabled`/greyed, which would
- * read as a permission denial.
- * Collapsible Setup/System groups still expand/collapse (chrome, not
+ * present. Tenants is omitted unless `showTenantsNav` is set. Other items
+ * stay visually present at full opacity but inert — no route, no click
+ * handler — rather than `disabled`/greyed, which would read as a permission
+ * denial. Collapsible Setup/System groups still expand/collapse (chrome, not
  * navigation). Profile opens a small popout for Log out when `onLogout` is
  * provided.
  */
@@ -193,11 +193,15 @@ function SidebarView({
     ...SETUP_CHILDREN.slice(1),
   ];
 
-  const topNav = TOP_NAV.map((item) =>
-    item.id === 'tenants' && showTenantsNav
-      ? { ...item, to: '/tenants', live: true }
-      : item,
-  ).filter((item) => item.id !== 'tenant-management' || showTenantManagement);
+  const topNav = TOP_NAV.filter((item) => {
+    if (item.id === 'tenants') {
+      return showTenantsNav;
+    }
+    if (item.id === 'tenant-management') {
+      return showTenantManagement;
+    }
+    return true;
+  });
 
   const selectedLabel =
     selectedTenantId == null

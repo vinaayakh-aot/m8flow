@@ -113,6 +113,7 @@ describe('AppShell', () => {
     expect(mockFetchTenants).not.toHaveBeenCalled();
     expect(screen.getByText('home-outlet')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
@@ -212,6 +213,7 @@ describe('AppShell', () => {
       'href',
       '/tenant-management',
     );
+    expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
   });
 
   it('for a super-admin: shows Tenant selector and fetches tenants', () => {

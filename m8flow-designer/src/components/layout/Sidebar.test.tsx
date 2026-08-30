@@ -37,7 +37,7 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Authentications' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
-    expect(screen.getByText('Tenants')).toBeInTheDocument();
+    expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
     expect(screen.queryByText('Tenant Management')).not.toBeInTheDocument();
   });
 
@@ -141,6 +141,22 @@ describe('Sidebar live nav', () => {
 
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('hides Tenants unless showTenantsNav is set', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showTenantManagement />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tenant Management' })).toBeInTheDocument();
   });
 
   it('shows Tenant Management as a live link when the role can manage the tenant', () => {
