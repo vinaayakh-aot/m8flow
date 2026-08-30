@@ -29,7 +29,7 @@
  * different `.djs-palette` that the map's Notes deliberately leave as
  * dmn-js's stock default. Importing that file into DmnCanvas.tsx would
  * leak BPMN-specific palette overrides (fixed width, a 2-column grid sized
- * for BPMN's 8 entries, `[data-action=...]` selectors naming BPMN-only
+ * for the keep-scope BPMN palette, `[data-action=...]` selectors naming BPMN-only
  * actions) onto DMN's unrelated palette. This file only touches
  * `.bio-properties-panel-*` classes, which both editors' panels share
  * identically — safe to import in both without that risk.

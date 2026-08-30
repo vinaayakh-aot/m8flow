@@ -86,10 +86,24 @@ export async function openPropertiesPanelGroup(page: Page, groupId: string): Pro
  * this never attempts to persist the result.
  */
 export async function morphElementType(page: Page, elementId: string, targetTypeLabel: string): Promise<void> {
+  const menu = await openChangeElementMenu(page, elementId);
+  await menu.getByText(targetTypeLabel, { exact: true }).click();
+}
+
+/**
+ * Opens bpmn-js's stock "Change element" popup for a shape. Wait on the
+ * popup itself — not a fixed sleep — so callers can assert which morphs
+ * are present or missing.
+ */
+export async function openChangeElementMenu(page: Page, elementId: string): Promise<Locator> {
   await selectElement(page, elementId);
   await page.locator('.djs-context-pad .entry[data-action="replace"]').click();
-  await page.getByText(targetTypeLabel, { exact: true }).click();
-  // The properties panel's own re-render (new element type -> new provider
-  // groups) lags slightly behind the popup-menu click resolving.
-  await page.waitForTimeout(500);
+  const menu = page.locator('.djs-popup').last();
+  await menu.waitFor({ state: 'visible' });
+  return menu;
+}
+
+/** Palette entry by bpmn-js `data-action` (e.g. `space-tool`, `create.task`). */
+export function paletteEntry(page: Page, action: string): Locator {
+  return page.locator(`.djs-palette .entry[data-action="${action}"]`);
 }

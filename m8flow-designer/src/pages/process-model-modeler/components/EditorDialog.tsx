@@ -34,8 +34,11 @@ import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution';
 import 'monaco-editor/esm/vs/language/json/monaco.contribution';
 
+import type { ScriptUnitTestRunResult } from '@/lib/api';
 import { lintCode, type Diagnostic, type EditorLanguage } from './codeLint';
 import { formatCode } from './codeFormat';
+import { ScriptUnitTestsPanel } from './ScriptUnitTestsPanel';
+import type { ScriptUnitTestCase } from '../scriptUnitTests';
 
 /**
  * Modal "Launch Editor" popup for the properties panel's task editors, built
@@ -64,6 +67,20 @@ export type EditorDialogSession = {
   language: EditorLanguage;
   /** Commits the edited value back to the diagram (fires the modeler's `*.update`). */
   onSave: (value: string) => void;
+  /**
+   * Script-task Launch Editor only (`bpmn:script`). Pre/post and instructions
+   * omit this — the old canvas did not test those from the dialog. Script
+   * assist stays out.
+   */
+  unitTests?: {
+    cases: ScriptUnitTestCase[];
+    onCommit: (cases: ScriptUnitTestCase[]) => void;
+    onRun: (input: {
+      python_script: string;
+      input_json: Record<string, unknown>;
+      expected_output_json: Record<string, unknown>;
+    }) => Promise<ScriptUnitTestRunResult>;
+  };
 };
 
 export type EditorDialogProps = {
@@ -87,12 +104,18 @@ function toMarkers(diagnostics: Diagnostic[]): monaco.editor.IMarkerData[] {
 
 export function EditorDialog({ session, onClose }: EditorDialogProps) {
   const [draft, setDraft] = useState(session.value);
+  const [tab, setTab] = useState<'script' | 'tests'>('script');
+  const [unitTestCases, setUnitTestCases] = useState<ScriptUnitTestCase[]>(
+    session.unitTests?.cases ?? [],
+  );
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
 
   // Re-seed whenever a new launch happens (fresh session object per launch).
   useEffect(() => {
     setDraft(session.value);
+    setTab('script');
+    setUnitTestCases(session.unitTests?.cases ?? []);
   }, [session]);
 
   const diagnostics = useMemo(() => lintCode(session.language, draft), [session.language, draft]);
@@ -136,6 +159,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
 
   const handleSave = () => {
     if (!canSave) return;
+    session.unitTests?.onCommit(unitTestCases);
     session.onSave(draft);
     onClose();
   };
@@ -173,6 +197,39 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
           </Button>
         </div>
 
+        {session.unitTests ? (
+          <div role="tablist" aria-label="Script editor sections" className="flex flex-none gap-1 border-b border-border px-5">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'script'}
+              className={`border-b-2 px-3 py-2 text-xs font-medium ${
+                tab === 'script'
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setTab('script')}
+            >
+              Script
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'tests'}
+              className={`border-b-2 px-3 py-2 text-xs font-medium ${
+                tab === 'tests'
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setTab('tests')}
+            >
+              Unit tests
+            </button>
+          </div>
+        ) : null}
+
+        {tab === 'script' ? (
+        <>
         <div className="flex flex-none items-center justify-between gap-3 border-b border-border px-5 py-2">
           {/* Not converted to Button: no existing variant matches without a
               style compromise (border + no background + rounded-md, vs.
@@ -254,6 +311,15 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
               </li>
             ))}
           </ul>
+        ) : null}
+        </>
+        ) : session.unitTests ? (
+          <ScriptUnitTestsPanel
+            pythonScript={draft}
+            cases={unitTestCases}
+            onCasesChange={setUnitTestCases}
+            onRun={session.unitTests.onRun}
+          />
         ) : null}
 
         <div className="flex flex-none items-center justify-between gap-2 border-t border-border px-5 py-3">

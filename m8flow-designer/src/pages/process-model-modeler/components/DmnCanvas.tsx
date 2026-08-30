@@ -1,6 +1,7 @@
 /**
  * Thin React host shell around `m8flow-bpmn/lib/DmnModeler`.
- * Stock dmn-js chrome + panel wiring live in the package. This file owns
+ * Stock dmn-js chrome, panel wiring, and DRD zoom (in / out / fit — the same
+ * `zoomControlsModule` as BPMN) live in the package. This file owns
  * containers, dirty tracking across DMN views, and saveXML/markSaved.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';

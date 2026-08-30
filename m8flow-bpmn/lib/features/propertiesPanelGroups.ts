@@ -58,3 +58,21 @@ export function replaceOrAppendGroup(
   }
   return groups;
 }
+
+/**
+ * Removes every group whose id is in `ids`, in place. Used to strip dropped
+ * BPMN construct groups (call activity, messages, data store, multi-instance)
+ * after the Spiff providers have already pushed them.
+ */
+export function removeGroupsById(
+  groups: PropertiesPanelGroup[],
+  ids: readonly string[],
+): PropertiesPanelGroup[] {
+  const drop = new Set(ids);
+  for (let i = groups.length - 1; i >= 0; i -= 1) {
+    if (groups[i] && drop.has(groups[i].id)) {
+      groups.splice(i, 1);
+    }
+  }
+  return groups;
+}

@@ -16,14 +16,10 @@ import { BACKEND_BASE_URL, SEED_MODEL_ROUTE_ID } from './fixtures';
  * spec just overwrites its own fixture back to the known-good XML, so no
  * cleanup is needed for that file's own tests.
  *
- * It DOES grow the model's real file *count* permanently, though — there's
- * no delete-file route for process models (only templates have one), so
- * every phase's seeded files accumulate in the shared model directory
- * forever. Confirmed the hard way: processes.spec.ts's CHK-04 originally
- * hardcoded "Files (6)" and broke the first time this phase's spec ran
- * against a live stack. Any assertion elsewhere in this repo's e2e suite
- * that counts this model's files needs to tolerate that growth (>=, not
- * ===) rather than assume a fixed number.
+ * Stable phase fixtures (phase2-*.bpmn, etc.) are overwritten in place and
+ * left on disk. Unique per-run files should call `deleteProcessModelFile`
+ * in an after-hook so they do not accumulate. Any assertion that counts
+ * this model's files must tolerate leftover fixtures (>=, not ===).
  *
  * Uses `page.request` (not a fresh APIRequestContext) so it fires from the
  * page's own already-authenticated session — call this after
@@ -50,6 +46,27 @@ export async function seedProcessModelFile(
   if (!response.ok()) {
     throw new Error(
       `seedProcessModelFile: PUT ${fileName} failed with ${response.status()} — ${await response.text()}`,
+    );
+  }
+}
+
+/** DELETE a seeded process-model file. 404 is success (already gone). */
+export async function deleteProcessModelFile(
+  page: Page,
+  fileName: string,
+  modelRouteId: string = SEED_MODEL_ROUTE_ID,
+): Promise<void> {
+  const accessToken = await readAccessTokenCookie(page);
+  const encodedId = modelRouteId.split(':').map(encodeURIComponent).join(':');
+  const url = `${BACKEND_BASE_URL}/v1.0/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
+
+  const response = await page.request.delete(url, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+
+  if (!response.ok() && response.status() !== 404) {
+    throw new Error(
+      `deleteProcessModelFile: DELETE ${fileName} failed with ${response.status()} — ${await response.text()}`,
     );
   }
 }

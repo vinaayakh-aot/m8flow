@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { insertGroupAfter, replaceOrAppendGroup } from '../lib/features/propertiesPanelGroups';
+import { insertGroupAfter, removeGroupsById, replaceOrAppendGroup } from '../lib/features/propertiesPanelGroups';
 
 describe('insertGroupAfter', () => {
   it('inserts immediately after the anchor', () => {
@@ -44,5 +44,19 @@ describe('replaceOrAppendGroup', () => {
     const groups = [{ id: 'target', label: 'old' }];
     const result = replaceOrAppendGroup(groups, { id: 'target', label: 'new' });
     expect(result).toEqual([{ id: 'target', label: 'new' }]);
+  });
+});
+
+describe('removeGroupsById', () => {
+  it('removes listed groups in place and keeps the rest', () => {
+    const groups = [{ id: 'a' }, { id: 'called_element' }, { id: 'c' }, { id: 'multiInstance' }];
+    const result = removeGroupsById(groups, ['called_element', 'multiInstance']);
+    expect(result.map((g) => g.id)).toEqual(['a', 'c']);
+    expect(result).toBe(groups);
+  });
+
+  it('is a no-op when none of the ids are present', () => {
+    const groups = [{ id: 'a' }];
+    expect(removeGroupsById(groups, ['missing'])).toEqual([{ id: 'a' }]);
   });
 });

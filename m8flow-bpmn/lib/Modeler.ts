@@ -27,6 +27,8 @@ import './assets/modeler.css';
 
 import { customPaletteModule } from './features/customPalette';
 import { customRendererModule } from './features/customRenderer';
+import { droppedConstructReplaceFilterModule } from './features/droppedConstructCreate';
+import { droppedConstructPanelModule } from './features/droppedConstructPanel';
 import { externalFormPropertiesModule } from './features/externalFormPropertiesProvider';
 import {
   createPrePostScriptOverlay,
@@ -72,6 +74,10 @@ Modeler.prototype._m8flowModules = [
   BpmnPropertiesProviderModule,
   customPaletteModule,
   customRendererModule,
+  droppedConstructReplaceFilterModule,
+  // After Spiff panel groups: strip dropped-construct editors and, when a
+  // leftover dropped shape is selected, show a short "not supported" notice.
+  droppedConstructPanelModule,
   zoomControlsModule,
 ];
 

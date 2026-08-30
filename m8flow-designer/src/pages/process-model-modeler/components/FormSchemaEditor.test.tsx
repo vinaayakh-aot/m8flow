@@ -1,6 +1,8 @@
+import { createRef } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 import { FormSchemaEditor, type FormSchemaEditorSession } from './FormSchemaEditor';
 import { EMPTY_JSON } from './formSchemaFiles';
 
@@ -159,5 +161,59 @@ describe('FormSchemaEditor', () => {
     expect(await screen.findByLabelText('JSON Schema editor')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('embeds as a page canvas without the modal chrome', async () => {
+    render(<FormSchemaEditor variant="page" session={makeSession()} />);
+
+    expect(await screen.findByLabelText('JSON Schema editor')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Edit JSON Schema' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Edit JSON Schema' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+  });
+
+  it('opens the matching tab when the route file is a companion', async () => {
+    render(
+      <FormSchemaEditor
+        variant="page"
+        session={makeSession({ fileName: 'sample-form-uischema.json' })}
+      />,
+    );
+
+    await screen.findByLabelText('UI Settings editor');
+    expect(screen.getByRole('tab', { name: 'UI Settings' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('page saveXML writes all three companions and returns the open file', async () => {
+    const session = makeSession({
+      fileName: 'sample-form-schema.json',
+      onReadFile: vi.fn(async (name: string) => {
+        if (name.endsWith('-schema.json')) return '{"title":"A"}';
+        return EMPTY_JSON;
+      }),
+    });
+    const onDirtyChange = vi.fn();
+    const ref = createRef<DiagramCanvasHandle>();
+    render(
+      <FormSchemaEditor
+        ref={ref}
+        variant="page"
+        session={session}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+
+    const editor = await screen.findByLabelText('JSON Schema editor');
+    fireEvent.change(editor, { target: { value: '{"title":"B"}' } });
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+    expect(session.onWriteFile).not.toHaveBeenCalled();
+
+    await expect(ref.current?.saveXML()).resolves.toBe('{"title":"B"}');
+    expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-schema.json', '{"title":"B"}');
+    expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-uischema.json', EMPTY_JSON);
+    expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-exampledata.json', EMPTY_JSON);
+
+    ref.current?.markSaved();
+    expect(onDirtyChange).toHaveBeenCalledWith(false);
   });
 });

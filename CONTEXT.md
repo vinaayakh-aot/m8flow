@@ -17,7 +17,7 @@ The designer page for one process model: identity, stats, recent instances, and 
 _Avoid_: edit process instance page, process instance page, ProcessModelShow, modeler
 
 **Process modeler**:
-The canvas for editing a process model's BPMN, DMN, and form files.
+The canvas for editing a process model's BPMN, DMN, form schema files, and markdown files.
 _Avoid_: overview, editor (alone)
 
 **Process instance viewer**:
@@ -27,6 +27,10 @@ _Avoid_: modeler, current events, events page, ReactDiagramEditor
 **Properties panel**:
 The side panel of element fields shown while designing a process model (or a DMN file).
 _Avoid_: inspector, attributes panel, settings
+
+**Form schema file**:
+A JSON Schema file in a process model that a user task binds to, with optional companion UI-schema and example-data files.
+_Avoid_: form builder, RJSF builder, form (alone)
 
 **Catalog**:
 The tenant's tree of process groups and process models.

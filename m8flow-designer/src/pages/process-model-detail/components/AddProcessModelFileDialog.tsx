@@ -22,7 +22,12 @@ type FileKind = (typeof TYPED)[number]['value'] | 'upload';
 
 export function fileOpensInModeler(name: string): boolean {
   const lower = name.toLowerCase();
-  return lower.endsWith('.bpmn') || lower.endsWith('.dmn') || lower.endsWith('.json');
+  return (
+    lower.endsWith('.bpmn') ||
+    lower.endsWith('.dmn') ||
+    lower.endsWith('.json') ||
+    lower.endsWith('.md')
+  );
 }
 
 function withSuffix(name: string, suffix: string): string {
@@ -97,7 +102,7 @@ export function AddProcessModelFileDialog({
           <DialogHeader>
             <DialogTitle>Add file</DialogTitle>
             <DialogDescription>
-              BPMN, DMN, and JSON open in the modeler. Markdown stays on this overview.
+              BPMN, DMN, JSON, and Markdown open in the modeler.
             </DialogDescription>
           </DialogHeader>
 

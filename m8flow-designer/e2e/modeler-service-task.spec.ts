@@ -6,25 +6,11 @@ import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
 
 /**
- * Phase 4 — Service Task connector wiring (phased Task Configuration Parity
- * plan, §Phase 4). Implemented: BpmnCanvas.tsx now answers
- * `spiff.service_tasks.requested` by fetching `GET /connectors-grouped` (the
- * real, working data source — m8flow-frontend's own `/service-tasks` call
- * has no matching backend route at all, confirmed by reading api.yml) and
- * flattening it from "grouped by connector" into the flat
- * `{id, parameters}[]` shape ServiceTaskOperatorSelect expects.
- *
- * Environment gap found live, not assumed: this dev stack's
- * `GET /connectors-grouped` returns `[]` today — `ServiceTaskRegistry`
- * starts with zero commands registered (m8flow_backend.secrets.list_connectors),
- * so there are no real connectors installed in this environment at all. The
- * "selecting an operator renders its own parameter fields" case from the
- * original plan is `test.fixme()`'d for exactly this reason — it isn't
- * blocked on designer code, it's blocked on there being anything to select.
- * The other two cases are written to hold regardless of how many (if any)
- * connectors are configured, by comparing against the *live* endpoint's own
- * response rather than assuming a fixed count — same principle as CHK-04's
- * earlier `>= 6` fix.
+ * Service Task connector wiring. BpmnCanvas answers
+ * `spiff.service_tasks.requested` from `GET /connectors-grouped`, flattened
+ * to `{id, parameters}[]`. An empty catalog is an honest Action-tab empty
+ * state (not a blank Operator ID <select>); a live HTTP V2 catalog still
+ * round-trips into the Parameters tab.
  */
 const PHASE4_FILE = 'phase4-service-task.bpmn';
 const SERVICE_TASK_ID = 'Activity_send_email';
@@ -80,30 +66,38 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     await selectElement(page, SERVICE_TASK_ID);
   });
 
-  test('the connector operator dropdown completes a real round trip and matches the live catalog', async ({
-    page,
-  }) => {
+  test('the Action tab reflects the live connector catalog', async ({ page }) => {
     const expectedCount = await fetchRealOperationCount(page);
+    const group = await openPropertiesPanelGroup(page, 'service_task_properties');
+
+    if (expectedCount === 0) {
+      await expect(
+        group.getByText(/no connector operators are available/i),
+      ).toBeVisible();
+      await expect(group.getByLabel('Operator ID')).toHaveCount(0);
+      return;
+    }
+
+    const select = group.getByLabel('Operator ID');
+    await expect(select).toBeVisible();
+    await expect(select.locator('option')).toHaveCount(expectedCount);
+  });
+
+  test('selecting an operator renders its own parameter fields', async ({ page }) => {
+    const expectedCount = await fetchRealOperationCount(page);
+    test.skip(expectedCount === 0, 'connector-proxy catalog is empty in this environment');
 
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
     const select = group.getByLabel('Operator ID');
-    const optionCount = await select.locator('option').count();
-
-    expect(optionCount).toBe(expectedCount);
+    await expect(select).toBeVisible();
+    const operatorId = await select.locator('option').evaluateAll((opts) =>
+      opts.map((option) => (option as HTMLOptionElement).value).find((value) => value !== ''),
+    );
+    expect(operatorId).toBeTruthy();
+    await select.selectOption(operatorId!);
+    await group.getByRole('tab', { name: 'Parameters' }).click();
+    await expect(group.locator('.m8flow-service-task-param-row')).not.toHaveCount(0);
   });
-
-  test.fixme(
-    'selecting an operator renders its own parameter fields',
-    async ({ page }) => {
-      // Blocked on environment data, not designer code: this dev stack's
-      // ServiceTaskRegistry has zero commands registered, so
-      // GET /connectors-grouped returns [] and there is nothing to select.
-      // Un-skip once at least one connector is configured.
-      const group = await openPropertiesPanelGroup(page, 'service_task_properties');
-      await group.getByLabel('Operator ID').selectOption({ index: 1 });
-      await expect(group.locator('input, select, textarea')).not.toHaveCount(0);
-    },
-  );
 
   test('the service task group stays open across the async connector-list round trip', async ({
     page,

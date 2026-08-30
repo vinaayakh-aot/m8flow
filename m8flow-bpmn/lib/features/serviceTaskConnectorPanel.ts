@@ -14,26 +14,23 @@
  *
  * Only the Action and Parameters tabs correspond to real, already-wired
  * functionality (operator/response-variable fields; per-operation
- * parameters, now populated for real since the backend's
- * `connectors_grouped()` stopped hardcoding `parameters: []`). Parameters
- * are rendered as "1A · Stacked cards"' param list (bordered card, mono
- * name above a compact input, separated by a top border) rather than
+ * parameters from the host catalog). Parameters are rendered as
+ * "1A · Stacked cards"' param list (bordered card, mono name above a
+ * compact input, separated by a top border) rather than
  * `@bpmn-io/properties-panel`'s `ListGroup` — the library default renders
  * each parameter as a collapsed accordion item (name behind a toggle arrow,
  * value hidden until expanded), which doesn't match any mockup and made
- * every parameter two clicks away from being visible. The Config
- * tab is genuinely new: the mockup depicts a per-connector *named config
- * profile* picker ("Production API" / "Sandbox"), but no such concept
- * exists anywhere in the backend today — connector credentials are a single
- * flat set of tenant Secrets per connector (`CONNECTOR_METADATA[key].
- * configFields` in `connectors_controller.py`), not multiple named
- * profiles. Rather than fabricate a working-looking dropdown backed by
- * nothing, the Config tab here is deliberately modest: it names the
- * connector the selected operator belongs to and states, honestly, that its
- * credentials are managed centrally (Setup → Connectors) rather than
- * per-task — reference 1A/1D's Config card for the *visual* structure
- * (tenant/connector context above a note), not 1C's specific profile
- * dropdown, which has no backing data source yet.
+ * every parameter two clicks away from being visible.
+ *
+ * The vendor `ServiceTaskOperatorSelect` ignores an empty catalog and
+ * re-requests forever; the Action tab therefore waits on
+ * `serviceTaskOperatorCatalog` (which *does* cache empty) and only mounts
+ * that select when HTTP V2 operators actually arrived. An empty catalog is
+ * an honest empty state, not a blank dropdown.
+ *
+ * The Config tab is a pointer, not a profile picker: named connector
+ * profiles are Module J. It names the connector the selected operator
+ * belongs to and states that credentials live under Setup → Connectors.
  *
  * No JSX here (unlike the vendored `.jsx` files) — this file isn't matched
  * by `vite/index.js`'s `spiffworkflowPreactJsxPlugin` (scoped to
@@ -47,6 +44,7 @@
  * resolve to the same Preact instance the panel itself uses.
  */
 import { h } from 'preact';
+import { useEffect } from 'preact/hooks';
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 // @ts-expect-error missing type declarations
 import { TextFieldEntry } from '@bpmn-io/properties-panel';
@@ -57,6 +55,11 @@ import { ServiceTaskOperatorSelect, ServiceTaskParameterArray, ServiceTaskResult
 
 import { createElementScopedTabStore, useElementScopedTab } from './elementScopedTabState';
 import { replaceOrAppendGroup } from './propertiesPanelGroups';
+import {
+  catalogHasOperators,
+  serviceTaskOperatorCatalog,
+  useServiceTaskOperatorCatalog,
+} from './serviceTaskOperatorCatalog';
 
 const LOW_PRIORITY = 500;
 const SERVICE_TASK_GROUP_ID = 'service_task_properties';
@@ -149,11 +152,43 @@ function ServiceTaskTabStrip(props: any) {
 }
 
 function ServiceTaskActionTab(props: any) {
-  const { element } = props;
+  const { element, translate } = props;
   const activeTab = useActiveServiceTaskTab(element.businessObject.id);
+  const catalog = useServiceTaskOperatorCatalog();
+  const eventBus = useService('eventBus');
+
+  // Request once from idle. Do not mount ServiceTaskOperatorSelect until the
+  // catalog is known-non-empty: that component ignores an empty returned
+  // list and re-fires `.requested` every render, which looks like a blank
+  // dropdown and loops `GET /connectors-grouped`.
+  useEffect(() => {
+    if (serviceTaskOperatorCatalog.markLoading()) {
+      eventBus.fire('spiff.service_tasks.requested', { eventBus });
+    }
+  }, [eventBus]);
+
   if (activeTab !== 'action') {
     return null;
   }
+
+  if (catalog.status !== 'loaded') {
+    return h(
+      'p',
+      { class: 'bio-properties-panel-description m8flow-service-task-tab-panel' },
+      translate('Loading connector actions…'),
+    );
+  }
+
+  if (!catalogHasOperators(catalog)) {
+    return h(
+      'p',
+      { class: 'bio-properties-panel-description m8flow-service-task-tab-panel' },
+      translate(
+        'No connector operators are available. HTTP V2 actions appear here when the connector-proxy catalog is reachable.',
+      ),
+    );
+  }
+
   return h(
     'div',
     { class: 'm8flow-service-task-tab-panel' },
@@ -242,6 +277,14 @@ function ServiceTaskParametersTab(props: any) {
     return null;
   }
 
+  if (!getServiceTaskOperatorModdleElement(element)) {
+    return h(
+      'p',
+      { class: 'bio-properties-panel-description m8flow-service-task-tab-panel' },
+      translate('Choose an action first — its parameters will show here.'),
+    );
+  }
+
   // Pure data transform, no hooks of its own — safe to call directly. Reused
   // only for its moddle traversal (getServiceTaskParameterModdleElements,
   // unexported); the rows below render their own markup, not this array's
@@ -291,7 +334,12 @@ export function ServiceTaskConnectorPanelProvider(
   translate: any,
   moddle: any,
   commandStack: any,
+  eventBus: any,
 ) {
+  eventBus.on('spiff.service_tasks.returned', (event: { serviceTaskOperators?: unknown }) => {
+    const operators = Array.isArray(event?.serviceTaskOperators) ? event.serviceTaskOperators : [];
+    serviceTaskOperatorCatalog.setLoaded(operators);
+  });
   this.getGroups = function (element: any) {
     return function (groups: any[]) {
       if (!is(element, 'bpmn:ServiceTask')) {
@@ -308,7 +356,13 @@ export function ServiceTaskConnectorPanelProvider(
   propertiesPanel.registerProvider(LOW_PRIORITY, this);
 }
 
-(ServiceTaskConnectorPanelProvider as any).$inject = ['propertiesPanel', 'translate', 'moddle', 'commandStack'];
+(ServiceTaskConnectorPanelProvider as any).$inject = [
+  'propertiesPanel',
+  'translate',
+  'moddle',
+  'commandStack',
+  'eventBus',
+];
 
 export const serviceTaskConnectorPanelModule = {
   __init__: ['serviceTaskConnectorPanelProvider'],

@@ -1,29 +1,15 @@
 import { expect, test } from '@playwright/test';
 
 import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
-import { selectElement } from './helpers/diagram';
+import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
 
 /**
- * Phase 5 — Messages wiring (phased Task Configuration Parity plan,
- * §Phase 5). All `test.fixme()`: BpmnCanvas.tsx doesn't answer
- * `spiff.messages.requested`, `spiff.message.edit`/`.update`,
- * `spiff.add_message.requested`, or `spiff.message_schemas.requested` /
- * `spiff.msg_json_schema_editor.requested` yet.
- *
- * Uses a bpmn:SendTask (`isMessageElement()` in bpmn-js-spiffworkflow's
- * MessageHelpers.js accepts SendTask/ReceiveTask directly — no message
- * event definition required to render the Message group), so the fixture
- * stays a plain two-flow diagram like the other phases'.
- *
- * The group id this phase's provider renders under wasn't confirmed against
- * the shipped library the way earlier phases' group ids were (see the plan's
- * Phase 5 note) — locate it via `bpmn-js-spiffworkflow/app/spiffworkflow/
- * messages/propertiesPanel/elementLevelProvider/TaskEventMessageProvider.js`'s
- * `createMessageGroup` before un-skipping these, then swap the
- * `getMessageGroup()` placeholder below for the real
- * `propertiesPanelGroup(page, '<confirmed-id>')` call.
+ * Message events and process-level message models are dropped. Send/Receive
+ * Task still keep the element-level `messages` group (catalog allows those
+ * task types). Do not assert message-model persist, Add Message, or schema
+ * Launch Editor for a message.
  */
 const PHASE5_FILE = 'phase5-messages.bpmn';
 const SEND_TASK_ID = 'Activity_notify';
@@ -63,31 +49,31 @@ const PHASE5_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-test.describe('m8flow-designer Process Modeler — Messages wiring (Phase 5)', () => {
+test.describe('m8flow-designer Process Modeler — Messages guard', () => {
   test.beforeEach(async ({ page }) => {
     await signInAsSharedRealmUser(page, editorCredentials());
     await seedProcessModelFile(page, PHASE5_FILE, PHASE5_DIAGRAM_XML);
     await page.goto(seedModelerPath(PHASE5_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  });
+
+  test('Change element cannot morph a start event into a message start', async ({ page }) => {
+    const menu = await openChangeElementMenu(page, 'StartEvent_1');
+    await expect(menu.locator('[data-id="replace-with-message-start"]')).toHaveCount(0);
+    await expect(menu.locator('[data-id="replace-with-non-interrupting-message-start"]')).toHaveCount(0);
+  });
+
+  test('process-level Messages and Correlation groups are stripped', async ({ page }) => {
+    await page.locator('.djs-container').click({ position: { x: 8, y: 8 } });
+    await expect(page.locator('.bio-properties-panel-group[data-group-id="group-messages"]')).toHaveCount(0);
+    await expect(
+      page.locator('.bio-properties-panel-group[data-group-id="group-correlation_properties"]'),
+    ).toHaveCount(0);
+  });
+
+  test('Send Task still has the Messages group', async ({ page }) => {
     await selectElement(page, SEND_TASK_ID);
-  });
-
-  test.fixme('the Message dropdown lists messages defined elsewhere in this process model', async () => {
-    // spiff.messages.requested must be answered with every bpmn:message
-    // declared across this model's own files (parsed from XML — no backend
-    // route needed unless messages must be shared cross-model).
-  });
-
-  test.fixme('"+ Add Message" creates a new message and selects it', async () => {
-    // spiff.add_message.requested / .returned round trip.
-  });
-
-  test.fixme('the message JSON schema selector lists *-schema.json files', async () => {
-    // spiff.message_schemas.requested — same file-list-filtering pattern as
-    // Phase 1's JSON Schema Filename field and Phase 2's DMN file field.
-  });
-
-  test.fixme('"Launch Editor" for the message schema opens the schema editor', async () => {
-    // spiff.msg_json_schema_editor.requested.
+    const group = await openPropertiesPanelGroup(page, 'messages');
+    await expect(group).toBeVisible();
   });
 });

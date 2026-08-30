@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Wand2, X } from 'lucide-react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
@@ -9,13 +9,17 @@ import { SchemaForm, type JsonSchema, type UiSchema } from '@/components/SchemaF
 
 import { lintCode, type Diagnostic } from './codeLint';
 import { formatCode } from './codeFormat';
+import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 import {
   EMPTY_JSON,
-  formSchemaFileNames,
+  formSchemaFileNamesFrom,
+  formSchemaOpenFileContent,
+  formSchemaTabForFile,
   schemaBaseName,
   type FormSchemaFileNames,
 } from './formSchemaFiles';
 import { FORM_SCHEMA_EXAMPLES, insertExample } from './formSchemaExamples';
+import { M8FLOW_JSON_LANGUAGE, registerM8flowJsonLanguage } from './m8flowJsonLanguage';
 
 loader.config({ monaco });
 
@@ -34,7 +38,11 @@ export type FormSchemaEditorSession = {
 
 export type FormSchemaEditorProps = {
   session: FormSchemaEditorSession;
-  onClose: () => void;
+  /** Modal is Launch Editor (overlay, debounce save). Page is the
+   * `/modeler/*-schema.json` canvas (fills the route, page Save flushes). */
+  variant?: 'modal' | 'page';
+  onClose?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 type EditorTab = 'schema' | 'ui' | 'data' | 'examples';
@@ -51,32 +59,6 @@ const UI_SETTINGS_LEARN_MORE = 'https://rjsf-team.github.io/react-jsonschema-for
 
 const SAVE_DEBOUNCE_MS = 500;
 const MARKER_OWNER = 'm8flow-form-json-lint';
-/** Main-thread tokenizer id. Monaco's built-in `json` language spawns a
- * worker that calls AMD `require.toUrl` — undefined under Vite, which
- * crashes Launch Editor with `Cannot read properties of undefined (reading
- * 'toUrl')`. Format/validation stay in codeFormat/codeLint. */
-const FORM_JSON_LANGUAGE = 'm8flow-json';
-
-function registerFormJsonLanguage(): void {
-  const languages = monaco.languages;
-  if (!languages?.register || !languages.setMonarchTokensProvider) return;
-  if (languages.getLanguages?.().some((language) => language.id === FORM_JSON_LANGUAGE)) return;
-  languages.register({ id: FORM_JSON_LANGUAGE });
-  languages.setMonarchTokensProvider(FORM_JSON_LANGUAGE, {
-    tokenizer: {
-      root: [
-        [/[{}]/, 'delimiter.bracket'],
-        [/[[\]]/, 'delimiter.square'],
-        [/[;,]/, 'delimiter'],
-        [/:/, 'delimiter'],
-        [/"([^"\\]|\\.)*"(?=\s*:)/, 'type.identifier'],
-        [/"([^"\\]|\\.)*"/, 'string'],
-        [/\b(?:true|false|null)\b/, 'keyword'],
-        [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
-      ],
-    },
-  });
-}
 
 function parseObject(text: string): Record<string, unknown> | null {
   try {
@@ -137,7 +119,7 @@ function FormJsonPane({
     }
   }, [diagnostics]);
 
-  registerFormJsonLanguage();
+  registerM8flowJsonLanguage();
 
   const handleMount = (editor: monaco.editor.IStandaloneCodeEditor, monacoApi: typeof monaco) => {
     editorRef.current = editor;
@@ -208,7 +190,7 @@ function FormJsonPane({
       </div>
       <div className="min-h-0 flex-1">
         <Editor
-          language={FORM_JSON_LANGUAGE}
+          language={M8FLOW_JSON_LANGUAGE}
           value={value}
           onChange={(next) => onChange(next ?? '')}
           onMount={handleMount}
@@ -291,22 +273,70 @@ function ExamplesPane({
   );
 }
 
-export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
+export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditorProps>(
+  function FormSchemaEditor(
+    { session, variant = 'modal', onClose, onDirtyChange },
+    ref,
+  ) {
+  const isPage = variant === 'page';
   const [baseName, setBaseName] = useState(schemaBaseName(session.fileName));
   const [names, setNames] = useState<FormSchemaFileNames | null>(
-    formSchemaFileNames(schemaBaseName(session.fileName)),
+    formSchemaFileNamesFrom(session.fileName),
   );
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [tab, setTab] = useState<EditorTab>('schema');
+  const [tab, setTab] = useState<EditorTab>(formSchemaTabForFile(session.fileName));
   const [strSchema, setStrSchema] = useState('');
   const [strUi, setStrUi] = useState('');
   const [strData, setStrData] = useState('');
   const skipNextSave = useRef(true);
+  const namesRef = useRef(names);
+  const strSchemaRef = useRef(strSchema);
+  const strUiRef = useRef(strUi);
+  const strDataRef = useRef(strData);
+  const savedSchemaRef = useRef('');
+  const savedUiRef = useRef('');
+  const savedDataRef = useRef('');
+  namesRef.current = names;
+  strSchemaRef.current = strSchema;
+  strUiRef.current = strUi;
+  strDataRef.current = strData;
+
+  const snapshotSaved = (schema: string, ui: string, example: string) => {
+    savedSchemaRef.current = schema;
+    savedUiRef.current = ui;
+    savedDataRef.current = example;
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveXML: async () => {
+        const files = namesRef.current;
+        const schema = strSchemaRef.current;
+        const ui = strUiRef.current;
+        const example = strDataRef.current;
+        if (files) {
+          await Promise.all([
+            session.onWriteFile(files.schema, schema),
+            session.onWriteFile(files.ui, ui),
+            session.onWriteFile(files.example, example),
+          ]);
+          return formSchemaOpenFileContent(session.fileName, files, { schema, ui, example });
+        }
+        return schema;
+      },
+      markSaved: () => {
+        snapshotSaved(strSchemaRef.current, strUiRef.current, strDataRef.current);
+        onDirtyChange?.(false);
+      },
+    }),
+    [session, onDirtyChange],
+  );
 
   useEffect(() => {
-    const files = formSchemaFileNames(schemaBaseName(session.fileName));
+    const files = formSchemaFileNamesFrom(session.fileName);
     let cancelled = false;
 
     async function openOrCreate() {
@@ -320,10 +350,13 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
         skipNextSave.current = true;
         setNames(files);
         setBaseName(schemaBaseName(session.fileName));
+        setTab(formSchemaTabForFile(session.fileName));
         setStrSchema(schema);
         setStrUi(ui);
         setStrData(example);
+        snapshotSaved(schema, ui, example);
         setLoaded(true);
+        onDirtyChange?.(false);
         if (session.createIfMissing) session.onCommitted(files.schema);
       } catch (err: unknown) {
         if (cancelled) return;
@@ -339,10 +372,13 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
           skipNextSave.current = true;
           setNames(files);
           setBaseName(schemaBaseName(session.fileName));
+          setTab(formSchemaTabForFile(session.fileName));
           setStrSchema(EMPTY_JSON);
           setStrUi(EMPTY_JSON);
           setStrData(EMPTY_JSON);
+          snapshotSaved(EMPTY_JSON, EMPTY_JSON, EMPTY_JSON);
           setLoaded(true);
+          onDirtyChange?.(false);
           session.onCommitted(files.schema);
         } catch (createErr: unknown) {
           if (cancelled) return;
@@ -360,7 +396,16 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
   }, [session]);
 
   useEffect(() => {
-    if (!names || !loaded) return undefined;
+    if (!isPage || !loaded) return;
+    const dirty =
+      strSchema !== savedSchemaRef.current ||
+      strUi !== savedUiRef.current ||
+      strData !== savedDataRef.current;
+    onDirtyChange?.(dirty);
+  }, [isPage, loaded, strSchema, strUi, strData, onDirtyChange]);
+
+  useEffect(() => {
+    if (isPage || !names || !loaded) return undefined;
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return undefined;
@@ -378,15 +423,16 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
         });
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [names, loaded, session, strSchema, strUi, strData]);
+  }, [isPage, names, loaded, session, strSchema, strUi, strData]);
 
   useEffect(() => {
+    if (isPage || !onClose) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [isPage, onClose]);
 
   const schemaObj = useMemo(() => parseObject(strSchema) as JsonSchema | null, [strSchema]);
   const uiObj = useMemo(() => parseObject(strUi) as UiSchema, [strUi]);
@@ -418,27 +464,39 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-6"
-      role="dialog"
-      aria-modal="true"
+      className={
+        isPage
+          ? 'flex size-full min-h-0 flex-col bg-card'
+          : 'fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-6'
+      }
+      role={isPage ? 'region' : 'dialog'}
+      aria-modal={isPage ? undefined : true}
       aria-label="Edit JSON Schema"
     >
-      <div className="flex h-[85vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+      <div
+        className={
+          isPage
+            ? 'flex size-full min-h-0 flex-col overflow-hidden'
+            : 'flex h-[85vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl'
+        }
+      >
         <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold text-foreground">
             Edit JSON Schema{baseName ? ` — ${baseName}` : ''}
           </h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onClose}
-            title="Close editor"
-            aria-label="Close editor"
-            className="rounded-md text-muted-foreground"
-          >
-            <X className="size-4" strokeWidth={2} />
-          </Button>
+          {!isPage && onClose ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              title="Close editor"
+              aria-label="Close editor"
+              className="rounded-md text-muted-foreground"
+            >
+              <X className="size-4" strokeWidth={2} />
+            </Button>
+          ) : null}
         </div>
 
         {!loaded ? (
@@ -527,14 +585,16 @@ export function FormSchemaEditor({ session, onClose }: FormSchemaEditorProps) {
                 {saveError}
               </p>
             ) : null}
-            <div className="flex flex-none justify-start border-t border-border px-5 py-3">
-              <Button type="button" variant="pill-cancel" size="pill" onClick={onClose}>
-                Close
-              </Button>
-            </div>
+            {!isPage && onClose ? (
+              <div className="flex flex-none justify-start border-t border-border px-5 py-3">
+                <Button type="button" variant="pill-cancel" size="pill" onClick={onClose}>
+                  Close
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
     </div>
   );
-}
+});

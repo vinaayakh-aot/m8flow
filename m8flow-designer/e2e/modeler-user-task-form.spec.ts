@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
 import { openPropertiesPanelGroup, propertiesPanelGroup, selectElement } from './helpers/diagram';
-import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID } from './helpers/fixtures';
+import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from './helpers/fixtures';
 
 /**
  * Phase 1 — User Task data-backed fields (phased Task Configuration Parity
@@ -61,12 +61,12 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
 
     const dialog = page.getByRole('dialog', { name: 'Edit JSON Schema' });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel('JSON Schema editor')).toContainText('Work From Home Request');
+    await expect(dialog).toContainText('Work From Home Request');
 
     // Close, not Save — this reads the real seed file, and Close proves
     // the round trip without mutating the shared fixture (edits auto-save
     // only after a change).
-    await dialog.getByRole('button', { name: 'Close' }).click();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(dialog).toHaveCount(0);
   });
 
@@ -91,5 +91,14 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // Editing goes dirty even though nothing was persisted (no Save click) —
     // confirms the edit reached the command stack, same CHK-11/12 pattern.
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  });
+
+  test('form-schema JSON opens the form editor canvas, not a BPMN canvas', async ({ page }) => {
+    await page.goto(seedModelerPath('wfh-form-schema.json'));
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    await expect(page.locator('.djs-container')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Edit JSON Schema' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Form preview' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'JSON Schema' })).toBeVisible();
   });
 });

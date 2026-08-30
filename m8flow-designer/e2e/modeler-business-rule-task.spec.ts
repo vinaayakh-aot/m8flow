@@ -117,5 +117,9 @@ test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiri
     // A real DMN diagram loaded, not just a URL change — dmn-js's own DRD
     // canvas renders the decision table shape.
     await expect(page.locator('.djs-container')).toBeVisible();
+    await page.getByTitle('Zoom in').click();
+    await page.getByTitle('Zoom out').click();
+    await page.getByTitle('Fit to viewport').click();
+    await expect(page.getByTitle('Zoom in')).toBeVisible();
   });
 });

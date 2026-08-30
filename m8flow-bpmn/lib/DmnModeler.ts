@@ -1,7 +1,8 @@
 // @ts-nocheck
 /**
  * M8Flow DMN Modeler distribution — camunda-bpmn-js shaped (stock dmn-js
- * chrome; no DMN mockup). Host supplies container + properties panel parent.
+ * chrome plus BPMN-matching DRD zoom; no DMN mockup). Host supplies
+ * container + properties panel parent.
  *
  *   import DmnModeler from 'm8flow-bpmn/lib/DmnModeler';
  *   new DmnModeler({
@@ -16,6 +17,8 @@ import {
   DmnPropertiesPanelModule,
   DmnPropertiesProviderModule,
 } from 'dmn-js-properties-panel';
+
+import { zoomControlsModule } from './features/zoomControls';
 
 import 'dmn-js/dist/assets/diagram-js.css';
 import 'dmn-js/dist/assets/dmn-js-decision-table-controls.css';
@@ -40,6 +43,7 @@ export default function DmnModeler(options = {}) {
       additionalModules: [
         DmnPropertiesPanelModule,
         DmnPropertiesProviderModule,
+        zoomControlsModule,
         ...(drd?.additionalModules ?? []),
       ],
     },

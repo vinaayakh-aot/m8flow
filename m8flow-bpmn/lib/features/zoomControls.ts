@@ -1,10 +1,11 @@
 /**
  * DOM zoom chrome for diagram-js (no React). Same role as camunda minimap —
- * package-owned modeler/viewer chrome.
+ * package-owned modeler/viewer chrome. Used on BPMN Modeler, NavigatedViewer,
+ * and the DMN DRD viewer so fit + toolbar zoom match.
  */
 import '../assets/zoom-controls.css';
 
-function ZoomControls(this: any, canvas: any, eventBus: any) {
+export function ZoomControls(this: any, canvas: any, eventBus: any) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
 

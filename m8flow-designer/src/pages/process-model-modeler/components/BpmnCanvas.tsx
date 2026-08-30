@@ -14,6 +14,12 @@ import type { EditorDialogSession } from './EditorDialog';
 import type { FormSchemaEditorSession } from './FormSchemaEditor';
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 import { formSchemaBaseFromLabel, SCHEMA_SUFFIX } from './formSchemaFiles';
+import {
+  applyScriptUnitTestsToElement,
+  readScriptUnitTests,
+  type ScriptUnitTestCase,
+} from '../scriptUnitTests';
+import type { ScriptUnitTestRunResult } from '@/lib/api';
 
 // Lazy — the "Launch Editor" popup pulls in Monaco (a large, independent
 // library tree). Loading it only when a task's script/instructions editor is
@@ -98,6 +104,16 @@ export type BpmnCanvasProps = {
    * connector catalog is only needed the first time a Service Task's group
    * is opened. */
   onFetchServiceTaskOperators?: () => Promise<BpmnCanvasServiceTaskOperator[]>;
+  /**
+   * Script-task Launch Editor unit-test Run. Ad-hoc body (current editor
+   * script + JSON cases), not a stored `unit_test_id` — the diagram may be
+   * unsaved. Omit on templates; pre/post editors never call this.
+   */
+  onRunScriptUnitTest?: (input: {
+    python_script: string;
+    input_json: Record<string, unknown>;
+    expected_output_json: Record<string, unknown>;
+  }) => Promise<ScriptUnitTestRunResult>;
 };
 
 export type BpmnCanvasServiceTaskOperator = {
@@ -118,6 +134,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     processModels,
     onLaunchCallActivityEditor,
     onFetchServiceTaskOperators,
+    onRunScriptUnitTest,
   },
   ref,
 ) {
@@ -161,6 +178,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     processModels,
     onLaunchCallActivityEditor,
     onFetchServiceTaskOperators,
+    onRunScriptUnitTest,
   });
   useEffect(() => {
     propsRef.current = {
@@ -173,6 +191,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       processModels,
       onLaunchCallActivityEditor,
       onFetchServiceTaskOperators,
+      onRunScriptUnitTest,
     };
   });
 
@@ -210,12 +229,30 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     instance.on('spiff.script.edit', (event: any) => {
       const base = SCRIPT_EDITOR_TITLES[event.scriptType] ?? 'Edit Script';
       const name = event.element?.businessObject?.name;
+      const run = propsRef.current.onRunScriptUnitTest;
+      const isBpmnScript = event.scriptType === 'bpmn:script';
+      const unitTests =
+        isBpmnScript && run && event.element
+          ? {
+              cases: readScriptUnitTests(event.element),
+              onCommit: (cases: ScriptUnitTestCase[]) => {
+                applyScriptUnitTestsToElement({
+                  element: event.element,
+                  cases,
+                  moddle: instance.get('moddle'),
+                  modeling: instance.get('modeling'),
+                });
+              },
+              onRun: run,
+            }
+          : undefined;
       setEditorSession({
         title: name ? `${base} — ${name}` : base,
         value: event.script ?? '',
         language: 'python',
         onSave: (value) =>
           event.eventBus.fire('spiff.script.update', { scriptType: event.scriptType, script: value }),
+        unitTests,
       });
     });
     instance.on('spiff.markdown.edit', (event: any) => {
@@ -223,7 +260,13 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         title: 'Edit Instructions',
         value: event.value ?? '',
         language: 'markdown',
-        onSave: (value) => event.eventBus.fire(event.listenEvent, { value }),
+        // bpmn-js-spiffworkflow's Launch button already `once`s
+        // `spiff.markdown.update` and writes `spiffworkflow:InstructionsForEndUser`
+        // (or GuestConfirmation) via setExtensionValue — the engine reads that
+        // extension body. Fall back to the same event name the old canvas
+        // hardcoded if listenEvent is missing.
+        onSave: (value) =>
+          event.eventBus.fire(event.listenEvent || 'spiff.markdown.update', { value }),
       });
     });
 
@@ -334,14 +377,13 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       propsRef.current.onLaunchCallActivityEditor?.(processModelId);
     });
 
-    // Service Task's connector operator dropdown. ServiceTaskOperatorSelect
-    // (bpmn-js-spiffworkflow) caches the response in a module-level array and
-    // only re-fires .requested if that cache is still empty — so this only
-    // makes one real fetch per page load, not once per Service Task element.
-    // Spike outcome (Phase 4 plan note): m8flow-frontend's own `/service-tasks`
-    // call has no matching backend route at all; the real, working source is
-    // `GET /connectors-grouped`, reshaped client-side into the flat
-    // `{id, parameters}[]` shape this component expects.
+    // Service Task's connector operator dropdown. The Action tab (and, once
+    // the catalog is known-non-empty, ServiceTaskOperatorSelect) fires
+    // `spiff.service_tasks.requested`. Empty catalogs are cached by
+    // `serviceTaskOperatorCatalog` so the vendor select is never mounted
+    // against `[]` (it would ignore empty and re-request every render).
+    // Source is `GET /connectors-grouped`, reshaped client-side into the
+    // flat `{id, parameters}[]` shape the select expects.
     instance.on('spiff.service_tasks.requested', (event: any) => {
       const fetchOperators = propsRef.current.onFetchServiceTaskOperators;
       if (!fetchOperators) {

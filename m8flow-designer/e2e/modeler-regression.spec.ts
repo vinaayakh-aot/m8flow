@@ -6,7 +6,9 @@ import {
   SEED_MODELER_PATH,
   SEED_USER_TASK_ELEMENT_ID,
   SEED_USER_TASK_NAME,
+  seedModelerPath,
 } from './helpers/fixtures';
+import { seedProcessModelFile } from './helpers/seedFixture';
 
 /**
  * CHK-11.. — Phase 0 baseline (see the phased Task Configuration Parity
@@ -91,4 +93,84 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
     await page.getByTitle('Show properties panel').click();
     await expect(page.getByTitle('Hide properties panel')).toBeVisible();
   });
+
+  test('Guest options are on a user task and checking them dirties the diagram', async ({
+    page,
+  }) => {
+    await signInAsSharedRealmUser(page, editorCredentials());
+    await page.goto(SEED_MODELER_PATH);
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+    await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
+    const guestGroup = await openPropertiesPanelGroup(page, 'allow_guest_user');
+    await guestGroup.getByLabel('Guest can complete this task').check();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  });
 });
+
+const SCRIPT_FILE = 'checklist-script-task.bpmn';
+const SCRIPT_TASK_ID = 'Activity_script';
+
+const SCRIPT_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   id="Definitions_script" targetNamespace="http://m8flow.org/e2e/script">
+  <bpmn:process id="Process_script" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:scriptTask id="${SCRIPT_TASK_ID}" name="Compute" />
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${SCRIPT_TASK_ID}" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="${SCRIPT_TASK_ID}" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_script">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="150" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_script_di" bpmnElement="${SCRIPT_TASK_ID}">
+        <dc:Bounds x="250" y="128" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="420" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="186" y="168" />
+        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="250" y="168" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="350" y="168" />
+        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="420" y="168" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
+test.describe('m8flow-designer Process Modeler — script unit tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await signInAsSharedRealmUser(page, editorCredentials());
+    await seedProcessModelFile(page, SCRIPT_FILE, SCRIPT_DIAGRAM_XML);
+    await page.goto(seedModelerPath(SCRIPT_FILE));
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    await selectElement(page, SCRIPT_TASK_ID);
+  });
+
+  test('script-task Launch Editor Unit tests tab can create a case and run it', async ({
+    page,
+  }) => {
+    const group = await openPropertiesPanelGroup(page, 'spiff_script');
+    await group.getByRole('button', { name: 'Launch Editor' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Edit Script — Compute' });
+    await expect(dialog).toBeVisible();
+    await dialog.locator('.monaco-editor').click();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await page.keyboard.type('x = 2');
+    await dialog.getByRole('tab', { name: 'Unit tests' }).click();
+    await dialog.getByRole('button', { name: 'Create unit test' }).click();
+    await dialog.getByLabel('Expected output JSON').fill('{"x": 2}');
+    await dialog.getByRole('button', { name: 'Run' }).click();
+    await expect(dialog.getByRole('status')).toHaveText('Passed.');
+  });
+});
+

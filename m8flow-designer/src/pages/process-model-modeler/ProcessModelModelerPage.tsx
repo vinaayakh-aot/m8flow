@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download } from 'lucide-react';
-import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useBeforeUnload, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 
 import {
   ApiError,
   createProcessModelFile,
+  deleteProcessModelFile,
   fetchConnectorsGrouped,
   fetchProcessModelDetail,
   fetchProcessModelFileContent,
   fetchProcessModels,
   saveProcessModelFileContent,
+  updateProcessModel,
+  runScriptUnitTest,
   type ProcessModelDetailFile,
 } from '@/lib/api';
-import { Button } from '@/components/ui/button';
 import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
-import type { BpmnCanvasServiceTaskOperator } from './components/BpmnCanvas';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
-import { SaveButton } from './components/SaveButton';
-import { SavedStatusPill } from './components/SavedStatusPill';
+import { flattenConnectorGroupsToOperators } from './serviceTaskOperators';
+import { DeleteFileDialog, UnsavedChangesDialog, ViewXmlDialog } from './components/ModelerFileDialogs';
+import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
+import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
@@ -29,17 +31,17 @@ import type { AppShellOutletContext } from '@/components/layout/AppShell';
  * flash before automatically reverting to 'dirty' (the save didn't
  * actually succeed, so the diagram is still unsaved) rather than a
  * persistent state. */
-type SavePhase = 'saved' | 'dirty' | 'saving' | 'error';
+type SavePhase = ModelerSavePhase;
 
 const ERROR_FLASH_MS = 2500;
 
 /**
- * Process Modeler — BPMN/DMN editor for one file inside a process model.
- * Fetches GET /v1.0/m8flow/process-models/{id}/files/{fileName} and mounts a
- * real, editable canvas (bpmn-js + bpmn-js-spiffworkflow, or dmn-js).
- * Manual save (Cmd/Ctrl+S or the Save button) PUTs the current XML back;
- * the RBAC gap logged on the backend-endpoints ticket (a .bpmn save needs
- * m8flow-bpmn-core's V1 "admin" role, not just the editor group) is
+ * Process Modeler — one file inside a process model per URL.
+ * Fetches GET /v1.0/m8flow/process-models/{id}/files/{fileName} and mounts
+ * BpmnCanvas (.bpmn), DmnCanvas (.dmn), or TextFileCanvas (.json / .md).
+ * Manual save (Cmd/Ctrl+S or the Save button) PUTs the current contents
+ * back; the RBAC gap logged on the backend-endpoints ticket (a .bpmn save
+ * needs m8flow-bpmn-core's V1 "admin" role, not just the editor group) is
  * deliberately not special-cased here — it surfaces as the same generic
  * "Save failed" flash as any other error (decided, not an oversight).
  */
@@ -49,7 +51,8 @@ export default function ProcessModelModelerPage() {
     fileName: string;
   }>();
   const navigate = useNavigate();
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, canManageProcesses } = useOutletContext<AppShellOutletContext>();
+  const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
   const needsTenant = isSuperAdmin && !scopedTenantId;
   const modifiedId = processModelId ?? '';
   const file = fileName ?? '';
@@ -76,6 +79,13 @@ export default function ProcessModelModelerPage() {
   // Phase 3) — feeds Call Activity's "Search" picker. Cross-model, so a
   // separate fetch from modelFiles above (which is scoped to *this* model).
   const [processModels, setProcessModels] = useState<CallActivitySearchProcessModel[]>([]);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [viewXmlOpen, setViewXmlOpen] = useState(false);
+  const [viewXml, setViewXml] = useState<string | null>(null);
+  const [viewXmlError, setViewXmlError] = useState<string | null>(null);
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (needsTenant || !modifiedId || !file) {
@@ -208,15 +218,18 @@ export default function ProcessModelModelerPage() {
   // flattened here from "grouped by connector" into the flat
   // `{id, parameters}[]` shape bpmn-js-spiffworkflow's
   // ServiceTaskOperatorSelect expects.
-  const handleFetchServiceTaskOperators = useCallback(async (): Promise<BpmnCanvasServiceTaskOperator[]> => {
-    const groups = await fetchConnectorsGrouped();
-    return groups.flatMap((group) =>
-      group.operations.map((operation) => ({
-        id: operation.id,
-        parameters: operation.parameters,
-      })),
-    );
+  const handleFetchServiceTaskOperators = useCallback(async () => {
+    return flattenConnectorGroupsToOperators(await fetchConnectorsGrouped());
   }, []);
+
+  const handleRunScriptUnitTest = useCallback(
+    (input: {
+      python_script: string;
+      input_json: Record<string, unknown>;
+      expected_output_json: Record<string, unknown>;
+    }) => runScriptUnitTest(modifiedId, input, scopedTenantId),
+    [modifiedId, scopedTenantId],
+  );
 
   // JSON Schema "Launch Editor" (User Task Web Form). Create Files writes
   // *-schema.json / *-uischema.json / *-exampledata.json via POST; later
@@ -305,6 +318,84 @@ export default function ProcessModelModelerPage() {
     downloadTextFile(file || 'diagram.bpmn', savedXml);
   }
 
+  const fileLower = file.toLowerCase();
+  const isBpmn = fileLower.endsWith('.bpmn');
+  const isDiagram = isBpmn || fileLower.endsWith('.dmn');
+  const currentFileMeta = modelFiles.find((entry) => entry.name === file);
+  // Before the detail list arrives, assume primary so Delete does not flash
+  // on the seed BPMN. Once the list is known, a file missing from it (just
+  // created, list not yet refreshed) is not primary.
+  const isPrimary = currentFileMeta ? currentFileMeta.primary : modelFiles.length === 0;
+
+  const allowLeaveRef = useRef(false);
+  const dirty = savePhase === 'dirty';
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (dirty) event.preventDefault();
+      },
+      [dirty],
+    ),
+  );
+  // BrowserRouter is not a data router, so useBlocker cannot run here. Capture
+  // in-app <a href> clicks while dirty and confirm before navigate(); tab close
+  // is covered by useBeforeUnload above.
+  useEffect(() => {
+    if (!dirty) return undefined;
+    function onClick(event: MouseEvent) {
+      if (allowLeaveRef.current || event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      const url = new URL(href, window.location.origin);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveTo(`${url.pathname}${url.search}${url.hash}`);
+    }
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [dirty]);
+
+  async function handleViewXml() {
+    setViewXmlOpen(true);
+    setViewXml(null);
+    setViewXmlError(null);
+    try {
+      const current = canvasRef.current ? await canvasRef.current.saveXML() : xml;
+      setViewXml(current ?? '');
+    } catch (err) {
+      setViewXmlError(err instanceof Error ? err.message : 'Failed to export XML');
+    }
+  }
+
+  async function handleSetPrimary() {
+    await updateProcessModel(modifiedId, { primary_file_name: file }, scopedTenantId);
+    try {
+      const detail = await fetchProcessModelDetail(modifiedId, scopedTenantId);
+      setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
+      setModelFiles(detail.files);
+    } catch {
+      // Primary is already written; the star just won't hide until next load.
+    }
+  }
+
+  async function handleConfirmDelete() {
+    setDeleting(true);
+    try {
+      await deleteProcessModelFile(modifiedId, file, scopedTenantId);
+      allowLeaveRef.current = true;
+      setSavePhase('saved');
+      setDeleteOpen(false);
+      navigate(`/processes/${modifiedId}`);
+    } catch {
+      setDeleting(false);
+    }
+  }
+
   // Mockup fidelity decision (HITL, header-chrome ticket): the mockup's
   // three-crumb breadcrumb (Process Groups / Group / file) has no crumb at
   // all for "this model's own detail page" — the group crumb, linking to
@@ -337,24 +428,20 @@ export default function ProcessModelModelerPage() {
             {file}
           </span>
         </nav>
-        <div className="flex flex-none items-center gap-2.5">
-          {savePhase === 'dirty' ? (
-            <SaveButton onClick={() => void handleSave()} />
-          ) : (
-            <SavedStatusPill status={savePhase === 'saving' ? 'saving' : savePhase === 'error' ? 'error' : 'saved'} />
-          )}
-          <Button
-            type="button"
-            variant="pill-info"
-            size="pill"
-            onClick={handleDownload}
-            disabled={!xml}
-            className="gap-1.5"
-          >
-            <Download className="size-3.5" strokeWidth={2.2} />
-            Download
-          </Button>
-        </div>
+        <ModelerFileToolbar
+          savePhase={savePhase}
+          fileLoaded={xml != null}
+          canManage={canManageCatalog}
+          isPrimary={isPrimary}
+          isBpmn={isBpmn}
+          isDiagram={isDiagram}
+          onSave={() => void handleSave()}
+          onDownload={() => void handleDownload()}
+          onNewFile={() => setNewFileOpen(true)}
+          onDelete={() => setDeleteOpen(true)}
+          onSetPrimary={() => void handleSetPrimary()}
+          onViewXml={() => void handleViewXml()}
+        />
       </header>
 
       <main className="min-h-0 flex-1">
@@ -389,9 +476,73 @@ export default function ProcessModelModelerPage() {
             processModels={processModels}
             onLaunchCallActivityEditor={handleLaunchCallActivityEditor}
             onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
+            onRunScriptUnitTest={handleRunScriptUnitTest}
           />
         ) : null}
       </main>
+      <UnsavedChangesDialog
+        open={leaveTo != null}
+        onStay={() => setLeaveTo(null)}
+        onLeave={() => {
+          const to = leaveTo;
+          allowLeaveRef.current = true;
+          setLeaveTo(null);
+          if (to) navigate(to);
+        }}
+      />
+      <DeleteFileDialog
+        open={deleteOpen}
+        fileName={file}
+        submitting={deleting}
+        onCancel={() => { if (!deleting) setDeleteOpen(false); }}
+        onConfirm={() => void handleConfirmDelete()}
+      />
+      <ViewXmlDialog
+        open={viewXmlOpen}
+        fileName={file}
+        xml={viewXml}
+        error={viewXmlError}
+        onClose={() => setViewXmlOpen(false)}
+      />
+      {canManageCatalog ? (
+        <AddProcessModelFileDialog
+          open={newFileOpen}
+          onClose={() => setNewFileOpen(false)}
+          existingNames={modelFiles.map((entry) => entry.name)}
+          onCreate={async (input) => {
+            await createProcessModelFile(modifiedId, input, scopedTenantId);
+          }}
+          onCreated={(fileName) => {
+            setNewFileOpen(false);
+            setModelFiles((prev) =>
+              prev.some((entry) => entry.name === fileName)
+                ? prev
+                : [
+                    ...prev,
+                    {
+                      name: fileName,
+                      size_bytes: 0,
+                      updated_at_in_seconds: 0,
+                      primary: false,
+                    },
+                  ],
+            );
+            void fetchProcessModelDetail(modifiedId, scopedTenantId)
+              .then((detail) => {
+                setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
+                setModelFiles(detail.files);
+              })
+              .catch(() => {
+                // Delete/primary chrome falls back from the optimistic list.
+              });
+            if (fileOpensInModeler(fileName)) {
+              navigate(`/processes/${modifiedId}/modeler/${encodeURIComponent(fileName)}`);
+            } else {
+              navigate(`/processes/${modifiedId}`);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
