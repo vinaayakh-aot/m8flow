@@ -108,6 +108,11 @@ function isTextareaField(key: string, field: JsonSchema, ui: UiSchema): boolean 
   return TEXTAREA_KEY_RE.test(key) || TEXTAREA_KEY_RE.test(field.title ?? '');
 }
 
+function uiString(ui: UiSchema, key: string): string | undefined {
+  const value = ui?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
 const INPUT_CLASS =
   'h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80';
 
@@ -135,6 +140,9 @@ function Field({
 }) {
   const label = labelFor(fieldKey, field);
   const invalid = Boolean(error);
+  const placeholder = uiString(ui, 'ui:placeholder');
+  const help = uiString(ui, 'ui:help');
+  const widget = uiString(ui, 'ui:widget');
 
   // Missing/unknown type degrades gracefully rather than throwing.
   const type = field.type;
@@ -183,6 +191,7 @@ function Field({
         {field.description ? (
           <p className="text-xs text-muted-foreground">{field.description}</p>
         ) : null}
+        {help ? <p className="text-xs text-muted-foreground">{help}</p> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
       </div>
     );
@@ -228,6 +237,7 @@ function Field({
         <Input
           type="date"
           value={typeof value === 'string' ? value : ''}
+          placeholder={placeholder}
           disabled={disabled}
           aria-invalid={invalid || undefined}
           onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
@@ -253,14 +263,27 @@ function Field({
       );
     }
 
-    // plain string → textarea per heuristic, else single-line input.
+    // plain string → textarea / password per ui:widget, else single-line input.
     if (type === 'string') {
       const strValue = typeof value === 'string' ? value : '';
+      if (widget === 'password') {
+        return (
+          <Input
+            type="password"
+            value={strValue}
+            placeholder={placeholder}
+            disabled={disabled}
+            aria-invalid={invalid || undefined}
+            onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
+          />
+        );
+      }
       if (isTextareaField(fieldKey, field, ui)) {
         return (
           <Textarea
             rows={3}
             value={strValue}
+            placeholder={placeholder}
             disabled={disabled}
             aria-invalid={invalid || undefined}
             onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
@@ -271,6 +294,7 @@ function Field({
         <Input
           type="text"
           value={strValue}
+          placeholder={placeholder}
           disabled={disabled}
           aria-invalid={invalid || undefined}
           onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
@@ -298,6 +322,7 @@ function Field({
       {field.description ? (
         <span className="block text-xs text-muted-foreground">{field.description}</span>
       ) : null}
+      {help ? <span className="block text-xs text-muted-foreground">{help}</span> : null}
       {error ? (
         <span className="block text-sm text-destructive" role="alert">
           {error}

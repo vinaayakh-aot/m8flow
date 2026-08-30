@@ -1664,8 +1664,10 @@ paths:
       summary: Processes page — create a process model
       description: >-
         Creates a process model under an existing process group and writes a
-        default startable BPMN (`{leaf}.bpmn`). Super-admin is always 403.
-        Distinct from thin POST /v1.0/process-models `{path, xml}`.
+        default startable BPMN (`{leaf}.bpmn`). `id` is optional: when omitted,
+        the leaf is slugified from `display_name` (same as the previous create
+        form). Super-admin is always 403. Distinct from thin POST
+        /v1.0/process-models `{path, xml}`.
       operationId: m8flow_backend.routes.processes_controller.create_process_model
       tags:
         - Processes
@@ -1689,7 +1691,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcessModelIdentityResponse"
         "400":
-          description: Missing concrete tenant, group, or invalid id
+          description: Missing concrete tenant, group, id, or display name
           content:
             application/json:
               schema:
@@ -4068,17 +4070,21 @@ components:
     ProcessModelCreateRequest:
       type: object
       required:
-        - id
         - group_id
       properties:
         id:
           type: string
-          description: Leaf identifier (single path segment)
+          description: >-
+            Leaf identifier (single path segment). Optional when
+            display_name is set; slugified from display_name otherwise.
         group_id:
           type: string
           description: Existing process group path
         display_name:
           type: string
+          description: >-
+            Human-readable name. Required when id is omitted; used to
+            generate the leaf identifier.
         description:
           type: string
 
@@ -4926,7 +4932,6 @@ components:
       type: object
       required:
         - process_group_id
-        - process_model_id
         - display_name
       properties:
         process_group_id:
@@ -4934,7 +4939,9 @@ components:
           description: The process group where the model will be created
         process_model_id:
           type: string
-          description: The ID for the new process model (just the model name, not full path)
+          description: >-
+            Leaf identifier (just the model name, not full path). Optional
+            when display_name is set; slugified from display_name otherwise.
         display_name:
           type: string
           description: Display name for the new process model

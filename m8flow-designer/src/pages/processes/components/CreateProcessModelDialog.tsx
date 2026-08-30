@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
+import { slugifyProcessModelId } from '@/lib/processModelId';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,7 +22,7 @@ export type CreateProcessModelDialogProps = {
   onCreated: (encodedProcessModelId: string) => void;
   onCreate: (input: {
     group_id: string;
-    id: string;
+    id?: string;
     display_name: string;
     description: string;
   }) => Promise<{ id: string }>;
@@ -38,16 +39,18 @@ export function CreateProcessModelDialog({
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [processGroupId, setProcessGroupId] = useState('');
-  const [processModelId, setProcessModelId] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [processModelId, setProcessModelId] = useState('');
+  const [idEdited, setIdEdited] = useState(false);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
-    setProcessModelId('');
     setDisplayName('');
+    setProcessModelId('');
+    setIdEdited(false);
     setDescription('');
     setError(null);
 
@@ -75,17 +78,24 @@ export function CreateProcessModelDialog({
     };
   }, [open, scopedTenantId, defaultGroupId]);
 
+  function handleDisplayNameChange(value: string) {
+    setDisplayName(value);
+    if (!idEdited) setProcessModelId(slugifyProcessModelId(value));
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!processGroupId || !processModelId.trim()) return;
+    const name = displayName.trim();
+    const leaf = processModelId.trim() || slugifyProcessModelId(name);
+    if (!processGroupId || !name || !leaf) return;
     setSubmitting(true);
     setError(null);
     try {
       const result = await onCreate({
         group_id: processGroupId,
-        id: processModelId.trim(),
-        display_name: displayName.trim(),
+        display_name: name,
         description: description.trim(),
+        ...(idEdited ? { id: leaf } : {}),
       });
       onCreated(result.id.split('/').join(':'));
     } catch (err: unknown) {
@@ -94,6 +104,9 @@ export function CreateProcessModelDialog({
       setSubmitting(false);
     }
   }
+
+  const canSubmit =
+    !submitting && groups.length > 0 && Boolean(displayName.trim()) && Boolean(processModelId.trim());
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -133,28 +146,34 @@ export function CreateProcessModelDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpm-id" className="text-xs font-medium text-muted-foreground">
-              Process model ID
-            </label>
-            <Input
-              id="cpm-id"
-              value={processModelId}
-              onChange={(e) => setProcessModelId(e.target.value)}
-              placeholder="invoice-approval"
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
             <label htmlFor="cpm-name" className="text-xs font-medium text-muted-foreground">
               Display name
             </label>
             <Input
               id="cpm-name"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={(e) => handleDisplayNameChange(e.target.value)}
               placeholder="Invoice Approval"
+              required
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="cpm-id" className="text-xs font-medium text-muted-foreground">
+              Identifier
+            </label>
+            <Input
+              id="cpm-id"
+              value={processModelId}
+              onChange={(e) => {
+                setProcessModelId(e.target.value);
+                setIdEdited(true);
+              }}
+              placeholder="invoice-approval"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Generated from the display name. You can edit it before creating.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -178,10 +197,7 @@ export function CreateProcessModelDialog({
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={submitting || groups.length === 0 || !processModelId.trim()}
-            >
+            <Button type="submit" disabled={!canSubmit}>
               {submitting ? 'Creating…' : 'Create process model'}
             </Button>
           </DialogFooter>

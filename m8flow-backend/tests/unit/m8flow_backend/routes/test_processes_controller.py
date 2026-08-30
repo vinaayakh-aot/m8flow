@@ -1109,6 +1109,39 @@ def test_editor_creates_and_updates_process_model(client, db_session, tmp_path, 
     assert updated.get_json()["description"] == "Updated"
 
 
+def test_create_process_model_slugifies_id_from_display_name(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="model-slug", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    response = client.post(
+        "/v1.0/m8flow/process-models",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"group_id": "finance", "display_name": "Expense Report"},
+    )
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    assert body["id"] == "finance/expense-report"
+    assert body["display_name"] == "Expense Report"
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "expense-report" / "expense-report.bpmn").is_file()
+
+
+def test_create_process_model_requires_id_or_display_name(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="model-noid", groups=["t1:editor"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/process-models",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"group_id": "finance"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "invalid_process_model"
+
+
 def test_create_process_model_requires_existing_group(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(

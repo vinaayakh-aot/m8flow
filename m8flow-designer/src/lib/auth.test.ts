@@ -121,6 +121,16 @@ describe('auth tenant gate', () => {
     expect(getActiveTenantDisplayLabel()).toBe('tenant-orphan');
   });
 
+  it('uses directory membership names when the JWT claim has no name', () => {
+    setCookie('m8flow_selected_tenant', 'tenant-acme');
+    expect(getActiveTenantDisplayLabel()).toBe('tenant-acme');
+    expect(
+      getActiveTenantDisplayLabel([
+        { alias: 'acme', id: 'tenant-acme', name: 'Acme Corp' },
+      ]),
+    ).toBe('Acme Corp');
+  });
+
   it('builds a tenant finalization login URL without copying a JWT tenant id', () => {
     const loc = {
       href: 'http://localhost:6853/tenant',

@@ -59,15 +59,14 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     await formGroup.getByLabel('JSON Schema Filename').selectOption('wfh-form-schema.json');
     await formGroup.getByRole('button', { name: 'Launch Editor' }).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Edit Form Schema — wfh-form-schema.json' });
+    const dialog = page.getByRole('dialog', { name: 'Edit JSON Schema' });
     await expect(dialog).toBeVisible();
-    // The dialog's Monaco editor actually loaded this file's real content
-    // (a GET round trip against the live backend), not a placeholder.
-    await expect(dialog.locator('.monaco-editor')).toContainText('Work From Home Request');
+    await expect(dialog.getByLabel('JSON Schema editor')).toContainText('Work From Home Request');
 
-    // Cancel, not Save — this reads/writes the real seed file on disk, and
-    // Cancel proves the round trip without mutating the shared fixture.
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    // Close, not Save — this reads the real seed file, and Close proves
+    // the round trip without mutating the shared fixture (edits auto-save
+    // only after a change).
+    await dialog.getByRole('button', { name: 'Close' }).click();
     await expect(dialog).toHaveCount(0);
   });
 

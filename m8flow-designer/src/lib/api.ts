@@ -395,7 +395,8 @@ export type ProcessModelIdentity = {
 
 export type ProcessModelCreateInput = {
   group_id: string;
-  id: string;
+  /** Optional leaf; when omitted the host slugifies `display_name`. */
+  id?: string;
   display_name: string;
   description: string;
 };

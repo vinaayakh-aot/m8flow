@@ -10,12 +10,13 @@ const mockLogout = vi.fn();
 const mockIsSuperAdmin = vi.fn();
 const mockGetActiveTenantDisplayLabel = vi.fn((): string | null => null);
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
+const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/auth', () => ({
   getCurrentUser: () => mockGetCurrentUser(),
   isSuperAdmin: () => mockIsSuperAdmin(),
   logout: () => mockLogout(),
-  getActiveTenantDisplayLabel: () => mockGetActiveTenantDisplayLabel(),
+  getActiveTenantDisplayLabel: (extra?: unknown) => mockGetActiveTenantDisplayLabel(extra),
 }));
 
 const mockFetchCapabilities = vi.fn().mockResolvedValue({
@@ -28,6 +29,7 @@ const mockFetchCapabilities = vi.fn().mockResolvedValue({
 vi.mock('@/lib/api', () => ({
   fetchTenants: (...args: unknown[]) => mockFetchTenants(...args),
   fetchCapabilities: () => mockFetchCapabilities(),
+  fetchOrganizationMemberships: () => mockFetchOrganizationMemberships(),
 }));
 
 function renderShell(initialPath = '/') {
@@ -56,6 +58,7 @@ describe('AppShell', () => {
     vi.clearAllMocks();
     mockIsSuperAdmin.mockReturnValue(false);
     mockGetActiveTenantDisplayLabel.mockReturnValue(null);
+    mockFetchOrganizationMemberships.mockResolvedValue([]);
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: false,
       can_read_authentications: false,
@@ -124,6 +127,40 @@ describe('AppShell', () => {
     expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(mockFetchTenants).not.toHaveBeenCalled();
+  });
+
+  it('replaces a cookie tenant id with the organization-memberships display name', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockIsSuperAdmin.mockReturnValue(false);
+    mockGetActiveTenantDisplayLabel.mockImplementation((extra: unknown) => {
+        const rows = Array.isArray(extra) ? extra : [];
+        if (rows.length > 0) {
+          const named = rows.find(
+            (row) =>
+              row &&
+              typeof row === 'object' &&
+              typeof (row as { name?: unknown }).name === 'string' &&
+              (row as { name: string }).name.trim(),
+          ) as { name: string } | undefined;
+          return named?.name.trim() ?? null;
+        }
+        return '860821d8-64f9-43c4-bbdf-ef3010463d5e';
+      });
+    mockFetchOrganizationMemberships.mockResolvedValue([
+      {
+        alias: 'acme',
+        id: '860821d8-64f9-43c4-bbdf-ef3010463d5e',
+        name: 'Acme Corp',
+      },
+    ]);
+
+    renderShell();
+
+    expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent(
+      '860821d8-64f9-43c4-bbdf-ef3010463d5e',
+    );
+    expect(await screen.findByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
+    expect(mockFetchOrganizationMemberships).toHaveBeenCalled();
   });
 
   it('shows Setup → Authentications when capabilities allow read', async () => {

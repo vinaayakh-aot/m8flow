@@ -9,3 +9,18 @@ export function encodeProcessModelId(id: string): string {
 export function decodeProcessModelId(encoded: string): string {
   return encoded.split(':').join('/');
 }
+
+/**
+ * URL-friendly process-model leaf from a display name. Matches backend
+ * `catalog.slugify_process_model_leaf`: lowercase, whitespace to hyphens,
+ * keep `[a-z0-9_-]`. Empty if nothing usable remains.
+ */
+export function slugifyProcessModelId(displayName: string): string {
+  return displayName
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '');
+}

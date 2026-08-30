@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 
-import { fetchCapabilities, fetchTenants, type TenantSummary } from '@/lib/api';
-import { getActiveTenantDisplayLabel, getCurrentUser, isSuperAdmin, logout } from '@/lib/auth';
+import { fetchCapabilities, fetchOrganizationMemberships, fetchTenants, type TenantSummary } from '@/lib/api';
+import {
+  getActiveTenantDisplayLabel,
+  getCurrentUser,
+  isSuperAdmin,
+  logout,
+} from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { persistTenantId, readPersistedTenantId } from '@/lib/selectedTenant';
 
@@ -50,6 +55,9 @@ export function AppShell() {
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
+  const [activeTenantLabel, setActiveTenantLabel] = useState<string | null>(() =>
+    superAdmin ? null : getActiveTenantDisplayLabel(),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -105,9 +113,31 @@ export function AppShell() {
     };
   }, [superAdmin, tenantsReloadKey]);
 
+  useEffect(() => {
+    if (superAdmin) {
+      setActiveTenantLabel(null);
+      return;
+    }
+    setActiveTenantLabel(getActiveTenantDisplayLabel());
+    let cancelled = false;
+    fetchOrganizationMemberships()
+      .then((rows) => {
+        if (!cancelled) {
+          setActiveTenantLabel(getActiveTenantDisplayLabel(rows));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveTenantLabel(getActiveTenantDisplayLabel());
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [superAdmin]);
+
   const scopedTenantId = superAdmin ? selectedTenantId : null;
   const userLabel = user?.username ?? user?.email ?? 'unknown user';
-  const activeTenantLabel = superAdmin ? null : getActiveTenantDisplayLabel();
   const outletContext: AppShellOutletContext = {
     scopedTenantId,
     selectedTenantId,

@@ -29,6 +29,8 @@ export type DiagramCanvasProps = {
   files?: BpmnCanvasFile[];
   onReadFile?: (fileName: string) => Promise<string>;
   onWriteFile?: (fileName: string, content: string) => Promise<void>;
+  onCreateFile?: (fileName: string, content: string) => Promise<void>;
+  onFilesChanged?: () => void;
   onLaunchDmnEditor?: (fileName: string) => void;
   processModels?: CallActivitySearchProcessModel[];
   onLaunchCallActivityEditor?: (processModelId: string) => void;
@@ -45,6 +47,8 @@ export const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>
       files,
       onReadFile,
       onWriteFile,
+      onCreateFile,
+      onFilesChanged,
       onLaunchDmnEditor,
       processModels,
       onLaunchCallActivityEditor,
@@ -65,6 +69,8 @@ export const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>
             files={files}
             onReadFile={onReadFile}
             onWriteFile={onWriteFile}
+            onCreateFile={onCreateFile}
+            onFilesChanged={onFilesChanged}
             onLaunchDmnEditor={onLaunchDmnEditor}
             processModels={processModels}
             onLaunchCallActivityEditor={onLaunchCallActivityEditor}

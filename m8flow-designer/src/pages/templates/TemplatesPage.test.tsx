@@ -255,7 +255,7 @@ describe('TemplatesPage', () => {
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText('Process model ID'), { target: { value: 'invoice-approval-2' } });
+    fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'invoice-approval-2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
 
     await waitFor(() => {

@@ -273,7 +273,8 @@ describe('ProcessModelDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval (copy)' })).toBeInTheDocument();

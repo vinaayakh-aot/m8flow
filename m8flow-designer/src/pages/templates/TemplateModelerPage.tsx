@@ -220,7 +220,16 @@ export default function TemplateModelerPage() {
   );
   const handleWriteFile = useCallback(async (name: string, content: string) => {
     if (currentIdRef.current == null) return;
-    await saveTemplateFileContent(currentIdRef.current, name, content);
+    const updated = await saveTemplateFileContent(currentIdRef.current, name, content, 'application/json');
+    currentIdRef.current = updated.id;
+    setTemplate(updated);
+  }, []);
+  const handleFormFilesChanged = useCallback(() => {
+    const id = currentIdRef.current;
+    if (id == null) return;
+    void fetchTemplate(id)
+      .then((updated) => setTemplate(updated))
+      .catch(() => {});
   }, []);
 
   const handleFetchServiceTaskOperators = useCallback(async (): Promise<BpmnCanvasServiceTaskOperator[]> => {
@@ -303,6 +312,8 @@ export default function TemplateModelerPage() {
             files={template?.files.map((f) => ({ name: f.fileName })) ?? []}
             onReadFile={handleReadFile}
             onWriteFile={handleWriteFile}
+            onCreateFile={handleWriteFile}
+            onFilesChanged={handleFormFilesChanged}
             onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
           />
         ) : null}

@@ -11,13 +11,18 @@ import Modeler from 'm8flow-bpmn/lib/Modeler';
 import { CallActivitySearchDialog } from './CallActivitySearchDialog';
 import type { CallActivitySearchProcessModel, CallActivitySearchSession } from './CallActivitySearchDialog';
 import type { EditorDialogSession } from './EditorDialog';
+import type { FormSchemaEditorSession } from './FormSchemaEditor';
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
+import { formSchemaBaseFromLabel, SCHEMA_SUFFIX } from './formSchemaFiles';
 
 // Lazy — the "Launch Editor" popup pulls in Monaco (a large, independent
 // library tree). Loading it only when a task's script/instructions editor is
 // actually opened keeps it out of the initial BpmnCanvas chunk.
 const EditorDialog = lazy(() =>
   import('./EditorDialog').then((module) => ({ default: module.EditorDialog })),
+);
+const FormSchemaEditor = lazy(() =>
+  import('./FormSchemaEditor').then((module) => ({ default: module.FormSchemaEditor })),
 );
 
 // Human-readable headings for the script editors bpmn-js-spiffworkflow can
@@ -64,11 +69,15 @@ export type BpmnCanvasProps = {
    * same way m8flow-frontend's TemplateFileDiagramPage does. */
   files?: BpmnCanvasFile[];
   /** Reads/writes a file by name in this same process model, for the JSON
-   * Schema field's "Launch Editor" round trip (`spiff.file.edit`). Both
-   * optional — Launch Editor no-ops without them (no model context to
-   * read/write against). */
+   * Schema field's "Launch Editor" round trip (`spiff.file.edit`). Launch
+   * Editor no-ops without read+write+create (no model context to persist
+   * against). Empty filename is valid — it opens the create-files flow. */
   onReadFile?: (fileName: string) => Promise<string>;
   onWriteFile?: (fileName: string, content: string) => Promise<void>;
+  onCreateFile?: (fileName: string, content: string) => Promise<void>;
+  /** After Create Files, refresh this model's file list so the JSON Schema
+   * Filename dropdown includes the new `*-schema.json`. */
+  onFilesChanged?: () => void;
   /** Business Rule Task's "Launch Editor" (`spiff.dmn.edit`) — navigates to
    * the selected .dmn file's own modeler page. Fire-and-forget (the button
    * doesn't wait on a response event, per bpmn-js-spiffworkflow's own
@@ -103,6 +112,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     files,
     onReadFile,
     onWriteFile,
+    onCreateFile,
+    onFilesChanged,
     onLaunchDmnEditor,
     processModels,
     onLaunchCallActivityEditor,
@@ -126,6 +137,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   // as editorSession, answering spiff.callactivity.search.
   const [callActivitySearchSession, setCallActivitySearchSession] =
     useState<CallActivitySearchSession | null>(null);
+  const [formEditorSession, setFormEditorSession] = useState<FormSchemaEditorSession | null>(null);
   // Dirty-tracking follows the standard diagram-js pattern: record the
   // command-stack index at the last load/save, and compare against the
   // current index (not just "has anything changed", so undo-back-to-saved
@@ -143,6 +155,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     files,
     onReadFile,
     onWriteFile,
+    onCreateFile,
+    onFilesChanged,
     onLaunchDmnEditor,
     processModels,
     onLaunchCallActivityEditor,
@@ -153,6 +167,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       files,
       onReadFile,
       onWriteFile,
+      onCreateFile,
+      onFilesChanged,
       onLaunchDmnEditor,
       processModels,
       onLaunchCallActivityEditor,
@@ -234,32 +250,37 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       event.eventBus.fire('spiff.task_metadata_keys.returned', { keys: null });
     });
 
-    // "Launch Editor" next to the JSON Schema Filename field. Requires a
-    // filename already selected (matches m8flow-frontend's own
-    // TemplateFileDiagramPage.onLaunchJsonSchemaEditor, which also no-ops
-    // without one) and a model to read/write against. Reuses the same
-    // Monaco EditorDialog as Script/Instructions — m8flow has no separate
-    // form-schema-builder route, so this edits the raw JSON file content
-    // inline rather than navigating away.
+    // "Launch Editor" next to the JSON Schema Filename field. Empty
+    // filename is not a dead click: name the form from the selected user
+    // task and create the companion files if they are missing, then open
+    // the editor. A selected filename opens those companions.
     instance.on('spiff.file.edit', (event: any) => {
-      const fileName: string | undefined = event.value || undefined;
-      const { onReadFile: read, onWriteFile: write } = propsRef.current;
-      if (!fileName || !read || !write) return;
+      const selectedFileName: string | undefined = event.value || undefined;
+      const {
+        onReadFile: read,
+        onWriteFile: write,
+        onCreateFile: create,
+        onFilesChanged: filesChanged,
+      } = propsRef.current;
+      if (!read || !write || !create) return;
 
-      read(fileName)
-        .then((content) => {
-          setEditorSession({
-            title: `Edit Form Schema — ${fileName}`,
-            value: content,
-            language: 'json',
-            onSave: (newValue) => {
-              write(fileName, newValue)
-                .then(() => event.eventBus.fire(event.listenEvent, { value: fileName }))
-                .catch((err: unknown) => console.error('Failed to save JSON schema file:', err));
-            },
-          });
-        })
-        .catch((err: unknown) => console.error('Failed to load JSON schema file for editing:', err));
+      const selected = instance.get('selection')?.get?.()?.[0];
+      const label = selected?.businessObject?.name || selected?.id || 'form';
+      const fileName = selectedFileName ?? `${formSchemaBaseFromLabel(label)}${SCHEMA_SUFFIX}`;
+
+      setFormEditorSession({
+        fileName,
+        createIfMissing: !selectedFileName,
+        onReadFile: read,
+        onWriteFile: write,
+        onCreateFile: create,
+        onCommitted: (schemaFileName) => {
+          if (event.listenEvent) {
+            event.eventBus.fire(event.listenEvent, { value: schemaFileName });
+          }
+          filesChanged?.();
+        },
+      });
     });
 
     // Select Decision Table dropdown (Business Rule Task group) — same
@@ -405,6 +426,11 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         {editorSession ? (
           <Suspense fallback={null}>
             <EditorDialog session={editorSession} onClose={() => setEditorSession(null)} />
+          </Suspense>
+        ) : null}
+        {formEditorSession ? (
+          <Suspense fallback={null}>
+            <FormSchemaEditor session={formEditorSession} onClose={() => setFormEditorSession(null)} />
           </Suspense>
         ) : null}
         {callActivitySearchSession ? (

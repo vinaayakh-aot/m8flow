@@ -5,8 +5,9 @@ from urllib.parse import quote
 
 from flask import Response, jsonify, request, g
 
-from m8flow_backend.errors import ApiError
+from m8flow_backend import catalog
 from m8flow_backend.db import db
+from m8flow_backend.errors import ApiError
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
@@ -393,7 +394,7 @@ def template_create_process_model(id: int):
 
     Request body should contain:
     - process_group_id: The process group where the model will be created
-    - process_model_id: The ID for the new process model (just the model name)
+    - process_model_id: Optional leaf id; slugified from display_name when omitted
     - display_name: Display name for the new process model
     - description: Optional description for the new process model
     """
@@ -409,10 +410,16 @@ def template_create_process_model(id: int):
 
     if not process_group_id:
         raise ApiError("missing_fields", "process_group_id is required", status_code=400)
-    if not process_model_id:
-        raise ApiError("missing_fields", "process_model_id is required", status_code=400)
     if not display_name:
         raise ApiError("missing_fields", "display_name is required", status_code=400)
+    if not process_model_id:
+        process_model_id = catalog.slugify_process_model_leaf(str(display_name))
+        if not process_model_id:
+            raise ApiError(
+                "missing_fields",
+                "process_model_id is required, or provide a display name to generate one",
+                status_code=400,
+            )
 
     result = TemplateService.create_process_model_from_template(
         template_id=id,

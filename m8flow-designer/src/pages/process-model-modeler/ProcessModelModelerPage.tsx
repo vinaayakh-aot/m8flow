@@ -4,6 +4,7 @@ import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom
 
 import {
   ApiError,
+  createProcessModelFile,
   fetchConnectorsGrouped,
   fetchProcessModelDetail,
   fetchProcessModelFileContent,
@@ -217,11 +218,10 @@ export default function ProcessModelModelerPage() {
     );
   }, []);
 
-  // JSON Schema "Launch Editor" round trip (Task Configuration Parity plan,
-  // Phase 1) — reads/writes an arbitrary file in *this* process model.
-  // Reuses the same PUT saveProcessModelFileContent the Save button already
-  // calls; the file just happens to be a *-schema.json rather than the
-  // primary .bpmn/.dmn file.
+  // JSON Schema "Launch Editor" (User Task Web Form). Create Files writes
+  // *-schema.json / *-uischema.json / *-exampledata.json via POST; later
+  // edits PUT the same files. After create, the listenEvent binds the
+  // schema filename onto the selected task.
   const handleReadModelFile = useCallback(
     (name: string) => fetchProcessModelFileContent(modifiedId, name, scopedTenantId),
     [modifiedId, scopedTenantId],
@@ -232,6 +232,23 @@ export default function ProcessModelModelerPage() {
     },
     [modifiedId, scopedTenantId],
   );
+  const handleCreateModelFile = useCallback(
+    async (name: string, content: string) => {
+      await createProcessModelFile(modifiedId, { file_name: name, content }, scopedTenantId);
+    },
+    [modifiedId, scopedTenantId],
+  );
+  const handleFormFilesChanged = useCallback(() => {
+    void fetchProcessModelDetail(modifiedId, scopedTenantId)
+      .then((detail) => {
+        setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
+        setModelFiles(detail.files);
+      })
+      .catch(() => {
+        // Dropdown refresh is best-effort — the new filename is already
+        // written onto the task via the Launch Editor listenEvent.
+      });
+  }, [modifiedId, scopedTenantId]);
 
   // Business Rule Task's "Launch Editor" (Task Configuration Parity plan,
   // Phase 2) — navigates to the chosen .dmn file's own modeler page, reusing
@@ -366,6 +383,8 @@ export default function ProcessModelModelerPage() {
             files={modelFiles}
             onReadFile={handleReadModelFile}
             onWriteFile={handleWriteModelFile}
+            onCreateFile={handleCreateModelFile}
+            onFilesChanged={handleFormFilesChanged}
             onLaunchDmnEditor={handleLaunchDmnEditor}
             processModels={processModels}
             onLaunchCallActivityEditor={handleLaunchCallActivityEditor}

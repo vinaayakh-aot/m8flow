@@ -135,24 +135,44 @@ export function getSelectedTenantId(): string | null {
 }
 
 /**
- * Label for the non-super-admin shell badge. Cookie is the active tenant;
- * membership name is display-only. Never reads localStorage.
+ * Prefer the directory/JWT display name for the active tenant cookie.
+ * Cookie may be the tenant id; JWT org claims often omit `name`.
  */
-export function getActiveTenantDisplayLabel(): string | null {
-  const selected = getSelectedTenantId()?.trim();
-  if (!selected) {
+export function labelForActiveTenant(
+  selected: string | null | undefined,
+  memberships: OrganizationMembership[],
+): string | null {
+  const trimmed = selected?.trim();
+  if (!trimmed) {
     return null;
   }
-  for (const membership of getOrganizationMemberships()) {
-    if (membership.id === selected || membership.alias === selected) {
+  for (const membership of memberships) {
+    if (membership.id === trimmed || membership.alias === trimmed) {
       const name = membership.name?.trim();
       if (name) {
         return name;
       }
-      return membership.alias || selected;
+      const alias = membership.alias?.trim();
+      if (alias) {
+        return alias;
+      }
     }
   }
-  return selected;
+  return trimmed;
+}
+
+/**
+ * Label for the non-super-admin shell badge. Cookie is the active tenant;
+ * membership name is display-only. Never reads localStorage.
+ */
+export function getActiveTenantDisplayLabel(
+  extraMemberships: OrganizationMembership[] = [],
+): string | null {
+  const memberships =
+    extraMemberships.length > 0
+      ? extraMemberships
+      : getOrganizationMemberships();
+  return labelForActiveTenant(getSelectedTenantId(), memberships);
 }
 
 export function clearSelectedTenantCookie(): void {

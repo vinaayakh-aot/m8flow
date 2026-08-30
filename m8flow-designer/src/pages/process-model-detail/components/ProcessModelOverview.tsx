@@ -1,4 +1,4 @@
-import { Download, Folder, MoreVertical, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Download, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -13,6 +13,7 @@ import {
 import { startErrorMessage } from '@/lib/startProcessError';
 import { AddProcessModelFileDialog, fileOpensInModeler } from './AddProcessModelFileDialog';
 import { CopyProcessModelDialog } from './CopyProcessModelDialog';
+import { HeaderActionsMenu } from './HeaderActionsMenu';
 import { ProcessModelTestsCard } from './ProcessModelTestsCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -32,10 +33,10 @@ import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 
 // This page's remaining placeholder actions (Open in modeler when no file
-// exists yet, Save as template, More actions) render `disabled` but are
-// meant to *look* fully live, matching the mockup — not dimmed the way
-// Button's own `disabled:opacity-50` otherwise renders every other disabled
-// Button in the app. This override is the one deliberate exception to that rule.
+// exists yet) render `disabled` but are meant to *look* fully live, matching
+// the mockup — not dimmed the way Button's own `disabled:opacity-50` otherwise
+// renders every other disabled Button in the app. This override is the one
+// deliberate exception to that rule.
 const inertBtn = 'cursor-default select-none disabled:cursor-default disabled:opacity-100';
 
 export function formatDuration(seconds: number | null | undefined): string {
@@ -200,9 +201,10 @@ export type ProcessModelOverviewProps = {
 /**
  * Process-model overview layout matching Processes.dc.html inModel.
  * Live fields come from the detail API; mockup-only extras are omitted or
- * placeholder. Header Copy is live when `onCopy` is provided; Save as
- * template stays inert chrome; Start is live when `onStart` is provided
- * (same gate as the processes list). Tests are live for catalog managers.
+ * placeholder. Header Copy / Edit identity live in the overflow menu when
+ * wired; Save as template stays an inert menu item; Start is live when
+ * `onStart` is provided (same gate as the processes list). Tests are live
+ * for catalog managers.
  */
 export function ProcessModelOverview({
   detail,
@@ -260,20 +262,6 @@ export function ProcessModelOverview({
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
-          {canManage && onUpdateIdentity ? (
-            <button
-              type="button"
-              onClick={() => {
-                setEditName(detail.display_name);
-                setEditDescription(detail.description);
-                setEditError(null);
-                setEditOpen(true);
-              }}
-              className="mt-2 text-[13px] font-semibold text-info"
-            >
-              Edit identity
-            </button>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {onStart ? (
@@ -314,38 +302,19 @@ export function ProcessModelOverview({
               Open in modeler
             </Button>
           )}
-          {onCopy ? (
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              onClick={() => setCopyOpen(true)}
-            >
-              Copy
-            </Button>
-          ) : (
-            <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
-              Copy
-            </Button>
-          )}
-          <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
-            Save as template
-          </Button>
-          {/* Not converted to Button: no existing icon size matches this
-              circular button's 38px exactly (icon-lg is 36px), and changing
-              it risks an unverified 2px visual diff — see this ticket's
-              resolution. */}
-          <button
-            type="button"
-            disabled
-            aria-label="More actions"
-            className={cn(
-              'flex size-[38px] items-center justify-center rounded-full border border-border bg-card',
-              inertBtn,
-            )}
-          >
-            <MoreVertical className="size-4 text-muted-foreground" strokeWidth={2.4} />
-          </button>
+          <HeaderActionsMenu
+            onEditIdentity={
+              canManage && onUpdateIdentity
+                ? () => {
+                    setEditName(detail.display_name);
+                    setEditDescription(detail.description);
+                    setEditError(null);
+                    setEditOpen(true);
+                  }
+                : undefined
+            }
+            onCopy={onCopy ? () => setCopyOpen(true) : undefined}
+          />
         </div>
       </div>
 

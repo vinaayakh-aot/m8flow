@@ -52,6 +52,26 @@ describe('SchemaForm', () => {
     expect(onChange).toHaveBeenCalledWith({ active: true });
   });
 
+  it('applies ui:placeholder and ui:widget password from the UI schema', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: {
+        accessCode: { type: 'string', title: 'Access code' },
+      },
+    };
+    render(
+      <SchemaForm
+        schema={schema}
+        uiSchema={{ accessCode: { 'ui:widget': 'password', 'ui:placeholder': 'secret' } }}
+        value={{}}
+        onChange={vi.fn()}
+      />,
+    );
+    const input = screen.getByLabelText(/Access code/i);
+    expect(input).toHaveAttribute('type', 'password');
+    expect(input).toHaveAttribute('placeholder', 'secret');
+  });
+
   it('renders a readOnly field as text instead of an input', () => {
     const schema: JsonSchema = {
       type: 'object',

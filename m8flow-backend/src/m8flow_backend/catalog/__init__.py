@@ -447,6 +447,37 @@ def validate_process_model_leaf(leaf_id: str) -> str:
     return cleaned
 
 
+def slugify_process_model_leaf(display_name: str) -> str:
+    """URL-friendly leaf id from a display name. Empty if nothing usable remains.
+
+    Matches the previous product: lowercase, whitespace to hyphens, keep
+    ``[a-z0-9_-]``, collapse repeated hyphens. The result is a valid
+    ``_GROUP_SEGMENT_RE`` segment when non-empty.
+    """
+    if not isinstance(display_name, str):
+        return ""
+    slug = display_name.strip().lower()
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"[^a-z0-9_-]", "", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-_")
+
+
+def resolve_process_model_leaf(*, leaf_id: str, display_name: str | None) -> str:
+    """Use an explicit leaf id, or slugify one from the display name."""
+    raw = leaf_id.strip() if isinstance(leaf_id, str) else ""
+    if raw:
+        return validate_process_model_leaf(raw)
+    slug = slugify_process_model_leaf(display_name or "")
+    if not slug:
+        raise ApiError(
+            "invalid_process_model",
+            "Process model id is required, or provide a display name to generate one",
+            400,
+        )
+    return validate_process_model_leaf(slug)
+
+
 def default_bpmn_xml(*, process_id: str) -> str:
     return _DEFAULT_BPMN_TEMPLATE.replace("{process_id}", process_id)
 
@@ -468,9 +499,12 @@ def create_process_model(
     description: str | None = None,
     user_id: int,
 ) -> dict[str, Any]:
-    """Create a process model under an existing group, with a default BPMN. No git."""
+    """Create a process model under an existing group, with a default BPMN. No git.
+
+    ``leaf_id`` may be empty: the leaf is then slugified from ``display_name``.
+    """
     group = validate_process_group_id(group_id)
-    leaf = validate_process_model_leaf(leaf_id)
+    leaf = resolve_process_model_leaf(leaf_id=leaf_id, display_name=display_name)
     if not process_group_exists(tenant_id=tenant_id, group_id=group):
         raise ApiError("not_found", "Process group not found", 404)
     model_id = f"{group}/{leaf}"

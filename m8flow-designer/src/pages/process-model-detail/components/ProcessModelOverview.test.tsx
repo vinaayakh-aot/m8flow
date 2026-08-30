@@ -111,9 +111,15 @@ describe('ProcessModelOverview', () => {
       'href',
       '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
     );
-    expect(screen.getByRole('button', { name: 'Save as template' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'More actions' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'More actions' });
+    expect(more).not.toBeDisabled();
+    fireEvent.click(more);
+    expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: 'Edit identity' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add file' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Run BPMN tests' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create script unit test' })).toBeDisabled();
@@ -155,7 +161,8 @@ describe('ProcessModelOverview', () => {
         <ProcessModelOverview detail={DETAIL} canManage onCopy={onCopy} />
       </MemoryRouter>,
     );
-    const copy = screen.getByRole('button', { name: 'Copy' });
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const copy = screen.getByRole('menuitem', { name: 'Copy' });
     expect(copy).not.toBeDisabled();
     fireEvent.click(copy);
     fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
@@ -245,7 +252,8 @@ describe('ProcessModelOverview', () => {
         <ProcessModelOverview detail={DETAIL} canManage onUpdateIdentity={onUpdate} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Edit identity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit identity' }));
     fireEvent.change(screen.getByLabelText('Process model display name'), {
       target: { value: 'Invoices' },
     });

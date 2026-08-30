@@ -6,14 +6,15 @@
 type EditorProps = {
   value?: string;
   onChange?: (value: string | undefined) => void;
+  options?: { ariaLabel?: string };
 };
 
 export const loader = { config: () => {} };
 
-export default function Editor({ value, onChange }: EditorProps) {
+export default function Editor({ value, onChange, options }: EditorProps) {
   return (
     <textarea
-      aria-label="code editor"
+      aria-label={options?.ariaLabel ?? 'code editor'}
       value={value ?? ''}
       onChange={(event) => onChange?.(event.target.value)}
     />

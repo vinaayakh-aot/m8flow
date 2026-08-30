@@ -7,3 +7,9 @@ export const MarkerSeverity = { Error: 8, Warning: 4 } as const;
 export const editor = {
   setModelMarkers: () => {},
 };
+
+export const languages = {
+  getLanguages: () => [] as Array<{ id: string }>,
+  register: () => {},
+  setMonarchTokensProvider: () => {},
+};

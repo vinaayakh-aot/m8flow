@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
+import { slugifyProcessModelId } from '@/lib/processModelId';
 import { createProcessModelFromTemplate, type Template } from '@/lib/templatesApi';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,8 +45,9 @@ export function CreateProcessModelFromTemplateDialog({
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [processGroupId, setProcessGroupId] = useState('');
-  const [processModelId, setProcessModelId] = useState('');
   const [displayName, setDisplayName] = useState(template.name);
+  const [processModelId, setProcessModelId] = useState(slugifyProcessModelId(template.name));
+  const [idEdited, setIdEdited] = useState(false);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +55,9 @@ export function CreateProcessModelFromTemplateDialog({
   useEffect(() => {
     if (!open) return undefined;
     setProcessGroupId('');
-    setProcessModelId('');
     setDisplayName(template.name);
+    setProcessModelId(slugifyProcessModelId(template.name));
+    setIdEdited(false);
     setDescription('');
     setError(null);
 
@@ -78,6 +81,11 @@ export function CreateProcessModelFromTemplateDialog({
       cancelled = true;
     };
   }, [open, template.name, scopedTenantId]);
+
+  function handleDisplayNameChange(value: string) {
+    setDisplayName(value);
+    if (!idEdited) setProcessModelId(slugifyProcessModelId(value));
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -139,28 +147,33 @@ export function CreateProcessModelFromTemplateDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpmft-id" className="text-xs font-medium text-muted-foreground">
-              Process model ID
-            </label>
-            <Input
-              id="cpmft-id"
-              value={processModelId}
-              onChange={(e) => setProcessModelId(e.target.value)}
-              placeholder="invoice-approval"
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
             <label htmlFor="cpmft-name" className="text-xs font-medium text-muted-foreground">
               Display name
             </label>
             <Input
               id="cpmft-name"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={(e) => handleDisplayNameChange(e.target.value)}
               required
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="cpmft-id" className="text-xs font-medium text-muted-foreground">
+              Identifier
+            </label>
+            <Input
+              id="cpmft-id"
+              value={processModelId}
+              onChange={(e) => {
+                setProcessModelId(e.target.value);
+                setIdEdited(true);
+              }}
+              placeholder="invoice-approval"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Generated from the display name. You can edit it before creating.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
