@@ -58,3 +58,37 @@ def test_api_error_handler_still_works_for_expected_errors(app):
     response = client.get("/__test_only_api_error")
     assert response.status_code == 409
     assert response.get_json() == {"error_code": "test_error", "message": "expected failure"}
+
+
+def test_api_error_log_carries_error_code_and_http_fields(app, caplog):
+    @app.get("/__test_only_api_error_fields")
+    def _api_error():
+        raise ApiError("permission_denied", "nope", 403)
+
+    client = app.test_client()
+    with caplog.at_level(logging.WARNING, logger="m8flow_backend.startup.error_handlers"):
+        response = client.get("/__test_only_api_error_fields")
+
+    assert response.status_code == 403
+    records = [r for r in caplog.records if getattr(r, "error_code", None)]
+    assert records
+    record = records[-1]
+    assert record.error_code == "permission_denied"
+    assert record.http_status == 403
+    assert record.http_method == "GET"
+    assert record.http_path == "/__test_only_api_error_fields"
+
+
+def test_unhandled_exception_log_uses_internal_error_code(app, caplog):
+    @app.get("/__test_only_boom_fields")
+    def _boom():
+        raise RuntimeError("kaboom")
+
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    client = app.test_client()
+    with caplog.at_level(logging.ERROR, logger="m8flow_backend.startup.error_handlers"):
+        client.get("/__test_only_boom_fields")
+
+    records = [r for r in caplog.records if getattr(r, "error_code", None) == "internal_error"]
+    assert records
+    assert records[-1].http_status == 500

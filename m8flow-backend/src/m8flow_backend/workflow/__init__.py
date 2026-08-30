@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +24,62 @@ from m8flow_backend.workflow.script_unit_tests import (
     run_script_unit_test as run_script_unit_test,
     run_stored_script_unit_test as run_stored_script_unit_test,
 )
+from m8flow_telemetry.metrics import (
+    record_process_instance_created,
+    record_process_instance_active_delta,
+    record_process_instance_terminal,
+    record_task_completed,
+)
+
+LOGGER = logging.getLogger(__name__)
+
+_TERMINAL_INSTANCE_STATUSES = frozenset(
+    {
+        ProcessInstanceStatus.complete.value,
+        ProcessInstanceStatus.error.value,
+        ProcessInstanceStatus.terminated.value,
+        "complete",
+        "error",
+        "terminated",
+    }
+)
+
+
+def _instance_status_value(status: object) -> str:
+    value = getattr(status, "value", status)
+    return str(value)
+
+
+def _emit_process_instance_terminal_log(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> str | None:
+    """Log duration when an instance has reached a terminal status.
+
+    Used by Grafana Application Metrics (`process instance completed`).
+    Returns the status string when a line was emitted, else None.
+    """
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        return None
+    status = _instance_status_value(instance.status)
+    if status not in _TERMINAL_INSTANCE_STATUSES:
+        return None
+    start = instance.start_in_seconds
+    end = instance.end_in_seconds or int(time.time())
+    duration_seconds = None
+    if start is not None:
+        duration_seconds = max(0.0, float(end) - float(start))
+    LOGGER.info(
+        "process instance completed",
+        extra={
+            "m8flow_tenant_id": tenant_id,
+            "process_instance_id": instance.id,
+            "process_instance_status": status,
+            "duration_seconds": duration_seconds,
+            "process_model_identifier": instance.process_model_identifier,
+        },
+    )
+    return status
 
 
 def _reject_task_write_if_instance_suspended(
@@ -79,7 +136,7 @@ def start(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
     try:
-        return api.execute_command(
+        instance = api.execute_command(
             session,
             api.InitializeProcessInstanceFromDefinitionCommand(
                 tenant_id=tenant_id,
@@ -106,6 +163,9 @@ def start(
                 422,
             ) from exc
         raise
+    record_process_instance_created(tenant_id)
+    record_process_instance_active_delta(tenant_id, 1)
+    return instance
 
 
 def claim(
@@ -146,7 +206,7 @@ def complete(
         _reject_task_write_if_instance_suspended(
             session, tenant_id=tenant_id, human_task_id=human_task_id, action="complete"
         )
-        return api.execute_command(
+        instance = api.execute_command(
             session,
             api.CompleteTaskCommand(
                 tenant_id=tenant_id,
@@ -157,6 +217,17 @@ def complete(
         )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+    record_task_completed(tenant_id, task_type="UserTask")
+    process_instance_id = getattr(instance, "process_instance_id", None)
+    if process_instance_id is None:
+        process_instance_id = getattr(instance, "id", None)
+    if process_instance_id is not None:
+        terminal = _emit_process_instance_terminal_log(
+            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
+        )
+        if terminal == "complete":
+            record_process_instance_terminal(tenant_id, outcome="completed")
+    return instance
 
 
 def suspend_instance(
@@ -207,7 +278,7 @@ def terminate_instance(
     user_id: int,
 ) -> ProcessInstanceModel:
     try:
-        return api.execute_command(
+        instance = api.execute_command(
             session,
             api.TerminateProcessInstanceCommand(
                 tenant_id=tenant_id,
@@ -217,6 +288,11 @@ def terminate_instance(
         )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+    record_process_instance_terminal(tenant_id, outcome="terminated")
+    _emit_process_instance_terminal_log(
+        session, tenant_id=tenant_id, process_instance_id=instance.id
+    )
+    return instance
 
 
 def list_instances(

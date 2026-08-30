@@ -70,6 +70,60 @@ def test_json_formatter_nests_unknown_extra_fields():
     assert payload["extra"]["custom_field"] == "custom-value"
 
 
+def test_json_formatter_promotes_error_taxonomy_fields():
+    record = _make_record(level=logging.ERROR, msg="failed")
+    record.error_code = "permission_denied"
+    record.http_status = 403
+    record.http_method = "GET"
+    record.http_path = "/v1.0/tasks"
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["error_code"] == "permission_denied"
+    assert payload["http_status"] == 403
+    assert payload["error_kind"] == "client"
+    assert payload["http_method"] == "GET"
+    assert payload["http_path"] == "/v1.0/tasks"
+    assert "error_code" not in payload.get("extra", {})
+    assert "http_status" not in payload.get("extra", {})
+
+
+def test_json_formatter_promotes_duration_ms():
+    record = _make_record(msg="request completed")
+    record.duration_ms = 12.5
+    record.http_status = 200
+    record.http_method = "GET"
+    record.http_path = "/v1.0/tasks"
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["duration_ms"] == 12.5
+    assert "duration_ms" not in payload.get("extra", {})
+
+
+def test_json_formatter_promotes_process_instance_duration():
+    record = _make_record(msg="process instance completed")
+    record.duration_seconds = 42.0
+    record.process_instance_id = 17
+    record.process_instance_status = "complete"
+    record.process_model_identifier = "invoices/approval"
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["duration_seconds"] == 42.0
+    assert payload["process_instance_id"] == 17
+    assert payload["process_instance_status"] == "complete"
+    assert payload["process_model_identifier"] == "invoices/approval"
+    extra = payload.get("extra", {})
+    assert "duration_seconds" not in extra
+    assert "process_instance_id" not in extra
+    assert "process_model_identifier" not in extra
+
+
+def test_json_formatter_error_kind_is_server_for_5xx():
+    record = _make_record(level=logging.ERROR, msg="failed")
+    record.error_code = "internal_error"
+    record.m8flow_status_code = 500
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["http_status"] == 500
+    assert payload["error_kind"] == "server"
+    assert "m8flow_status_code" not in payload.get("extra", {})
+
+
 def test_otel_trace_filter_is_a_noop_without_an_active_span():
     record = _make_record()
     assert OtelTraceFilter().filter(record) is True

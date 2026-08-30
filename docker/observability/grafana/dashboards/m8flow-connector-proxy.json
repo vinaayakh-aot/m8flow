@@ -4,7 +4,7 @@
   "tags": ["m8flow", "connector"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "templating": {
@@ -13,8 +13,8 @@
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
-        "query": "",
-        "current": { "text": "", "value": "" },
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" },
         "options": []
       }
     ]
@@ -27,7 +27,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Use log panels for stack traces and SMTP/Slack failures."
+        "content": "**Connector error rate** = failed connector *calls* (domain metric), not HTTP 5xx. **HTTP RED** panels use OTel when exported. Connector-proxy stdout is Flask/Werkzeug **plaintext** — do not `| json` these lines (that causes `JSONParserErr`). SMTP/Slack failures show in the log panel as text."
       }
     },
     {
@@ -105,7 +105,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (connector) (rate(connector_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "sum by (connector) (rate(connector_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id\"}[$__rate_interval]))",
           "legendFormat": "{{connector}}"
         }
       ],
@@ -115,7 +115,8 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Log error lines",
+      "title": "Log error-ish lines",
+      "description": "Plaintext Flask logs — substring match. Not JSON `level`.",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
@@ -132,7 +133,8 @@
     {
       "id": 5,
       "type": "logs",
-      "title": "Connector logs",
+      "title": "Connector logs (plaintext)",
+      "description": "Flask/Werkzeug stdout. Not JSON.",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
@@ -142,7 +144,7 @@
           "queryType": "range"
         }
       ],
-      "options": {},
+      "options": { "showTime": true, "sortOrder": "Descending" },
       "fieldConfig": { "defaults": {}, "overrides": [] }
     }
   ],

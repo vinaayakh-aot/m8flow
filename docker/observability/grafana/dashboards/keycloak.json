@@ -4,7 +4,7 @@
   "tags": ["m8flow", "keycloak"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "templating": { "list": [] },
@@ -16,7 +16,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Realm-wide** Keycloak metrics — not tenant/organization-scoped. **HTTP error rate** counts 4xx/5xx from Keycloak's `/metrics` (Micrometer). **Log ERROR** lines (startup, DB, duplicate user, etc.) are separate and appear in the log panel below."
+        "content": "**Realm-wide** Keycloak metrics — not tenant/organization-scoped. **HTTP error rate** counts 4xx/5xx from Keycloak's `/metrics` (Micrometer). **Log ERROR** uses the JSON `level` field (`--log-console-output=json`). `| json | __error__=\"\"` drops any non-JSON lines."
       }
     },
     {
@@ -95,15 +95,15 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Log error lines (Loki)",
-      "description": "Count of log lines matching ERROR / Exception — includes startup and admin-init issues not reflected in HTTP error rate.",
+      "title": "Log ERROR lines (Loki)",
+      "description": "JSON logs with level ERROR or FATAL. Startup and admin-init issues that never hit HTTP metrics.",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"keycloak\"} |~ \"(?i)(error|exception|failed)\" [$__interval]))",
-          "legendFormat": "error-ish lines",
+          "expr": "sum(count_over_time({service_name=\"keycloak\"} | json | __error__=\"\" | level=~\"ERROR|FATAL\" [$__interval]))",
+          "legendFormat": "ERROR+",
           "queryType": "range"
         }
       ],
@@ -113,17 +113,18 @@
     {
       "id": 5,
       "type": "logs",
-      "title": "Keycloak logs",
+      "title": "Keycloak logs (JSON)",
+      "description": "Quarkus JSON console (`level`, `loggerName`, `message`). `| json | __error__=\"\"` drops non-JSON lines.",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"keycloak\"}",
+          "expr": "{service_name=\"keycloak\"} | json | __error__=\"\"",
           "queryType": "range"
         }
       ],
-      "options": {},
+      "options": { "showTime": true, "enableLogDetails": true, "sortOrder": "Descending" },
       "fieldConfig": { "defaults": {}, "overrides": [] }
     }
   ],

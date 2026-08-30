@@ -11,6 +11,7 @@ trace and log lines.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from contextvars import ContextVar, Token
 from typing import Optional
@@ -18,6 +19,10 @@ from typing import Optional
 from flask import Flask, Response, g, has_request_context, request
 
 REQUEST_ID_HEADER = "X-Request-Id"
+LOGGER = logging.getLogger(__name__)
+
+# Polled health/status paths would dominate p99 if included.
+_SKIP_DURATION_LOG_PATHS = frozenset({"/v1.0/status", "/status", "/health"})
 
 _CONTEXT_REQUEST_ID: ContextVar[Optional[str]] = ContextVar("m8flow_request_id", default=None)
 
@@ -72,12 +77,26 @@ def install_request_id_middleware(app: Flask) -> None:
         request_id = incoming or new_request_id()
         g.m8flow_request_id = request_id
         g._m8flow_request_id_token = set_context_request_id(request_id)
+        g._m8flow_request_started = time.perf_counter()
 
     @app.after_request
     def _echo_request_id(response: Response) -> Response:
         request_id = getattr(g, "m8flow_request_id", None)
         if request_id:
             response.headers.setdefault(REQUEST_ID_HEADER, request_id)
+        started = getattr(g, "_m8flow_request_started", None)
+        path = request.path or ""
+        if started is not None and path not in _SKIP_DURATION_LOG_PATHS:
+            duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
+            LOGGER.info(
+                "request completed",
+                extra={
+                    "http_status": response.status_code,
+                    "http_method": request.method,
+                    "http_path": path,
+                    "duration_ms": duration_ms,
+                },
+            )
         return response
 
     @app.teardown_request

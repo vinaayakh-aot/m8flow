@@ -4,7 +4,7 @@
   "tags": ["m8flow", "frontend"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "templating": {
@@ -13,8 +13,8 @@
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
-        "query": "",
-        "current": { "text": "", "value": "" },
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" },
         "options": []
       }
     ]
@@ -85,17 +85,17 @@
       "id": 4,
       "type": "logs",
       "title": "Faro browser events",
-      "description": "Only telemetry from the Faro collector (JSON). Tenant filter applies when user attributes are present.",
+      "description": "Only telemetry from the Faro collector (JSON). Tenant filter applies when user attributes are present. Default tenant `.*` = all.",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id|.*`",
+          "expr": "{telemetry_source=\"faro\"} | json | __error__=\"\" | user_attr_m8flow_tenant_id=~`$m8flow_tenant_id`",
           "queryType": "range"
         }
       ],
-      "options": {},
+      "options": { "showTime": true, "enableLogDetails": true, "sortOrder": "Descending" },
       "fieldConfig": { "defaults": {}, "overrides": [] }
     },
     {
@@ -112,7 +112,7 @@
           "queryType": "range"
         }
       ],
-      "options": {},
+      "options": { "showTime": true, "sortOrder": "Descending" },
       "fieldConfig": { "defaults": {}, "overrides": [] }
     }
   ],

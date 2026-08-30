@@ -45,7 +45,22 @@ _STANDARD_LOG_RECORD_ATTRS = {
 
 # Fields already promoted to top-level JSON keys by JsonLogFormatter; keep
 # them out of the "extra" bucket so they aren't duplicated.
-_PROMOTED_ATTRS = {"m8flow_tenant_id", "m8flow_request_id", "otel_trace_id", "otel_span_id"}
+_PROMOTED_ATTRS = {
+    "m8flow_tenant_id",
+    "m8flow_request_id",
+    "otel_trace_id",
+    "otel_span_id",
+    "error_code",
+    "http_status",
+    "http_method",
+    "http_path",
+    "m8flow_status_code",
+    "duration_ms",
+    "duration_seconds",
+    "process_instance_id",
+    "process_instance_status",
+    "process_model_identifier",
+}
 
 
 def _service_name() -> str:
@@ -81,6 +96,52 @@ class JsonLogFormatter(logging.Formatter):
         span_id = getattr(record, "otel_span_id", None)
         if span_id and span_id != "-":
             payload["span_id"] = span_id
+
+        error_code = getattr(record, "error_code", None)
+        if error_code:
+            payload["error_code"] = error_code
+
+        http_status = getattr(record, "http_status", None)
+        if http_status is None:
+            http_status = getattr(record, "m8flow_status_code", None)
+        if http_status is not None:
+            try:
+                status_int = int(http_status)
+            except (TypeError, ValueError):
+                status_int = None
+            if status_int is not None:
+                payload["http_status"] = status_int
+                payload["error_kind"] = "server" if status_int >= 500 else "client"
+
+        http_method = getattr(record, "http_method", None)
+        if http_method:
+            payload["http_method"] = http_method
+        http_path = getattr(record, "http_path", None)
+        if http_path:
+            payload["http_path"] = http_path
+
+        duration_ms = getattr(record, "duration_ms", None)
+        if duration_ms is not None:
+            try:
+                payload["duration_ms"] = float(duration_ms)
+            except (TypeError, ValueError):
+                pass
+
+        duration_seconds = getattr(record, "duration_seconds", None)
+        if duration_seconds is not None:
+            try:
+                payload["duration_seconds"] = float(duration_seconds)
+            except (TypeError, ValueError):
+                pass
+        process_instance_id = getattr(record, "process_instance_id", None)
+        if process_instance_id is not None:
+            payload["process_instance_id"] = process_instance_id
+        process_instance_status = getattr(record, "process_instance_status", None)
+        if process_instance_status:
+            payload["process_instance_status"] = str(process_instance_status)
+        process_model_identifier = getattr(record, "process_model_identifier", None)
+        if process_model_identifier:
+            payload["process_model_identifier"] = str(process_model_identifier)
 
         if record.exc_info:
             exc_type, exc_value, exc_tb = record.exc_info
