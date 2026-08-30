@@ -104,6 +104,7 @@ def alembic_target_metadata() -> list[MetaData]:
     """
     import m8flow_bpmn_core.models  # noqa: F401
     import m8flow_backend.models  # noqa: F401
+    import m8flow_backend.connectors.configuration  # noqa: F401
 
     return [CoreBase.metadata, HostBase.metadata]
 
@@ -141,7 +142,8 @@ def attach_host_timestamp_listeners() -> None:
     """Reattach created/updated epoch listeners on host models only."""
     import time
 
-    from m8flow_backend.models import native as _native  # noqa: F401
+    import m8flow_backend.models  # noqa: F401
+    import m8flow_backend.connectors.configuration  # noqa: F401
 
     def _before_insert(mapper, connection, target) -> None:
         now = int(time.time())

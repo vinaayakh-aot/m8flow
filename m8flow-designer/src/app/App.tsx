@@ -40,6 +40,9 @@ const TenantManagementPage = lazy(() => import('@/pages/tenant-management/Tenant
 const SecretListPage = lazy(() => import('@/pages/configuration/SecretListPage'));
 const SecretNewPage = lazy(() => import('@/pages/configuration/SecretNewPage'));
 const SecretShowPage = lazy(() => import('@/pages/configuration/SecretShowPage'));
+const ConnectorsPage = lazy(() => import('@/pages/connectors/ConnectorsPage'));
+const ConnectorProfilesPage = lazy(() => import('@/pages/connectors/ConnectorProfilesPage'));
+const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/ConnectorProfileEditPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -170,6 +173,38 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading secret…" />}>
               <SecretShowPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="connectors"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading connectors…" />}>
+              <ConnectorsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="connectors/:connectorId/profiles/new"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading profile…" />}>
+              <ConnectorProfileEditPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="connectors/:connectorId/profiles/:profileId/edit"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading profile…" />}>
+              <ConnectorProfileEditPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="connectors/:connectorId/profiles"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading profiles…" />}>
+              <ConnectorProfilesPage />
             </Suspense>
           }
         />

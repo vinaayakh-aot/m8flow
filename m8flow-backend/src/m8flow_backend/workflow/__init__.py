@@ -9,7 +9,7 @@ from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core import api
-from m8flow_bpmn_core.errors import BpmnCoreError
+from m8flow_bpmn_core.errors import BpmnCoreError, InvalidStateError
 from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
@@ -23,6 +23,19 @@ from m8flow_backend.workflow.script_unit_tests import (
     run_script_unit_test as run_script_unit_test,
     run_stored_script_unit_test as run_stored_script_unit_test,
 )
+
+
+def _reject_task_write_if_instance_suspended(
+    session: Session, *, tenant_id: str, human_task_id: int, action: str
+) -> None:
+    """Host guard: core claim/complete do not check instance status, so a
+    suspended instance would still accept a human-task submit."""
+    task = session.get(HumanTaskModel, human_task_id)
+    if task is None or task.m8f_tenant_id != tenant_id:
+        return
+    instance = session.get(ProcessInstanceModel, task.process_instance_id)
+    if instance is not None and instance.status == ProcessInstanceStatus.suspended.value:
+        raise InvalidStateError(f"Cannot {action} a task on a suspended process instance")
 
 
 def import_definition(
@@ -103,6 +116,9 @@ def claim(
     user_id: int,
 ) -> HumanTaskModel:
     try:
+        _reject_task_write_if_instance_suspended(
+            session, tenant_id=tenant_id, human_task_id=human_task_id, action="claim"
+        )
         return api.execute_command(
             session,
             api.ClaimTaskCommand(
@@ -127,6 +143,9 @@ def complete(
     if task_payload is not None:
         payload = {str(key): _stringify_metadata_value(value) for key, value in task_payload.items()}
     try:
+        _reject_task_write_if_instance_suspended(
+            session, tenant_id=tenant_id, human_task_id=human_task_id, action="complete"
+        )
         return api.execute_command(
             session,
             api.CompleteTaskCommand(
@@ -134,6 +153,66 @@ def complete(
                 human_task_id=human_task_id,
                 user_id=user_id,
                 task_payload=payload,
+            ),
+        )
+    except BpmnCoreError as exc:
+        raise map_bpmn_error(exc) from exc
+
+
+def suspend_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> ProcessInstanceModel:
+    try:
+        return api.execute_command(
+            session,
+            api.SuspendProcessInstanceCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                user_id=user_id,
+            ),
+        )
+    except BpmnCoreError as exc:
+        raise map_bpmn_error(exc) from exc
+
+
+def resume_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> ProcessInstanceModel:
+    try:
+        return api.execute_command(
+            session,
+            api.ResumeProcessInstanceCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                user_id=user_id,
+            ),
+        )
+    except BpmnCoreError as exc:
+        raise map_bpmn_error(exc) from exc
+
+
+def terminate_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> ProcessInstanceModel:
+    try:
+        return api.execute_command(
+            session,
+            api.TerminateProcessInstanceCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                user_id=user_id,
             ),
         )
     except BpmnCoreError as exc:
@@ -162,19 +241,39 @@ def list_pending_tasks(
     user_id: int,
 ) -> list[HumanTaskModel]:
     try:
-        return api.execute_query(
+        tasks = api.execute_query(
             session,
             api.GetPendingTasksQuery(tenant_id=tenant_id, user_id=user_id),
         )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+    if not tasks:
+        return tasks
+    instance_ids = {task.process_instance_id for task in tasks}
+    suspended_ids = set(
+        session.scalars(
+            select(ProcessInstanceModel.id).where(
+                ProcessInstanceModel.id.in_(instance_ids),
+                ProcessInstanceModel.m8f_tenant_id == tenant_id,
+                ProcessInstanceModel.status == ProcessInstanceStatus.suspended.value,
+            )
+        )
+    )
+    return [task for task in tasks if task.process_instance_id not in suspended_ids]
 
 
 def list_pending_tasks_for_super_admin(session: Session) -> list[HumanTaskModel]:
     if not is_super_admin_request():
         raise ApiError("permission_denied", "Super-admin access required", 403)
     return list(
-        session.scalars(select(HumanTaskModel).where(HumanTaskModel.completed == False))  # noqa: E712
+        session.scalars(
+            select(HumanTaskModel)
+            .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+            .where(
+                HumanTaskModel.completed == False,  # noqa: E712
+                ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
+            )
+        )
     )
 
 
@@ -651,6 +750,8 @@ def get_instance_detail_for_designer(
         "started_by": username or "",
         "start_in_seconds": instance.start_in_seconds,
         "end_in_seconds": instance.end_in_seconds,
+        "updated_at_in_seconds": instance.updated_at_in_seconds,
+        "last_milestone_bpmn_name": instance.last_milestone_bpmn_name,
         "bpmn_xml": bpmn_xml,
         "tasks": [
             {"bpmn_identifier": bpmn_identifier, "state": state} for bpmn_identifier, state in task_rows
@@ -768,6 +869,112 @@ def list_instance_events(
     return rows
 
 
+def list_instance_events_for_designer(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> list[dict[str, Any]]:
+    """Events tab for process instance detail. Same event log and order as
+    ``list_instance_events`` (oldest-first), but joins Task → TaskDefinition
+    / BpmnProcessDefinition for the mockup BPMN columns. Does not use the
+    HumanTask join — that only covers user tasks. Task Review keeps the
+    slim reader.
+    """
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.user import UserModel
+
+    stmt = (
+        select(
+            ProcessInstanceEventModel,
+            UserModel.display_name,
+            UserModel.username,
+            BpmnProcessDefinitionModel.bpmn_identifier,
+            TaskDefinitionModel.bpmn_name,
+            TaskDefinitionModel.bpmn_identifier,
+            TaskDefinitionModel.typename,
+        )
+        .outerjoin(UserModel, UserModel.id == ProcessInstanceEventModel.user_id)
+        .outerjoin(
+            TaskModel,
+            (TaskModel.guid == ProcessInstanceEventModel.task_guid)
+            & (TaskModel.m8f_tenant_id == tenant_id)
+            & (TaskModel.process_instance_id == process_instance_id),
+        )
+        .outerjoin(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .outerjoin(BpmnProcessModel, BpmnProcessModel.id == TaskModel.bpmn_process_id)
+        .outerjoin(
+            BpmnProcessDefinitionModel,
+            BpmnProcessDefinitionModel.id == BpmnProcessModel.bpmn_process_definition_id,
+        )
+        .where(
+            ProcessInstanceEventModel.process_instance_id == process_instance_id,
+            ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+        )
+        .order_by(ProcessInstanceEventModel.timestamp, ProcessInstanceEventModel.id)
+    )
+    rows: list[dict[str, Any]] = []
+    for (
+        event,
+        actor_display,
+        actor_username,
+        bpmn_process,
+        task_name,
+        task_identifier,
+        task_type,
+    ) in session.execute(stmt):
+        rows.append(
+            {
+                "id": event.id,
+                "bpmn_process": bpmn_process,
+                "task_name": task_name,
+                "task_identifier": task_identifier,
+                "task_type": task_type,
+                "event_type": event.event_type,
+                "user": actor_display or actor_username or "system",
+                "timestamp": float(event.timestamp) if event.timestamp is not None else None,
+            }
+        )
+    return rows
+
+
+def list_instance_milestones_for_designer(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> list[dict[str, Any]]:
+    """Milestones tab: zero or one current row from ``last_milestone_bpmn_name``.
+    Not a history. Timestamp is instance start (when the column is written).
+    Bpmn process is the definition identifier, not the catalog path.
+    """
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    instance = session.scalars(
+        select(ProcessInstanceModel).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if instance is None:
+        return []
+    milestone = (instance.last_milestone_bpmn_name or "").strip()
+    if not milestone:
+        return []
+
+    bpmn_process: str | None = None
+    if instance.bpmn_process_definition_id is not None:
+        definition = session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
+        if definition is not None and definition.m8f_tenant_id == tenant_id:
+            bpmn_process = definition.bpmn_identifier
+
+    return [
+        {
+            "milestone": milestone,
+            "bpmn_process": bpmn_process,
+            "timestamp": instance.start_in_seconds,
+        }
+    ]
+
+
 def list_pending_tasks_for_user(
     session: Session, *, tenant_id: str | None, user_id: int, limit: int = 10
 ) -> list[HumanTaskModel]:
@@ -776,12 +983,20 @@ def list_pending_tasks_for_user(
     list_pending_tasks_for_super_admin (that returns every pending task for
     every user). tenant_id=None means all tenants for this one user_id
     (caller-verified super-admin-only). Ordered oldest-first by id to match
-    GetPendingTasksQuery's order_by(HumanTaskModel.id).
+    GetPendingTasksQuery's order_by(HumanTaskModel.id). Excludes tasks on
+    suspended instances.
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
     capped = max(1, min(int(limit), 50))
-    stmt = select(HumanTaskModel).where(HumanTaskModel.completed.is_(False))
+    stmt = (
+        select(HumanTaskModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+        .where(
+            HumanTaskModel.completed.is_(False),
+            ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
+        )
+    )
     exists_clause = select(1).where(
         HumanTaskUserModel.human_task_id == HumanTaskModel.id,
         HumanTaskUserModel.user_id == user_id,
@@ -791,6 +1006,100 @@ def list_pending_tasks_for_user(
         exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
     stmt = stmt.where(exists(exists_clause)).order_by(HumanTaskModel.id).limit(capped)
     return list(session.scalars(stmt))
+
+
+def list_completable_tasks_for_designer(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> list[dict[str, Any]]:
+    """Tasks I can complete: incomplete human tasks on this instance where
+    ``user_id`` is a candidate. Not ``list_human_tasks_for_instance`` (that
+    is the approval chain: owner ``name``, every task). Same
+    assignment-exists filter as ``list_pending_tasks_for_user``, plus
+    ``process_instance_id``. Oldest-first. Empty when the instance is
+    suspended — those tasks are not completable until resume.
+    """
+    instance = session.scalars(
+        select(ProcessInstanceModel).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if instance is not None and instance.status == ProcessInstanceStatus.suspended.value:
+        return []
+
+    exists_clause = select(1).where(
+        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
+        HumanTaskUserModel.user_id == user_id,
+        HumanTaskUserModel.m8f_tenant_id == tenant_id,
+    )
+    stmt = (
+        select(HumanTaskModel)
+        .where(
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+            HumanTaskModel.process_instance_id == process_instance_id,
+            HumanTaskModel.completed.is_(False),
+            exists(exists_clause),
+        )
+        .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
+    )
+    return [
+        {
+            "id": task.id,
+            "task_title": task.task_title,
+            "task_name": task.task_name,
+            "lane_name": task.lane_name,
+        }
+        for task in session.scalars(stmt)
+    ]
+
+
+def list_completed_tasks_for_designer(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """Tasks tab: completed human tasks on this instance. Not
+    ``list_human_tasks_for_instance`` (that is the approval chain: owner
+    ``name``, every task). Task is title + name; Completed by is the
+    completer person (display_name or username), never the owner ``name``.
+    ``completed_by_me`` is ``completed_by_user_id == user_id``. Oldest-first
+    by ``updated_at_in_seconds``, then id. Timestamp is that updated stamp.
+    """
+    from sqlalchemy.orm import aliased
+
+    from m8flow_bpmn_core.models.user import UserModel
+
+    completer = aliased(UserModel)
+    stmt = (
+        select(HumanTaskModel, completer.display_name, completer.username)
+        .outerjoin(completer, completer.id == HumanTaskModel.completed_by_user_id)
+        .where(
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+            HumanTaskModel.process_instance_id == process_instance_id,
+            HumanTaskModel.completed.is_(True),
+        )
+        .order_by(HumanTaskModel.updated_at_in_seconds, HumanTaskModel.id)
+    )
+    all_completed: list[dict[str, Any]] = []
+    completed_by_me: list[dict[str, Any]] = []
+    for task, completer_display, completer_username in session.execute(stmt):
+        row = {
+            "id": task.id,
+            "task_title": task.task_title,
+            "task_name": task.task_name,
+            "completed_by": completer_display or completer_username,
+            "timestamp": task.updated_at_in_seconds,
+        }
+        all_completed.append(row)
+        if task.completed_by_user_id == user_id:
+            completed_by_me.append(row)
+    return {"completed_by_me": completed_by_me, "all_completed": all_completed}
 
 
 def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int) -> int:
@@ -804,9 +1113,17 @@ def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int
     query and inside the exists-subquery) so tenant_id=None still means
     "all tenants" while staying scoped to this one user_id.
     tenant_id=None is caller-verified-super-admin-only, same as the
-    process-instance stats above.
+    process-instance stats above. Excludes tasks on suspended instances.
     """
-    stmt = select(func.count()).select_from(HumanTaskModel).where(HumanTaskModel.completed.is_(False))
+    stmt = (
+        select(func.count())
+        .select_from(HumanTaskModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+        .where(
+            HumanTaskModel.completed.is_(False),
+            ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
+        )
+    )
     exists_clause = select(1).where(
         HumanTaskUserModel.human_task_id == HumanTaskModel.id,
         HumanTaskUserModel.user_id == user_id,

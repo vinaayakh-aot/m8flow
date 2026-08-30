@@ -49,6 +49,28 @@ def test_strip_spiff_keys() -> None:
     assert clean == {"url": "https://example.com", "headers": {"X": "1"}}
 
 
+@pytest.mark.asyncio
+async def test_execute_get_uses_basic_auth_and_ignores_m8flow_profile() -> None:
+    mock_run = AsyncMock(return_value=_mock_connector_response(status=200, body='{"ok":true}'))
+    with patch("m8flow_node_wire_proxy.adapter._run_http_generic", mock_run):
+        result = await execute_http_v2(
+            "http",
+            "GetRequestV2",
+            {
+                "url": "https://example.com/items",
+                "basic_auth_username": "api-user",
+                "basic_auth_password": "from-profile",
+                "m8flow_profile": "http-prod",
+            },
+        )
+    assert result["error"] is None
+    sent = mock_run.await_args.args[0]
+    assert sent["method"] == "GET"
+    assert sent["headers"]["Authorization"].startswith("Basic ")
+    assert "m8flow_profile" not in sent
+    assert "m8flow_profile" not in (sent.get("headers") or {})
+
+
 def test_build_maps_data_to_body_and_basic_auth() -> None:
     request_input, attempts = build_http_generic_input(
         "PostRequestV2",

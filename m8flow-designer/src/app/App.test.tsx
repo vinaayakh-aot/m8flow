@@ -53,6 +53,10 @@ vi.mock('@/pages/configuration/SecretListPage', () => ({
   default: () => <div>secrets-list-page</div>,
 }));
 
+vi.mock('@/pages/connectors/ConnectorsPage', () => ({
+  default: () => <div>connectors-page</div>,
+}));
+
 vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
@@ -134,5 +138,14 @@ describe('AppRoutes tenant gate', () => {
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(await screen.findByText('secrets-list-page')).toBeInTheDocument();
+  });
+
+  it('renders Connectors when the gate is not shown', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/connectors');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('connectors-page')).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { forwardRef, lazy, Suspense } from 'react';
 
-import type { BpmnCanvasFile, BpmnCanvasServiceTaskOperator } from './BpmnCanvas';
+import type { BpmnCanvasFile, BpmnCanvasConnectorProfilePicker, BpmnCanvasServiceTaskOperator } from './BpmnCanvas';
 import type { CallActivitySearchProcessModel } from './CallActivitySearchDialog';
 import { isFormSchemaFile } from './formSchemaFiles';
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
@@ -55,6 +55,7 @@ export type DiagramCanvasProps = {
   processModels?: CallActivitySearchProcessModel[];
   onLaunchCallActivityEditor?: (processModelId: string) => void;
   onFetchServiceTaskOperators?: () => Promise<BpmnCanvasServiceTaskOperator[]>;
+  onFetchConnectorProfiles?: (connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>;
   onRunScriptUnitTest?: (input: {
     python_script: string;
     input_json: Record<string, unknown>;
@@ -78,6 +79,7 @@ export const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>
       processModels,
       onLaunchCallActivityEditor,
       onFetchServiceTaskOperators,
+      onFetchConnectorProfiles,
       onRunScriptUnitTest,
     },
     ref,
@@ -113,6 +115,7 @@ export const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>
             processModels={processModels}
             onLaunchCallActivityEditor={onLaunchCallActivityEditor}
             onFetchServiceTaskOperators={onFetchServiceTaskOperators}
+            onFetchConnectorProfiles={onFetchConnectorProfiles}
             onRunScriptUnitTest={onRunScriptUnitTest}
           />
         )}

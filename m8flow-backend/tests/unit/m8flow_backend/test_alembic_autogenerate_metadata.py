@@ -27,6 +27,7 @@ _ENV_PY = _BACKEND_ROOT / "migrations" / "env.py"
 _HOST_TABLES_OUTSIDE_NATIVE = (
     "m8flow_external_form_requests",
     "m8flow_tenant_invitation",
+    "m8flow_connector_configuration",
 )
 _HOST_TABLE_IN_NATIVE = "secret"
 

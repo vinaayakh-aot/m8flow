@@ -93,3 +93,170 @@ def get_process_instance(process_instance_id: int):
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
     return success_response(detail, 200)
+
+
+@handle_api_errors
+def list_process_instance_events(process_instance_id: int):
+    """Events tab for one process instance. Same tenant + ``allow_uri``
+    posture as ``get_process_instance`` (authorize as GET on the instance,
+    not a new URI). Missing or denied instance → 404.
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    if not allow_uri(
+        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    rows = workflow.list_instance_events_for_designer(
+        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    )
+    return success_response({"results": rows}, 200)
+
+
+@handle_api_errors
+def list_process_instance_milestones(process_instance_id: int):
+    """Milestones tab: zero or one current last milestone. Same tenant +
+    ``allow_uri`` as ``get_process_instance``. Missing or denied → 404.
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    if not allow_uri(
+        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    rows = workflow.list_instance_milestones_for_designer(
+        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    )
+    return success_response({"results": rows}, 200)
+
+
+@handle_api_errors
+def list_process_instance_completable_tasks(process_instance_id: int):
+    """Tasks I can complete: incomplete human tasks on this instance
+    where the current user is a candidate. Same tenant + ``allow_uri`` as
+    ``get_process_instance``. Missing or denied → 404. Empty ``results``
+    when the caller has no candidate tasks (including tenant-admin /
+    super-admin who are not themselves candidates).
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    if not allow_uri(
+        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    rows = workflow.list_completable_tasks_for_designer(
+        session,
+        tenant_id=tenant_id,
+        process_instance_id=process_instance_id,
+        user_id=user.id,
+    )
+    return success_response({"results": rows}, 200)
+
+
+@handle_api_errors
+def list_process_instance_completed_tasks(process_instance_id: int):
+    """Tasks tab: Completed by me and All completed. Same tenant +
+    ``allow_uri`` as ``get_process_instance``. Missing or denied → 404.
+    Task is title + name, not the approval-chain owner ``name``.
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    if not allow_uri(
+        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    payload = workflow.list_completed_tasks_for_designer(
+        session,
+        tenant_id=tenant_id,
+        process_instance_id=process_instance_id,
+        user_id=user.id,
+    )
+    return success_response(payload, 200)
+
+
+def _lifecycle_write(process_instance_id: int, action: str):
+    """Terminate / suspend / resume. Authorize as POST on the instance URI
+    (YAML create on ``/process-instances/*`` — process.terminate /
+    process.suspend / process.resume). Denied → 403. Missing or other
+    tenant → 404. Invalid status → 409 from core. Writes go through
+    ``workflow``, not ``execute_command`` in this controller.
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    if not allow_uri(
+        user, "POST", f"/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError("permission_denied", "Not permitted to change this process instance", 403)
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+
+    writers = {
+        "suspend": workflow.suspend_instance,
+        "resume": workflow.resume_instance,
+        "terminate": workflow.terminate_instance,
+    }
+    updated = writers[action](
+        session,
+        tenant_id=tenant_id,
+        process_instance_id=process_instance_id,
+        user_id=user.id,
+    )
+    session.flush()
+    return success_response({"id": updated.id, "status": updated.status}, 200)
+
+
+@handle_api_errors
+def suspend_process_instance(process_instance_id: int):
+    return _lifecycle_write(process_instance_id, "suspend")
+
+
+@handle_api_errors
+def resume_process_instance(process_instance_id: int):
+    return _lifecycle_write(process_instance_id, "resume")
+
+
+@handle_api_errors
+def terminate_process_instance(process_instance_id: int):
+    return _lifecycle_write(process_instance_id, "terminate")

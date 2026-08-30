@@ -18,6 +18,7 @@ import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
 import { flattenConnectorGroupsToOperators } from './serviceTaskOperators';
+import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { DeleteFileDialog, UnsavedChangesDialog, ViewXmlDialog } from './components/ModelerFileDialogs';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
@@ -221,6 +222,11 @@ export default function ProcessModelModelerPage() {
   const handleFetchServiceTaskOperators = useCallback(async () => {
     return flattenConnectorGroupsToOperators(await fetchConnectorsGrouped());
   }, []);
+
+  const handleFetchConnectorProfiles = useCallback(
+    (connectorType: string) => fetchConnectorProfilesForPicker(connectorType, scopedTenantId),
+    [scopedTenantId],
+  );
 
   const handleRunScriptUnitTest = useCallback(
     (input: {
@@ -476,6 +482,7 @@ export default function ProcessModelModelerPage() {
             processModels={processModels}
             onLaunchCallActivityEditor={handleLaunchCallActivityEditor}
             onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
+            onFetchConnectorProfiles={handleFetchConnectorProfiles}
             onRunScriptUnitTest={handleRunScriptUnitTest}
           />
         ) : null}

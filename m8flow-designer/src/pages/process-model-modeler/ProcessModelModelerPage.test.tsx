@@ -4,13 +4,29 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { BpmnCanvasConnectorProfilePicker } from './components/BpmnCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
+
+const canvasStub = vi.hoisted(() => ({
+  onFetchConnectorProfiles: undefined as
+    | ((connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>)
+    | undefined,
+}));
 
 vi.mock('./components/DiagramCanvas', () => ({
   DiagramCanvas: forwardRef(function DiagramCanvasStub(
-    { xml, onDirtyChange }: { xml: string; onDirtyChange?: (dirty: boolean) => void },
+    {
+      xml,
+      onDirtyChange,
+      onFetchConnectorProfiles,
+    }: {
+      xml: string;
+      onDirtyChange?: (dirty: boolean) => void;
+      onFetchConnectorProfiles?: (connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>;
+    },
     ref: Ref<DiagramCanvasHandle>,
   ) {
+    canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
     useImperativeHandle(ref, () => ({
       saveXML: async () => xml,
       markSaved: () => onDirtyChange?.(false),
@@ -80,6 +96,32 @@ function stubFetch(detail = DETAIL) {
     if (url.includes('/connectors-grouped')) {
       return jsonResponse([]);
     }
+    if (url.includes('/connector-templates/http')) {
+      return jsonResponse({
+        id: 'http',
+        name: 'HTTP',
+        description: '',
+        supportsProfiles: true,
+        profileFields: [
+          { id: 'basic_auth_username', label: 'Basic Auth Username' },
+          { id: 'basic_auth_password', label: 'Basic Auth Password' },
+        ],
+      });
+    }
+    if (url.includes('/connector-profiles')) {
+      return jsonResponse([
+        {
+          id: 1,
+          connector_type: 'http',
+          profile_name: 'http-prod',
+          display_name: 'HTTP prod',
+          description: null,
+          config: {},
+          configured_secrets: ['basic_auth_username', 'basic_auth_password'],
+          is_active: true,
+        },
+      ]);
+    }
     if (url.includes('/process-models/finance:invoice-approval') && method === 'PUT') {
       return jsonResponse({
         id: detail.id,
@@ -125,10 +167,13 @@ const EDITOR_CONTEXT: AppShellOutletContext = {
   selectedTenantId: null,
   isSuperAdmin: false,
   canManageProcesses: true,
+  canReadConnectors: true,
+  canManageConnectorProfiles: false,
 };
 
 describe('ProcessModelModelerPage file chrome', () => {
   afterEach(() => {
+    canvasStub.onFetchConnectorProfiles = undefined;
     vi.restoreAllMocks();
   });
 
@@ -193,5 +238,23 @@ describe('ProcessModelModelerPage file chrome', () => {
 
     expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('lets an editor load active HTTP profiles for the Config tab', async () => {
+    const fetchMock = stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    expect(canvasStub.onFetchConnectorProfiles).toEqual(expect.any(Function));
+    await expect(canvasStub.onFetchConnectorProfiles?.('http')).resolves.toEqual({
+      profiles: [{ profile_name: 'http-prod', display_name: 'HTTP prod' }],
+      hiddenFieldIds: ['basic_auth_username', 'basic_auth_password'],
+      supportsProfiles: true,
+    });
+    const profileCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/connector-profiles'),
+    );
+    expect(String(profileCall?.[0])).toContain('include_inactive=false');
+    expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
   });
 });

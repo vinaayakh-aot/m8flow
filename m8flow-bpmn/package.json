@@ -8,6 +8,7 @@
     "./lib/Modeler": "./lib/Modeler.ts",
     "./lib/NavigatedViewer": "./lib/NavigatedViewer.ts",
     "./lib/DmnModeler": "./lib/DmnModeler.ts",
+    "./lib/features/connectorProfileCatalog": "./lib/features/connectorProfileCatalog.ts",
     "./vite": "./vite/index.js",
     "./dist/assets/modeler.css": "./dist/assets/modeler.css",
     "./dist/assets/viewer.css": "./dist/assets/viewer.css",

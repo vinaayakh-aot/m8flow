@@ -7,6 +7,7 @@ vi.mock('@/lib/tasksApi', () => ({
   submitTaskReview: vi.fn(),
 }));
 
+import { ApiError } from '@/lib/api';
 import { fetchTaskReviewDetail, submitTaskReview, type TaskReviewDetail } from '@/lib/tasksApi';
 import TaskReviewDetailPage from './TaskReviewDetailPage';
 
@@ -164,6 +165,19 @@ describe('TaskReviewDetailPage', () => {
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
   });
 
+  it('disables submit when the process instance is suspended', async () => {
+    mockFetch.mockResolvedValue(mockDetail({ instance: { ...mockDetail().instance, status: 'suspended' } }));
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(
+      screen.getByText('This process instance is suspended. Resume it before submitting.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
   it('blocks submit and shows an error when a required field is empty', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     renderDetail();
@@ -199,6 +213,23 @@ describe('TaskReviewDetailPage', () => {
         reason: 'Home internet install visit.',
       }),
     );
+  });
+
+  it('shows the backend reason when submit fails', async () => {
+    mockFetch.mockResolvedValue(mockDetail());
+    mockSubmit.mockRejectedValue(
+      new ApiError('/v1.0/m8flow/task-review/42/submit', 500, 'POST', 'Error evaluating expression'),
+    );
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    fireEvent.change(screen.getByLabelText(/WFH Date/i), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText(/Reason for WFH/i), {
+      target: { value: 'Deep focus work needed at home.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Error evaluating expression');
   });
 
   it('renders the approval chain and activity log', async () => {

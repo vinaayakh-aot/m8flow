@@ -65,6 +65,8 @@ describe('AppShell', () => {
       can_manage_authentications: false,
       can_read_secrets: false,
       can_manage_secrets: false,
+      can_read_connectors: false,
+      can_manage_connector_profiles: false,
       can_manage_tenant: false,
     });
     try {
@@ -195,6 +197,22 @@ describe('AppShell', () => {
     expect(await screen.findByRole('link', { name: 'Configuration' })).toHaveAttribute(
       'href',
       '/configuration/secrets',
+    );
+  });
+
+  it('shows Setup → Connectors when capabilities allow catalog read', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: true,
+      can_read_connectors: true,
+      can_manage_connector_profiles: false,
+    });
+
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'Connectors' })).toHaveAttribute(
+      'href',
+      '/connectors',
     );
   });
 

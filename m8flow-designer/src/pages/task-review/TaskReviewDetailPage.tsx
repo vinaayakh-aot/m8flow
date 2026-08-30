@@ -261,6 +261,7 @@ export default function TaskReviewDetailPage() {
 
   function handleSubmit(outcome?: string) {
     if (!validId || submitting || !detail) return;
+    if (detail.instance.status === 'suspended') return;
 
     const validationErrors = validateSchemaForm(detail.form.schema as JsonSchema, formValues);
     if (Object.keys(validationErrors).length > 0) {
@@ -281,7 +282,13 @@ export default function TaskReviewDetailPage() {
         navigate('/task-review');
       })
       .catch((err: unknown) => {
-        setSubmitError(err instanceof Error ? err.message : 'Failed to submit review');
+        const message =
+          err instanceof ApiError && err.serverMessage
+            ? err.serverMessage
+            : err instanceof Error
+              ? err.message
+              : 'Failed to submit review';
+        setSubmitError(message);
         setSubmitting(false);
       });
   }
@@ -319,6 +326,8 @@ export default function TaskReviewDetailPage() {
   if (!detail) return null;
 
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
+  const instanceSuspended = instance.status === 'suspended';
+  const formLocked = submitting || instanceSuspended;
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -364,10 +373,15 @@ export default function TaskReviewDetailPage() {
                 value={formValues}
                 onChange={setFormValues}
                 errors={errors}
-                disabled={submitting}
+                disabled={formLocked}
               />
 
               <div className="space-y-4 border-t border-border pt-5">
+                {instanceSuspended ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    This process instance is suspended. Resume it before submitting.
+                  </p>
+                ) : null}
                 {submitError ? (
                   <p className="text-sm text-destructive" role="alert">
                     {submitError}
@@ -382,7 +396,7 @@ export default function TaskReviewDetailPage() {
                         type="button"
                         variant={i === 0 ? 'pill' : 'pill-outline'}
                         size="pill"
-                        disabled={submitting}
+                        disabled={formLocked}
                         onClick={() => handleSubmit(outcome.value)}
                       >
                         {outcome.label}
@@ -393,7 +407,7 @@ export default function TaskReviewDetailPage() {
                       type="button"
                       variant="pill"
                       size="pill"
-                      disabled={submitting}
+                      disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
                       Submit

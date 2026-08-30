@@ -31,6 +31,8 @@ def test_editor_can_manage_processes(client, db_session):
     assert body["can_manage_authentications"] is False
     assert body["can_read_secrets"] is False
     assert body["can_manage_secrets"] is False
+    assert body["can_read_connectors"] is True
+    assert body["can_manage_connector_profiles"] is False
     assert body["can_manage_tenant"] is False
 
 
@@ -44,6 +46,8 @@ def test_viewer_cannot_manage_processes(client, db_session):
     assert body["can_manage_authentications"] is False
     assert body["can_read_secrets"] is True
     assert body["can_manage_secrets"] is False
+    assert body["can_read_connectors"] is False
+    assert body["can_manage_connector_profiles"] is False
     assert body["can_manage_tenant"] is False
 
 
@@ -56,6 +60,8 @@ def test_integrator_can_manage_authentications(client, db_session):
     assert body["can_manage_authentications"] is True
     assert body["can_read_secrets"] is True
     assert body["can_manage_secrets"] is True
+    assert body["can_read_connectors"] is True
+    assert body["can_manage_connector_profiles"] is True
     assert body["can_manage_tenant"] is False
 
 
@@ -68,6 +74,8 @@ def test_tenant_admin_can_manage_tenant(client, db_session):
     assert body["can_manage_authentications"] is True
     assert body["can_read_secrets"] is True
     assert body["can_manage_secrets"] is True
+    assert body["can_read_connectors"] is True
+    assert body["can_manage_connector_profiles"] is True
 
 
 def test_super_admin_can_manage_tenant(client, db_session):
@@ -78,6 +86,8 @@ def test_super_admin_can_manage_tenant(client, db_session):
     assert body["can_manage_tenant"] is True
     assert body["can_read_secrets"] is True
     assert body["can_manage_secrets"] is True
+    assert body["can_read_connectors"] is True
+    assert body["can_manage_connector_profiles"] is True
 
 
 def test_reviewer_cannot_manage_tenant(client, db_session):
@@ -88,6 +98,8 @@ def test_reviewer_cannot_manage_tenant(client, db_session):
     assert body["can_manage_tenant"] is False
     assert body["can_read_secrets"] is False
     assert body["can_manage_secrets"] is False
+    assert body["can_read_connectors"] is False
+    assert body["can_manage_connector_profiles"] is False
 
 
 def test_submitter_cannot_manage_tenant(client, db_session):
@@ -98,6 +110,8 @@ def test_submitter_cannot_manage_tenant(client, db_session):
     assert body["can_manage_tenant"] is False
     assert body["can_read_secrets"] is False
     assert body["can_manage_secrets"] is False
+    assert body["can_read_connectors"] is False
+    assert body["can_manage_connector_profiles"] is False
 
 
 def test_capabilities_requires_auth(client, db_session):

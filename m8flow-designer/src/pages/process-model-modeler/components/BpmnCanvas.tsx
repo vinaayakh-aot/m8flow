@@ -7,6 +7,10 @@
 import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import Modeler from 'm8flow-bpmn/lib/Modeler';
+import {
+  CONNECTOR_PROFILES_REQUESTED,
+  CONNECTOR_PROFILES_RETURNED,
+} from 'm8flow-bpmn/lib/features/connectorProfileCatalog';
 
 import { CallActivitySearchDialog } from './CallActivitySearchDialog';
 import type { CallActivitySearchProcessModel, CallActivitySearchSession } from './CallActivitySearchDialog';
@@ -104,6 +108,9 @@ export type BpmnCanvasProps = {
    * connector catalog is only needed the first time a Service Task's group
    * is opened. */
   onFetchServiceTaskOperators?: () => Promise<BpmnCanvasServiceTaskOperator[]>;
+  /** Service Task Config tab profile picker (`m8flow.connector_profiles.requested`).
+   * Active profiles only (`include_inactive=false`). Viewer/reviewer can read. */
+  onFetchConnectorProfiles?: (connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>;
   /**
    * Script-task Launch Editor unit-test Run. Ad-hoc body (current editor
    * script + JSON cases), not a stored `unit_test_id` — the diagram may be
@@ -121,6 +128,12 @@ export type BpmnCanvasServiceTaskOperator = {
   parameters: { id: string; type: string }[];
 };
 
+export type BpmnCanvasConnectorProfilePicker = {
+  profiles: { profile_name: string; display_name: string }[];
+  hiddenFieldIds: string[];
+  supportsProfiles: boolean;
+};
+
 export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(function BpmnCanvas(
   {
     xml,
@@ -134,6 +147,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     processModels,
     onLaunchCallActivityEditor,
     onFetchServiceTaskOperators,
+    onFetchConnectorProfiles,
     onRunScriptUnitTest,
   },
   ref,
@@ -178,6 +192,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     processModels,
     onLaunchCallActivityEditor,
     onFetchServiceTaskOperators,
+    onFetchConnectorProfiles,
     onRunScriptUnitTest,
   });
   useEffect(() => {
@@ -191,6 +206,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       processModels,
       onLaunchCallActivityEditor,
       onFetchServiceTaskOperators,
+      onFetchConnectorProfiles,
       onRunScriptUnitTest,
     };
   });
@@ -399,6 +415,37 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
           event.eventBus.fire('spiff.service_tasks.returned', { serviceTaskOperators: [] });
         });
     });
+
+    instance.on(
+      CONNECTOR_PROFILES_REQUESTED,
+      (event: { eventBus: { fire: (type: string, payload: unknown) => void }; connectorType?: string }) => {
+        const connectorType = event.connectorType || '';
+        const fetchProfiles = propsRef.current.onFetchConnectorProfiles;
+        const empty = {
+          connectorType,
+          profiles: [],
+          hiddenFieldIds: [],
+          supportsProfiles: false,
+        };
+        if (!fetchProfiles || !connectorType) {
+          event.eventBus.fire(CONNECTOR_PROFILES_RETURNED, empty);
+          return;
+        }
+        fetchProfiles(connectorType)
+          .then((payload) => {
+            event.eventBus.fire(CONNECTOR_PROFILES_RETURNED, {
+              connectorType,
+              profiles: payload.profiles,
+              hiddenFieldIds: payload.hiddenFieldIds,
+              supportsProfiles: payload.supportsProfiles,
+            });
+          })
+          .catch((err: unknown) => {
+            console.error('Failed to load connector profiles:', err);
+            event.eventBus.fire(CONNECTOR_PROFILES_RETURNED, empty);
+          });
+      },
+    );
 
     // Data Store Reference's "Select DataSource" dropdown — self-contained
     // (see findDeclaredDataStores above), no props/backend call needed.

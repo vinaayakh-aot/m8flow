@@ -28,9 +28,10 @@
  * that select when HTTP V2 operators actually arrived. An empty catalog is
  * an honest empty state, not a blank dropdown.
  *
- * The Config tab is a pointer, not a profile picker: named connector
- * profiles are Module J. It names the connector the selected operator
- * belongs to and states that credentials live under Setup → Connectors.
+ * The Config tab is a connector-profile picker: it writes `m8flow_profile`
+ * (quoted profile_name) and the Parameters tab hides profile-supplied
+ * basic-auth rows when a profile is set. URL / headers / query / body stay.
+ * Empty profile list is allowed — the task can still use `M8FLOW_SECRET:`.
  *
  * No JSX here (unlike the vendored `.jsx` files) — this file isn't matched
  * by `vite/index.js`'s `spiffworkflowPreactJsxPlugin` (scoped to
@@ -47,7 +48,7 @@ import { h } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 // @ts-expect-error missing type declarations
-import { TextFieldEntry } from '@bpmn-io/properties-panel';
+import { SelectEntry, TextFieldEntry } from '@bpmn-io/properties-panel';
 // @ts-expect-error missing type declarations
 import { useService } from 'bpmn-js-properties-panel';
 // @ts-expect-error missing type declarations
@@ -60,6 +61,24 @@ import {
   serviceTaskOperatorCatalog,
   useServiceTaskOperatorCatalog,
 } from './serviceTaskOperatorCatalog';
+import {
+  HTTP_PROFILE_FIELD_IDS,
+  blankSuppliedParameters,
+  connectorTypeForOperator,
+  createProfileMemory,
+  displayStringParameter,
+  hiddenParameterIds,
+  quoteStringParameterIfLiteral,
+  selectedProfileName,
+  visibleParameterItems,
+  writeProfileParameter,
+} from './connectorProfileBinding';
+import {
+  CONNECTOR_PROFILES_REQUESTED,
+  CONNECTOR_PROFILES_RETURNED,
+  connectorProfileCatalog,
+  useConnectorProfileCatalog,
+} from './connectorProfileCatalog';
 
 const LOW_PRIORITY = 500;
 const SERVICE_TASK_GROUP_ID = 'service_task_properties';
@@ -78,6 +97,7 @@ type ServiceTaskTabId = 'action' | 'config' | 'parameters';
 // that lets the tab strip's click handler notify the sibling content
 // entries to re-render.
 const serviceTaskTabStore = createElementScopedTabStore<ServiceTaskTabId>('action');
+const profileMemory = createProfileMemory();
 
 function setActiveServiceTaskTab(elementId: string, tab: ServiceTaskTabId): void {
   serviceTaskTabStore.setActiveTab(elementId, tab);
@@ -198,13 +218,28 @@ function ServiceTaskActionTab(props: any) {
 }
 
 function ServiceTaskConfigTab(props: any) {
-  const { element, translate } = props;
+  const { element, translate, commandStack, moddle } = props;
   const activeTab = useActiveServiceTaskTab(element.businessObject.id);
+  const eventBus = useService('eventBus');
+  const debounce = useService('debounceInput');
+
+  const operatorElement = getServiceTaskOperatorModdleElement(element);
+  const connectorType = connectorTypeForOperator(String(operatorElement?.id ?? ''));
+  const catalog = useConnectorProfileCatalog(connectorType);
+
+  useEffect(() => {
+    if (!connectorType) {
+      return;
+    }
+    if (connectorProfileCatalog.markLoading(connectorType)) {
+      eventBus.fire(CONNECTOR_PROFILES_REQUESTED, { eventBus, connectorType });
+    }
+  }, [eventBus, connectorType]);
+
   if (activeTab !== 'config') {
     return null;
   }
 
-  const operatorElement = getServiceTaskOperatorModdleElement(element);
   if (!operatorElement) {
     return h(
       'p',
@@ -213,20 +248,89 @@ function ServiceTaskConfigTab(props: any) {
     );
   }
 
-  const connectorKey = String(operatorElement.id).split('/')[0];
-  const connectorName = humanizeConnectorKey(connectorKey);
+  const connectorName = humanizeConnectorKey(connectorType);
+  const fieldIds =
+    catalog.status === 'loaded' && catalog.entry.hiddenFieldIds.length
+      ? catalog.entry.hiddenFieldIds
+      : [...HTTP_PROFILE_FIELD_IDS];
+  const supportsProfiles = catalog.status !== 'loaded' || catalog.entry.supportsProfiles;
+
+  if (catalog.status === 'loaded' && !catalog.entry.supportsProfiles) {
+    return h(
+      'div',
+      { class: 'm8flow-service-task-tab-panel' },
+      h('div', { class: 'm8flow-service-task-config-connector' }, connectorName),
+      h(
+        'p',
+        { class: 'bio-properties-panel-description m8flow-service-task-config-note' },
+        translate(
+          'This connector has no profiles. Set parameters on this task, or use a secret sentinel.',
+        ),
+      ),
+    );
+  }
+
+  if (catalog.status !== 'loaded') {
+    return h(
+      'div',
+      { class: 'm8flow-service-task-tab-panel' },
+      h('div', { class: 'm8flow-service-task-config-connector' }, connectorName),
+      h(
+        'p',
+        { class: 'bio-properties-panel-description' },
+        translate('Loading connector profiles…'),
+      ),
+    );
+  }
+
+  const profiles = catalog.entry.profiles;
+  const getValue = () => selectedProfileName(operatorElement);
+  const setValue = (value: string) => {
+    writeProfileParameter(operatorElement, moddle, value);
+    if (value) {
+      blankSuppliedParameters(operatorElement, fieldIds);
+      profileMemory.remember(element.id, connectorType, value);
+    } else {
+      profileMemory.forget(element.id);
+    }
+    commandStack.execute('element.updateModdleProperties', {
+      element,
+      moddleElement: element.businessObject,
+      properties: {},
+    });
+  };
 
   return h(
     'div',
     { class: 'm8flow-service-task-tab-panel' },
     h('div', { class: 'm8flow-service-task-config-connector' }, connectorName),
-    h(
-      'p',
-      { class: 'bio-properties-panel-description m8flow-service-task-config-note' },
-      translate(
-        'Credentials and endpoint configuration for this connector are managed centrally under Setup → Connectors, not per task.',
+    h(SelectEntry, {
+      id: 'm8flowConnectorProfile',
+      element,
+      label: translate('Connector profile'),
+      description: translate(
+        'Credentials come from the selected profile. Manage profiles under Setup → Connectors.',
       ),
-    ),
+      getValue,
+      setValue,
+      getOptions: () => [
+        { label: translate('None — set parameters on this task'), value: '' },
+        ...profiles.map((profile) => ({
+          label: profile.display_name,
+          value: profile.profile_name,
+        })),
+      ],
+      debounce,
+    }),
+    supportsProfiles && profiles.length === 0
+      ? h(
+          'p',
+          { class: 'bio-properties-panel-description m8flow-service-task-config-note' },
+          translate(
+            'No profiles yet. Create one under Setup → Connectors, or set parameters on this task.',
+          ),
+        )
+      : null,
   );
 }
 
@@ -242,12 +346,12 @@ function ServiceTaskParameterRow(props: any) {
   const { element, commandStack, name, serviceTaskParameterModdleElement } = props;
   const debounce = useService('debounceInput');
 
-  const getValue = () => serviceTaskParameterModdleElement.value;
+  const getValue = () => displayStringParameter(serviceTaskParameterModdleElement.value);
   const setValue = (value: string) => {
     commandStack.execute('element.updateModdleProperties', {
       element,
       moddleElement: serviceTaskParameterModdleElement,
-      properties: { value },
+      properties: { value: quoteStringParameterIfLiteral(value) },
     });
   };
 
@@ -290,8 +394,17 @@ function ServiceTaskParametersTab(props: any) {
   // unexported); the rows below render their own markup, not this array's
   // ListGroup-shaped `entries`.
   const { items } = ServiceTaskParameterArray({ element, moddle, translate, commandStack });
+  const operatorElement = getServiceTaskOperatorModdleElement(element);
+  const connectorType = connectorTypeForOperator(String(operatorElement?.id ?? ''));
+  const catalog = connectorProfileCatalog.getState(connectorType);
+  const fieldIds =
+    catalog.status === 'loaded' && catalog.entry.hiddenFieldIds.length
+      ? catalog.entry.hiddenFieldIds
+      : [...HTTP_PROFILE_FIELD_IDS];
+  const hidden = hiddenParameterIds(Boolean(selectedProfileName(operatorElement)), fieldIds);
+  const visibleItems = visibleParameterItems(items, hidden);
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     return h(
       'p',
       { class: 'bio-properties-panel-description m8flow-service-task-tab-panel' },
@@ -302,7 +415,7 @@ function ServiceTaskParametersTab(props: any) {
   return h(
     'div',
     { class: 'm8flow-service-task-tab-panel m8flow-service-task-params-card' },
-    items.map((item: any) =>
+    visibleItems.map((item: any) =>
       h(ServiceTaskParameterRow, {
         key: item.id,
         element,
@@ -340,10 +453,32 @@ export function ServiceTaskConnectorPanelProvider(
     const operators = Array.isArray(event?.serviceTaskOperators) ? event.serviceTaskOperators : [];
     serviceTaskOperatorCatalog.setLoaded(operators);
   });
+  eventBus.on(
+    CONNECTOR_PROFILES_RETURNED,
+    (event: { connectorType?: string; profiles?: unknown; hiddenFieldIds?: unknown; supportsProfiles?: unknown }) => {
+      if (typeof event?.connectorType === 'string' && event.connectorType) {
+        connectorProfileCatalog.setLoaded(event.connectorType, event);
+      }
+    },
+  );
+  eventBus.on('diagram.destroy', () => {
+    connectorProfileCatalog.reset();
+    profileMemory.reset();
+  });
   this.getGroups = function (element: any) {
     return function (groups: any[]) {
       if (!is(element, 'bpmn:ServiceTask')) {
         return groups;
+      }
+      const operator = getServiceTaskOperatorModdleElement(element);
+      if (operator) {
+        const connectorType = connectorTypeForOperator(String(operator.id ?? ''));
+        const catalog = connectorProfileCatalog.getState(connectorType);
+        const fieldIds =
+          catalog.status === 'loaded' && catalog.entry.hiddenFieldIds.length
+            ? catalog.entry.hiddenFieldIds
+            : [...HTTP_PROFILE_FIELD_IDS];
+        profileMemory.reconcile(element.id, operator, connectorType, moddle, fieldIds);
       }
       const tabbedGroup = createServiceTaskConnectorGroup(element, translate, moddle, commandStack);
       // Replace in place (see propertiesPanelGroups.ts) so the group keeps

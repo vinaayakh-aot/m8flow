@@ -19,10 +19,26 @@ from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 _API_PATH_PREFIX = "/v1.0"
 
 
+# Core's V1 "admin" role is the only built-in grant for these writes.
+# Host YAML grants the same actions to tenant-admin / editor via create on
+# /process-instances/* (process.suspend / resume / terminate). Honor that
+# URI grant so execute_command does not 403 an editor who already passed
+# the route's allow_uri check.
+_LIFECYCLE_COMMAND_KEYS = frozenset(
+    {"process.suspend", "process.resume", "process.terminate"}
+)
+
+
 class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
         if _actor_is_super_admin(session, request.actor_user_id):
             return api.AuthorizationDecision(allowed=True, reason=SUPER_ADMIN_ROLE)
+        if request.command_key in _LIFECYCLE_COMMAND_KEYS:
+            user = session.get(UserModel, request.actor_user_id)
+            target = request.target_uri or ""
+            path = target if target.startswith(_API_PATH_PREFIX) else f"{_API_PATH_PREFIX}{target}"
+            if user is not None and allow_uri(user, "POST", path, session=session):
+                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 

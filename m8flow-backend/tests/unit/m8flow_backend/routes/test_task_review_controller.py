@@ -454,6 +454,32 @@ def test_submit_already_completed_is_conflict(client, db_session, tmp_path, monk
     assert second.status_code == 409
 
 
+def test_submit_on_suspended_instance_is_conflict(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend import workflow
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
+    db_session.commit()
+    workflow.suspend_instance(
+        db_session, tenant_id="t1", process_instance_id=instance.id, user_id=user.id
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"comment": "should not land"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    db_session.refresh(instance)
+    assert instance.status == "suspended"
+    db_session.refresh(task)
+    assert task.completed is False
+
+
 def test_submit_forbidden_is_403(client, db_session):
     _user, token = _login_user_without_task_grant(
         client, db_session, username="viewer", tenant_id="t1"
@@ -485,6 +511,147 @@ def test_submit_editor_passes_route_gate(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 404  # past the gate (403 would mean gate blocked editor)
+
+
+HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "approval_then_http.bpmn"
+
+
+def _start_http_followup_instance(db_session, *, tenant_id, user, xml: str | None = None):
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    from m8flow_backend import catalog, workflow
+
+    ensure_v1_role(db_session, tenant_id=tenant_id, role_name="admin", user_ids=(user.id,))
+    catalog.save(
+        db_session,
+        path="http/approval",
+        xml=(xml or HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8")),
+        tenant_id=tenant_id,
+        user_id=user.id,
+    )
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        process_model_identifier="http/approval",
+    )
+    pending = workflow.list_pending_tasks(db_session, tenant_id=tenant_id, user_id=user.id)
+    return instance, pending[0]
+
+
+def test_submit_unquoted_http_url_runs_the_connector(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The properties panel stores URL params unquoted. Submit must still POST."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    posts: list[tuple[str, dict]] = []
+
+    class _Stub(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            body = json.dumps(
+                [
+                    {
+                        "id": "http/PostRequestV2",
+                        "parameters": [
+                            {"id": "url", "type": "str", "required": True},
+                            {"id": "data", "type": "any", "required": False},
+                        ],
+                    }
+                ]
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length else b"{}"
+            posts.append((self.path, json.loads(raw.decode("utf-8")) if raw else {}))
+            body = json.dumps(
+                {
+                    "command_response": {
+                        "body": {"ok": True},
+                        "mimetype": "application/json",
+                        "http_status": 200,
+                    },
+                    "error": None,
+                    "command_response_version": 2,
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A003
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Stub)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    monkeypatch.setenv("M8FLOW_BACKEND_CONNECTOR_PROXY_URL", f"http://{host}:{port}")
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_CONNECTOR_PROXY_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    try:
+        user, token = _login_user(
+            client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        )
+        instance, task = _start_http_followup_instance(
+            db_session, tenant_id="t1", user=user
+        )
+        db_session.commit()
+
+        response = client.post(
+            f"/v1.0/m8flow/task-review/{task.id}/submit",
+            json={"decision": "approved"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200, response.get_json()
+        assert posts, "connector proxy never received the PostRequestV2"
+        path, payload = posts[-1]
+        assert path.rstrip("/").endswith("PostRequestV2")
+        assert payload["url"] == "https://example.test/hook"
+        db_session.refresh(task)
+        assert task.completed is True
+        db_session.refresh(instance)
+        assert instance.status == "complete"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_submit_connector_failure_does_not_complete_the_human_task(
+    client, db_session, tmp_path, monkeypatch
+):
+    """A 500 from the next Service Task must not leave the approval marked done."""
+    broken = HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8").replace(
+        "http/PostRequestV2", "http/NotARealCommand"
+    )
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    _instance, task = _start_http_followup_instance(
+        db_session, tenant_id="t1", user=user, xml=broken
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"decision": "approved"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 500
+    db_session.refresh(task)
+    assert task.completed is False
 
 
 # --------------------------------------------------------------------------

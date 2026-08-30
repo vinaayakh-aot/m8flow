@@ -54,6 +54,7 @@ class ConnectorMeta(TypedDict):
     icon: str
     docsUrl: NotRequired[str]
     configFields: NotRequired[list[ConnectorConfigField]]
+    supportsProfiles: NotRequired[bool]
 
 # Per-connector configuration fields surfaced to the Connectors "Configure" form.
 #
@@ -73,6 +74,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "description": "Make REST API calls from workflows",
         "icon": "globe",
         "docsUrl": f"{_CONNECTOR_DOCS_BASE}#http-connector",
+        "supportsProfiles": True,
     },
     "postgres_v2": {
         "name": "PostgreSQL",
@@ -273,6 +275,8 @@ def connectors_grouped() -> flask.wrappers.Response:
             )
             if config_fields:
                 group_entry["configFields"] = config_fields
+            if meta.get("supportsProfiles"):
+                group_entry["supportsProfiles"] = True
             groups[connector_key] = group_entry
 
         group = groups[connector_key]

@@ -1,4 +1,4 @@
-import { apiGet } from './api';
+import { apiFetch, apiGet } from './api';
 
 /**
  * Client for m8flow-backend's `/v1.0/m8flow/process-instances*` routes
@@ -95,6 +95,8 @@ export type ProcessInstanceDetail = {
   started_by: string;
   start_in_seconds: number | null;
   end_in_seconds: number | null;
+  updated_at_in_seconds: number | null;
+  last_milestone_bpmn_name: string | null;
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
 };
@@ -109,4 +111,138 @@ export function fetchProcessInstanceDetail(
   tenantId?: string | null,
 ): Promise<ProcessInstanceDetail> {
   return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId));
+}
+
+export type ProcessInstanceEventRow = {
+  id: number;
+  bpmn_process: string | null;
+  task_name: string | null;
+  task_identifier: string | null;
+  task_type: string | null;
+  event_type: string;
+  user: string;
+  timestamp: number | null;
+};
+
+export type ProcessInstanceEventsResponse = {
+  results: ProcessInstanceEventRow[];
+};
+
+export function processInstanceEventsPath(id: number, tenantId?: string | null): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/events`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export function fetchProcessInstanceEvents(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstanceEventRow[]> {
+  return apiGet<ProcessInstanceEventsResponse>(processInstanceEventsPath(id, tenantId)).then(
+    (r) => r.results ?? [],
+  );
+}
+
+export type ProcessInstanceMilestoneRow = {
+  milestone: string;
+  bpmn_process: string | null;
+  timestamp: number | null;
+};
+
+export type ProcessInstanceMilestonesResponse = {
+  results: ProcessInstanceMilestoneRow[];
+};
+
+export function processInstanceMilestonesPath(id: number, tenantId?: string | null): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/milestones`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export function fetchProcessInstanceMilestones(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstanceMilestoneRow[]> {
+  return apiGet<ProcessInstanceMilestonesResponse>(processInstanceMilestonesPath(id, tenantId)).then(
+    (r) => r.results ?? [],
+  );
+}
+
+export type ProcessInstanceCompletableTaskRow = {
+  id: number;
+  task_title: string | null;
+  task_name: string;
+  lane_name: string | null;
+};
+
+export type ProcessInstanceCompletableTasksResponse = {
+  results: ProcessInstanceCompletableTaskRow[];
+};
+
+export function processInstanceCompletableTasksPath(id: number, tenantId?: string | null): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/completable-tasks`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export function fetchProcessInstanceCompletableTasks(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstanceCompletableTaskRow[]> {
+  return apiGet<ProcessInstanceCompletableTasksResponse>(
+    processInstanceCompletableTasksPath(id, tenantId),
+  ).then((r) => r.results ?? []);
+}
+
+export type ProcessInstanceCompletedTaskRow = {
+  id: number;
+  task_title: string | null;
+  task_name: string;
+  completed_by: string | null;
+  timestamp: number | null;
+};
+
+export type ProcessInstanceCompletedTasksResponse = {
+  completed_by_me: ProcessInstanceCompletedTaskRow[];
+  all_completed: ProcessInstanceCompletedTaskRow[];
+};
+
+export function processInstanceCompletedTasksPath(id: number, tenantId?: string | null): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/completed-tasks`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export function fetchProcessInstanceCompletedTasks(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstanceCompletedTasksResponse> {
+  return apiGet<ProcessInstanceCompletedTasksResponse>(
+    processInstanceCompletedTasksPath(id, tenantId),
+  ).then((r) => ({
+    completed_by_me: r.completed_by_me ?? [],
+    all_completed: r.all_completed ?? [],
+  }));
+}
+
+export type ProcessInstanceLifecycleAction = 'suspend' | 'resume' | 'terminate';
+
+export type ProcessInstanceLifecycleResult = {
+  id: number;
+  status: string;
+};
+
+export function processInstanceLifecyclePath(
+  id: number,
+  action: ProcessInstanceLifecycleAction,
+  tenantId?: string | null,
+): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/${action}`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export async function postProcessInstanceLifecycle(
+  id: number,
+  action: ProcessInstanceLifecycleAction,
+  tenantId?: string | null,
+): Promise<ProcessInstanceLifecycleResult> {
+  const path = processInstanceLifecyclePath(id, action, tenantId);
+  const response = await apiFetch(path, { method: 'POST' });
+  return (await response.json()) as ProcessInstanceLifecycleResult;
 }

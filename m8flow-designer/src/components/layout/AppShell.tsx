@@ -32,6 +32,10 @@ export type AppShellOutletContext = {
   /** YAML secrets grants (integrator / viewer / tenant-admin read). */
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
+  /** YAML connectors-grouped read (tenant-admin / editor / integrator). */
+  canReadConnectors?: boolean;
+  /** YAML connector-profile writes (tenant-admin / integrator). */
+  canManageConnectorProfiles?: boolean;
   /** Advisory Tenant Management hint. Members/groups APIs still enforce allow_uri. */
   canManageTenant?: boolean;
   /** Super-admin switcher should reload after registry create/rename. */
@@ -54,6 +58,8 @@ export function AppShell() {
   const [canManageAuthentications, setCanManageAuthentications] = useState(false);
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
+  const [canReadConnectors, setCanReadConnectors] = useState(false);
+  const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
   const [activeTenantLabel, setActiveTenantLabel] = useState<string | null>(() =>
     superAdmin ? null : getActiveTenantDisplayLabel(),
@@ -69,6 +75,8 @@ export function AppShell() {
           setCanManageAuthentications(Boolean(caps.can_manage_authentications));
           setCanReadSecrets(Boolean(caps.can_read_secrets));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));
+          setCanReadConnectors(Boolean(caps.can_read_connectors));
+          setCanManageConnectorProfiles(Boolean(caps.can_manage_connector_profiles));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
         }
       })
@@ -79,6 +87,8 @@ export function AppShell() {
           setCanManageAuthentications(false);
           setCanReadSecrets(false);
           setCanManageSecrets(false);
+          setCanReadConnectors(false);
+          setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
         }
       });
@@ -147,6 +157,8 @@ export function AppShell() {
     canManageAuthentications,
     canReadSecrets,
     canManageSecrets,
+    canReadConnectors,
+    canManageConnectorProfiles,
     canManageTenant,
     refreshTenants: () => setTenantsReloadKey((key) => key + 1),
   };
@@ -167,6 +179,7 @@ export function AppShell() {
         userLabel={userLabel}
         showAuthentications={canReadAuthentications}
         showConfiguration={canReadSecrets}
+        showConnectors={canReadConnectors}
         showTenantsNav={superAdmin}
         showTenantManagement={canManageTenant}
       />

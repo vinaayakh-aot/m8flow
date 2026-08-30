@@ -35,6 +35,8 @@ describe('Sidebar live nav', () => {
     );
     expect(screen.getByText('Configuration')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
+    expect(screen.getByText('Connectors')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Authentications' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
@@ -121,6 +123,25 @@ describe('Sidebar live nav', () => {
       'href',
       '/configuration/secrets',
     );
+  });
+
+  it('makes Connectors a live /connectors link when the catalog can be read', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showConnectors />,
+        },
+        {
+          path: '/connectors',
+          element: <Sidebar showConnectors />,
+        },
+      ],
+      { initialEntries: ['/connectors'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Connectors' })).toHaveAttribute('href', '/connectors');
   });
 
   it('makes Tenants a live /tenants link for super-admin', () => {

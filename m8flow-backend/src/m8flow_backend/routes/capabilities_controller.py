@@ -10,6 +10,8 @@ _AUTH_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
 _AUTH_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
 _SECRET_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
 _SECRET_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
+_CONNECTOR_READ_ROLES = frozenset({"tenant-admin", "editor", "integrator"})
+_CONNECTOR_PROFILE_MANAGE_ROLES = frozenset({"tenant-admin", "integrator"})
 _TENANT_MANAGE_ROLES = frozenset({"tenant-admin"})
 
 
@@ -45,6 +47,12 @@ def get_capabilities():
     URI. Tenant-admin is on the read hint because manage `actions: [all]`
     already includes list/show.
 
+    Connector flags follow the same YAML: `can_read_connectors` is the
+    Connectors page / grouped catalog (tenant-admin, editor, integrator,
+    super-admin). `can_manage_connector_profiles` is profile writes
+    (tenant-admin, integrator, super-admin). Viewer/reviewer/submitter can
+    still GET profile names for the modeler picker without these hints.
+
     `can_manage_tenant` is the same kind of advisory hint for Tenant Management
     (tenant-admin of the active tenant, or super-admin). It is not the
     members/groups/roles authorization gate.
@@ -60,6 +68,10 @@ def get_capabilities():
     can_manage_authentications = super_admin or bool(roles & _AUTH_MANAGE_ROLES)
     can_read_secrets = super_admin or bool(roles & _SECRET_READ_ROLES)
     can_manage_secrets = super_admin or bool(roles & _SECRET_MANAGE_ROLES)
+    can_read_connectors = super_admin or bool(roles & _CONNECTOR_READ_ROLES)
+    can_manage_connector_profiles = super_admin or bool(
+        roles & _CONNECTOR_PROFILE_MANAGE_ROLES
+    )
     can_manage_tenant = super_admin or bool(roles & _TENANT_MANAGE_ROLES)
     return success_response(
         {
@@ -68,6 +80,8 @@ def get_capabilities():
             "can_manage_authentications": can_manage_authentications,
             "can_read_secrets": can_read_secrets,
             "can_manage_secrets": can_manage_secrets,
+            "can_read_connectors": can_read_connectors,
+            "can_manage_connector_profiles": can_manage_connector_profiles,
             "can_manage_tenant": can_manage_tenant,
         },
         200,

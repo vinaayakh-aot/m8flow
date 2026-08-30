@@ -1,15 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import ProcessInstanceDetailPage from './ProcessInstanceDetailPage';
 
-// Same constraint TemplateModelerPage.test.tsx/ProcessModelModelerPage
-// document: bpmn-js's raw ESM doesn't resolve under Vitest's Node-based
-// SSR module runner. These tests only exercise states that never reach
-// the lazy-loaded <InstanceDiagramViewer> (invalid id, tenant gate, 404,
-// fetch error, no-bpmn_xml) — real, valuable coverage on its own.
+// bpmn-js's raw ESM doesn't resolve under Vitest's Node-based SSR runner.
+// These tests stay on states that never mount <InstanceDiagramViewer>
+// (invalid id, tenant gate, 404, fetch error, no-bpmn_xml).
 function renderWithOutlet(context: AppShellOutletContext, initial = '/process-instances/7') {
   return render(
     <MemoryRouter initialEntries={[initial]}>
@@ -31,11 +29,56 @@ function mockDetail(overrides: Partial<Record<string, unknown>> = {}) {
     started_by: 'editor',
     start_in_seconds: 1_700_000_000,
     end_in_seconds: null,
+    updated_at_in_seconds: 1_700_000_100,
+    last_milestone_bpmn_name: null,
     bpmn_xml: null,
     tasks: [],
     ...overrides,
   };
 }
+
+function emptyList() {
+  return { results: [] };
+}
+
+function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const path = String(url);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method === 'POST') {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ id: 7, status: 'terminated' }),
+      });
+    }
+    if (path.includes('/completable-tasks')) {
+      return Promise.resolve({ ok: true, json: async () => emptyList() });
+    }
+    if (path.includes('/completed-tasks')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ completed_by_me: [], all_completed: [] }),
+      });
+    }
+    if (path.includes('/events') || path.includes('/milestones')) {
+      return Promise.resolve({ ok: true, json: async () => emptyList() });
+    }
+    if ('errorStatus' in detail) {
+      return Promise.resolve({ ok: false, status: detail.errorStatus });
+    }
+    return Promise.resolve({
+      ok: true,
+      json: async () => detail,
+    });
+  });
+}
+
+const editorCtx: AppShellOutletContext = {
+  scopedTenantId: 't1',
+  selectedTenantId: 't1',
+  isSuperAdmin: false,
+  canManageProcesses: true,
+};
 
 describe('ProcessInstanceDetailPage', () => {
   afterEach(() => {
@@ -58,7 +101,7 @@ describe('ProcessInstanceDetailPage', () => {
   });
 
   it('shows "not found" when the backend 404s', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    vi.stubGlobal('fetch', stubFetches({ errorStatus: 404 }));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
@@ -68,7 +111,7 @@ describe('ProcessInstanceDetailPage', () => {
   });
 
   it('shows a visible error for a non-404 fetch failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    vi.stubGlobal('fetch', stubFetches({ errorStatus: 500 }));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
@@ -77,27 +120,214 @@ describe('ProcessInstanceDetailPage', () => {
     });
   });
 
-  it('shows metadata and a fallback message when no bpmn_xml is available', async () => {
+  it('shows mockup shell: title, metadata placeholders, completable tasks, tabs; no Download', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    expect(screen.getByText('Started by')).toBeInTheDocument();
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(screen.getByText('Last milestone')).toBeInTheDocument();
+    expect(screen.getByText('Revision')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tasks I can complete' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Diagram' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Milestones' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No BPMN diagram is available for this instance (its process definition may have been removed).',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders Updated and Last milestone from the GET; Revision stays an em dash', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => mockDetail(),
-      }),
+      stubFetches(
+        mockDetail({
+          updated_at_in_seconds: 1_700_000_100,
+          last_milestone_bpmn_name: 'Approval gate',
+        }),
+      ),
     );
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByText('Approval gate')).toBeInTheDocument();
+    });
+    expect(screen.getByText('2023-11-14 22:15:00')).toBeInTheDocument();
+    expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
+  });
+
+  it('shows em dash when Updated and Last milestone are unset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetches(mockDetail({ updated_at_in_seconds: null, last_milestone_bpmn_name: '   ' })),
+    );
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+    });
+    expect(screen.getByText('Updated').parentElement).toHaveTextContent('Updated—');
+    expect(screen.getByText('Last milestone').parentElement).toHaveTextContent('Last milestone—');
+    expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
+  });
+
+  it('copies the current URL from Copy link', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'test' });
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(writeText).toHaveBeenCalledWith(window.location.href);
+  });
+
+  it('shows Messages empty copy and Tasks completed-by-me empty copy', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Messages' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    expect(screen.getByText('No messages recorded for this process instance.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText('You have not completed any tasks for this process instance.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows terminate and suspend for an editor on a waiting instance', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Terminate' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Suspend' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+  });
+
+  it('swaps resume in for suspend when the instance is suspended', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'suspended' })));
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Terminate' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
+  });
+
+  it('hides lifecycle buttons when the caller cannot manage processes', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
     await waitFor(() => {
       expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Started by/)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'No BPMN diagram is available for this instance (its process definition may have been removed).',
-      ),
-    ).toBeInTheDocument();
-    // Download is disabled with no bpmn_xml.
-    expect(screen.getByRole('button', { name: /Download/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Terminate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
+  });
+
+  it('hides lifecycle buttons on a completed instance', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'complete' })));
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Terminate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+  });
+
+  it('confirms terminate then posts and refreshes', async () => {
+    const fetchMock = stubFetches(mockDetail());
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Terminate' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Terminate' }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        'Terminate this process instance? This cannot be undone.',
+      );
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/process-instances/7/terminate'),
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+  });
+
+  it('does not post terminate when confirm is cancelled', async () => {
+    const fetchMock = stubFetches(mockDetail());
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Terminate' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Terminate' }));
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('posts suspend immediately without confirm', async () => {
+    const fetchMock = stubFetches(mockDetail());
+    vi.stubGlobal('fetch', fetchMock);
+    const confirm = vi.spyOn(window, 'confirm');
+
+    renderWithOutlet(editorCtx);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Suspend' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/process-instances/7/suspend'),
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

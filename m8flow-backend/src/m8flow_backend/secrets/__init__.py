@@ -149,9 +149,10 @@ def build_host_service_task_registry() -> ServiceTaskRegistry:
     When ``M8FLOW_BACKEND_CONNECTOR_PROXY_URL`` is unset, returns an empty registry
     (unit tests / hosts without connectors). When set, fetches ``GET /v1/commands``
     via core's connector-proxy client — failures raise rather than silently emptying
-    the catalog. The returned registry resolves ``M8FLOW_SECRET:`` sentinels on
-    ``execute`` (missing keys fail closed).
+    the catalog. The returned registry injects ``m8flow_profile`` then resolves
+    ``M8FLOW_SECRET:`` sentinels on ``execute`` (missing keys fail closed).
     """
+    from m8flow_backend.connectors.runtime import wrap_registry_for_connector_profiles
     from m8flow_backend.secrets.runtime import wrap_registry_for_secret_sentinels
 
     base_url = connector_proxy_url()
@@ -159,7 +160,7 @@ def build_host_service_task_registry() -> ServiceTaskRegistry:
         inner: ServiceTaskRegistry = ServiceTaskRegistry()
     else:
         inner = build_connector_proxy_service_task_registry(base_url)
-    return wrap_registry_for_secret_sentinels(inner)
+    return wrap_registry_for_connector_profiles(wrap_registry_for_secret_sentinels(inner))
 
 
 def install_registry_at_boot() -> None:

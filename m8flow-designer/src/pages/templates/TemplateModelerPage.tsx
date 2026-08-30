@@ -11,6 +11,7 @@ import {
   type TemplateFile,
 } from '@/lib/templatesApi';
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
+import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DiagramCanvas } from '@/pages/process-model-modeler/components/DiagramCanvas';
@@ -239,6 +240,11 @@ export default function TemplateModelerPage() {
     );
   }, []);
 
+  const handleFetchConnectorProfiles = useCallback(
+    (connectorType: string) => fetchConnectorProfilesForPicker(connectorType),
+    [],
+  );
+
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
@@ -315,6 +321,7 @@ export default function TemplateModelerPage() {
             onCreateFile={handleWriteFile}
             onFilesChanged={handleFormFilesChanged}
             onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
+            onFetchConnectorProfiles={handleFetchConnectorProfiles}
           />
         ) : null}
       </main>

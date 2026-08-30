@@ -222,6 +222,10 @@ export type Capabilities = {
   can_manage_authentications?: boolean;
   can_read_secrets?: boolean;
   can_manage_secrets?: boolean;
+  /** YAML connectors-grouped read (tenant-admin / editor / integrator). */
+  can_read_connectors?: boolean;
+  /** YAML connector-profile writes (tenant-admin / integrator). */
+  can_manage_connector_profiles?: boolean;
   /** Advisory Tenant Management hint. Not the members/groups API gate. */
   can_manage_tenant?: boolean;
 };
@@ -714,6 +718,8 @@ export type ConnectorGroup = {
   operationCount: number;
   operations: ConnectorOperation[];
   docsUrl?: string;
+  /** When true, Configure opens connector profiles instead of Configuration secrets. */
+  supportsProfiles?: boolean;
 };
 
 /** Not tenant-scoped — connectors are platform-level, same as the Connectors page. */

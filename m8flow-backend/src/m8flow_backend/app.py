@@ -16,6 +16,9 @@ from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
 from m8flow_backend.observability.request_context import install_request_id_middleware
 from m8flow_backend.secrets import install_registry_at_boot
+from m8flow_backend.workflow.service_task_params import (
+    install_service_task_literal_fallback,
+)
 from m8flow_backend.tenant_runtime import install_tenant_runtime
 from m8flow_backend.startup.error_handlers import (
     register_connexion_error_handlers,
@@ -76,6 +79,7 @@ def create_app() -> FlaskApp:
     harden_logging()
     install_default_policy()
     install_registry_at_boot()
+    install_service_task_literal_fallback()
     attach_host_timestamp_listeners()
 
     # Connexion 3.x is an ASGI app that routes + validates the api.yml operations
@@ -106,13 +110,22 @@ def create_app() -> FlaskApp:
     def _open_session() -> None:
         g.db_session = session_factory()
 
+    @app.after_request
+    def _mark_error_response_for_rollback(response):
+        # handle_api_errors catches exceptions and returns 4xx/500, so Flask
+        # teardown sees exc=None and would otherwise COMMIT a half-finished
+        # complete (human task marked done, next engine step never persisted).
+        if response.status_code >= 400:
+            g.m8flow_rollback_session = True
+        return response
+
     @app.teardown_request
     def _close_session(exc) -> None:
         session = getattr(g, "db_session", None)
         if session is None:
             return
         try:
-            if exc is None:
+            if exc is None and not getattr(g, "m8flow_rollback_session", False):
                 session.commit()
             else:
                 session.rollback()
@@ -121,7 +134,10 @@ def create_app() -> FlaskApp:
             # already been built, so it can never reach an @app.errorhandler.
             # Log it explicitly (Grafana-visible) and fall back to rollback so a
             # half-committed session is never left open, then still close below.
-            LOGGER.exception("Failed to finalize request-scoped DB session (commit=%s)", exc is None)
+            LOGGER.exception(
+                "Failed to finalize request-scoped DB session (commit=%s)",
+                exc is None and not getattr(g, "m8flow_rollback_session", False),
+            )
             try:
                 session.rollback()
             except Exception:

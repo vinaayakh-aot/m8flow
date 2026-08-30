@@ -1609,6 +1609,20 @@ paths:
                       Advisory: tenant-admin, integrator, or super-admin may
                       create/update/delete secrets. Editor must not. Not the
                       HTTP authorization gate.
+                  can_read_connectors:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, editor, integrator, or super-admin
+                      may open Setup → Connectors. Not the HTTP authorization
+                      gate. Distinct from profile-name reads used by the modeler
+                      picker.
+                  can_manage_connector_profiles:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, integrator, or super-admin may
+                      create, update, or delete connector profiles. Editor may
+                      pick a profile, not create one. Not the HTTP
+                      authorization gate.
                   can_manage_tenant:
                     type: boolean
                     description: >-
@@ -2074,6 +2088,356 @@ paths:
           description: Unauthorized - user not authenticated
         "404":
           description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/events:
+    get:
+      summary: Process instance detail — Events tab
+      description: >-
+        Ordered process-instance event log for the Events tab: event id,
+        BPMN process / task labels (Task → TaskDefinition /
+        BpmnProcessDefinition, not HumanTask), event type, user, timestamp.
+        Same concrete-tenant and GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+        No pagination (mockup 50/page is still fog).
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_events
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Events retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceEventsResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/milestones:
+    get:
+      summary: Process instance detail — Milestones tab
+      description: >-
+        Zero or one current last milestone (last_milestone_bpmn_name),
+        not a history. Bpmn process is the definition identifier;
+        timestamp is instance start. Same concrete-tenant and GET-instance
+        permission posture as GET /process-instances/{id}. Denied or
+        missing instance → 404. No pagination.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_milestones
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Milestones retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceMilestonesResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/completable-tasks:
+    get:
+      summary: Process instance detail — Tasks I can complete
+      description: >-
+        Incomplete human tasks on this instance where the current user is
+        a candidate. Not the approval-chain reader. Task is title + name;
+        Waiting for is lane_name. Same GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+        Empty results when the caller has no candidate tasks.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completable_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Completable tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceCompletableTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/completed-tasks:
+    get:
+      summary: Process instance detail — Tasks tab completed lists
+      description: >-
+        Completed human tasks on this instance, split into completed_by_me
+        (completed_by_user_id is the caller) and all_completed. Not the
+        approval-chain reader. Task is title + name; Completed by is the
+        completer person. Same GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completed_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Completed tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceCompletedTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/suspend:
+    post:
+      summary: Process instance detail — suspend
+      description: >-
+        Pause a live process instance. Authorize as POST on the instance
+        URI (YAML create / process.suspend). Denied → 403; missing or
+        other tenant → 404; terminal instance → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.suspend_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is already terminal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/resume:
+    post:
+      summary: Process instance detail — resume
+      description: >-
+        Continue a suspended process instance. Authorize as POST on the
+        instance URI (YAML create / process.resume). Denied → 403;
+        missing or other tenant → 404; not suspended → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.resume_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is not suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/terminate:
+    post:
+      summary: Process instance detail — terminate
+      description: >-
+        End a process instance so it cannot continue. Authorize as POST
+        on the instance URI (YAML create / process.terminate). Denied →
+        403; missing or other tenant → 404; complete or error → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.terminate_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance terminated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is complete or error
           content:
             application/json:
               schema:
@@ -3848,6 +4212,181 @@ paths:
                 items:
                   type: object
 
+  /connector-templates:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_list
+      summary: Connector schemas, one descriptor per registered connector
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /connector-templates/{connector_type}:
+    parameters:
+      - name: connector_type
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_show
+      summary: One connector schema
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: Connector descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Unknown connector type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles:
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_list
+      summary: Connector profiles for the active tenant
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: include_inactive
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Profiles. Secret values are never included.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
+      summary: Create a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: The created profile, references only
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A profile of that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /connector-profiles/{profile_id}:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
+      summary: One connector profile
+      tags:
+        - Connectors
+      responses:
+        "200":
+          description: The profile, references only
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
+      summary: Update a connector profile
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: The updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_delete
+      summary: Deactivate a connector profile, or remove it with hard=true
+      tags:
+        - Connectors
+      parameters:
+        - name: hard
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Deactivated, or removed
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -4429,6 +4968,16 @@ components:
         end_in_seconds:
           type: integer
           nullable: true
+        updated_at_in_seconds:
+          type: integer
+          nullable: true
+          description: Instance row stamp for the metadata-grid Updated cell.
+        last_milestone_bpmn_name:
+          type: string
+          nullable: true
+          description: >-
+            Current last milestone (process definition BPMN name or
+            identifier). Null when unset. Not a history. Not a revision.
         bpmn_xml:
           type: string
           nullable: true
@@ -4440,6 +4989,160 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessInstanceTaskState"
+
+    ProcessInstanceEventRow:
+      type: object
+      required:
+        - id
+        - event_type
+        - user
+      properties:
+        id:
+          type: integer
+        bpmn_process:
+          type: string
+          nullable: true
+          description: BpmnProcessDefinition.bpmn_identifier; null when the event has no task.
+        task_name:
+          type: string
+          nullable: true
+          description: TaskDefinition.bpmn_name; not HumanTask.task_title.
+        task_identifier:
+          type: string
+          nullable: true
+          description: TaskDefinition.bpmn_identifier (XML element id); not task_guid.
+        task_type:
+          type: string
+          nullable: true
+          description: TaskDefinition.typename (e.g. StartEvent, BpmnStartTask).
+        event_type:
+          type: string
+        user:
+          type: string
+          description: Display name or username; "system" when the event has no user.
+        timestamp:
+          type: number
+          nullable: true
+          description: Epoch seconds (float).
+
+    ProcessInstanceEventsResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceEventRow"
+
+    ProcessInstanceMilestoneRow:
+      type: object
+      required:
+        - milestone
+      properties:
+        milestone:
+          type: string
+          description: last_milestone_bpmn_name (process definition BPMN name or identifier).
+        bpmn_process:
+          type: string
+          nullable: true
+          description: BpmnProcessDefinition.bpmn_identifier for this instance.
+        timestamp:
+          type: integer
+          nullable: true
+          description: Instance start_in_seconds (when the milestone column is written).
+
+    ProcessInstanceMilestonesResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceMilestoneRow"
+
+    ProcessInstanceLifecycleResponse:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+
+    ProcessInstanceCompletableTaskRow:
+      type: object
+      required:
+        - id
+        - task_name
+      properties:
+        id:
+          type: integer
+          description: human_task id — Go opens /task-review/{id}.
+        task_title:
+          type: string
+          nullable: true
+          description: Display title; UI falls back to task_name.
+        task_name:
+          type: string
+          description: BPMN task name. Not the approval-chain owner name.
+        lane_name:
+          type: string
+          nullable: true
+          description: BPMN lane (Waiting for). Null when the task has no lane.
+
+    ProcessInstanceCompletableTasksResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletableTaskRow"
+
+    ProcessInstanceCompletedTaskRow:
+      type: object
+      required:
+        - id
+        - task_name
+      properties:
+        id:
+          type: integer
+          description: human_task id
+        task_title:
+          type: string
+          nullable: true
+          description: Display title; UI falls back to task_name.
+        task_name:
+          type: string
+          description: BPMN task name. Not the approval-chain owner name.
+        completed_by:
+          type: string
+          nullable: true
+          description: Completer display name or username. Null when no human completer.
+        timestamp:
+          type: integer
+          nullable: true
+          description: updated_at_in_seconds at completion.
+
+    ProcessInstanceCompletedTasksResponse:
+      type: object
+      required:
+        - completed_by_me
+        - all_completed
+      properties:
+        completed_by_me:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletedTaskRow"
+        all_completed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletedTaskRow"
 
     TenantMember:
       type: object

@@ -248,6 +248,30 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
+  read-connector-templates:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates
+  read-connector-template-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-templates/*
+  read-connector-profiles:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles
+  read-connector-profile-items:
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
+    actions: [read]
+    uri: /m8flow/connector-profiles/*
+  manage-connector-profiles:
+    groups: ["tenant-admin", "integrator"]
+    actions: [create, update, delete]
+    uri: /m8flow/connector-profiles
+  manage-connector-profile-items:
+    groups: ["tenant-admin", "integrator"]
+    actions: [create, update, delete]
+    uri: /m8flow/connector-profiles/*
   read-mcp-connection-page:
     groups: ["everybody"]
     actions: [read]
