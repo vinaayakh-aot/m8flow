@@ -4,7 +4,7 @@
   "tags": ["m8flow", "postgres", "sql"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "templating": {
@@ -27,7 +27,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Three signals:** Prometheus (`postgres_exporter` + `pg_stat_statements`), Grafana SQL (live statement/table stats), Loki (backend `request completed` SQL budget + `sql query slow`, Postgres `duration:` / lock waits). Statement tables are cumulative since last stats reset. Postgres logs statements ≥ **250ms**. Backend logs statements ≥ **`M8FLOW_SQL_SLOW_MS`** (default 100ms, no bind values)."
+        "content": "**Three signals:** Prometheus (`postgres_exporter` + `pg_stat_statements`), Grafana SQL (live statement/table stats with **normalized SQL text**), Loki (backend `request completed` SQL budget + `sql query slow`, Postgres `duration:` / lock waits). Statement tables are cumulative since last stats reset. `pg_stat_statements` replaces literals with `$1`, `$2` — inspect a query cell for the full text. Postgres logs statements ≥ **250ms**. Backend logs statements ≥ **`M8FLOW_SQL_SLOW_MS`** (default 100ms, no bind values)."
       }
     },
     {
@@ -219,14 +219,14 @@
       "id": 9,
       "type": "timeseries",
       "title": "Statement latency (mean)",
-      "description": "rate(seconds_total) / rate(calls) from pg_stat_statements. One series per queryid in the exporter's top-100 set.",
+      "description": "Mean statement time across pg_stat_statements (total time / calls). Per-statement SQL is in the tables below — Prometheus only has queryid labels.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, (rate(pg_stat_statements_seconds_total{datname=~\"$datname\"}[$__rate_interval]) / clamp_min(rate(pg_stat_statements_calls_total{datname=~\"$datname\"}[$__rate_interval]), 0.001)))",
-          "legendFormat": "{{queryid}}"
+          "expr": "sum(rate(pg_stat_statements_seconds_total{datname=~\"$datname\"}[$__rate_interval])) / clamp_min(sum(rate(pg_stat_statements_calls_total{datname=~\"$datname\"}[$__rate_interval])), 0.001)",
+          "legendFormat": "mean"
         }
       ],
       "fieldConfig": {
@@ -313,26 +313,49 @@
     },
     {
       "id": 12,
-      "type": "bargauge",
+      "type": "table",
       "title": "Hottest statements (time/s)",
-      "description": "Top queryids by execution time rate. Join to the table on the right for SQL text.",
+      "description": "Normalized SQL from pg_stat_statements (placeholders like $1 — not bind values). Hottest first. Click a header to re-sort; inspect a query cell for the full text.",
       "gridPos": { "h": 9, "w": 8, "x": 0, "y": 23 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, rate(pg_stat_statements_seconds_total{datname=~\"$datname\"}[$__rate_interval]))",
-          "legendFormat": "{{queryid}}"
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round((s.total_exec_time / 1000.0) / GREATEST(EXTRACT(EPOCH FROM (now() - i.stats_reset)), 1), 4) AS \"time/s\", s.calls, s.query FROM pg_stat_statements s CROSS JOIN pg_stat_statements_info i WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND s.query NOT LIKE '%pg_stat_statements%' ORDER BY s.total_exec_time DESC LIMIT 10"
         }
       ],
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] }, "showUnfilled": true },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "time/s", "desc": true }]
+      },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "min": 0,
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.2 }] }
+          "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "time/s" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
+              { "id": "custom.width", "value": 90 },
+              { "id": "min", "value": 0 },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.2 }] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "calls" },
+            "properties": [{ "id": "custom.width", "value": 70 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "query" },
+            "properties": [{ "id": "custom.inspect", "value": true }]
+          }
+        ]
       }
     },
     {
@@ -348,16 +371,21 @@
           "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT queryid::text AS queryid, calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 1) AS total_ms, rows, round((shared_blks_hit::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0)), 3) AS cache_hit, left(query, 180) AS query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15"
+          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 1) AS total_ms, rows, round((shared_blks_hit::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0)), 3) AS cache_hit, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "total_ms", "desc": true }]
+      },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true } },
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
         "overrides": [
           { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
           { "matcher": { "id": "byName", "options": "total_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "cache_hit" }, "properties": [{ "id": "unit", "value": "percentunit" }] }
+          { "matcher": { "id": "byName", "options": "cache_hit" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
+          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
         ]
       }
     },
@@ -374,15 +402,20 @@
           "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT queryid::text AS queryid, calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(max_exec_time::numeric, 1) AS max_ms, left(query, 160) AS query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND calls >= 3 AND query NOT LIKE '%pg_stat_statements%' ORDER BY mean_exec_time DESC LIMIT 12"
+          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(max_exec_time::numeric, 1) AS max_ms, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND calls >= 3 AND query NOT LIKE '%pg_stat_statements%' ORDER BY mean_exec_time DESC LIMIT 12"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "mean_ms", "desc": true }]
+      },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true } },
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
         "overrides": [
           { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }] }
+          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
         ]
       }
     },
@@ -402,8 +435,15 @@
           "rawSql": "SELECT schemaname || '.' || relname AS table, seq_scan, seq_tup_read, coalesce(idx_scan, 0) AS idx_scan, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY seq_tup_read DESC NULLS LAST LIMIT 15"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
-      "fieldConfig": { "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true } }, "overrides": [] }
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "seq_tup_read", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
+        "overrides": []
+      }
     },
     {
       "id": 16,

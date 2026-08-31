@@ -56,7 +56,7 @@ The tenant textbox on dashboards defaults to `.*` (all). Replace it with a tenan
 | Signal | Source | What it answers |
 |--------|--------|-----------------|
 | Commit / statement rate, cache hit, backends, temp files, deadlocks | Prometheus `postgres_exporter` | Is the database busy, cache-cold, or spilling to disk? |
-| Top statements by total/mean time, sequential scans, unused indexes | Grafana Postgres datasource (`pg_stat_statements`, `pg_stat_user_tables`) | Which SQL to optimize, and whether it is missing an index |
+| Hottest / top / slowest statements (full `query` text, inspect a cell) | Grafana Postgres datasource (`pg_stat_statements`) | Which SQL to optimize. Text is Postgres-normalized (`$1` placeholders); bind values are not stored |
 | `sql_duration_ms`, `sql_query_count`, pool checked-out | Backend JSON `request completed` | HTTP vs SQL split and N+1 |
 | `sql query slow` | Backend JSON (threshold `M8FLOW_SQL_SLOW_MS`, default 100ms) | The statement preview that crossed the bar |
 | `duration:` / lock waits | `m8flow-db` stdout (`log_min_duration_statement=250`) | Server-side slow queries and blocking |
