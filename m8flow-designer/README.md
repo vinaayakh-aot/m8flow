@@ -28,10 +28,6 @@ the backend. `src/auth.ts` here follows that same pattern:
   Invitation emails and JSON `invitation_link` use this designer origin
   (`M8FLOW_FRONTEND_BASE_URL`, default `http://localhost:6853`), not leftover
   frontend `:6841`.
-  After the tenant cookie is set, **Setup → Authentications** lists tenant-scoped
-  service accounts for integrator / tenant-admin / viewer (read). Create shows
-  the API key once; list/revoke afterwards. Editor and reviewer do not see the
-  nav item.
 - Keycloak redirects to the backend's `/v1.0/login_return`, which exchanges
   the authorization code for tokens (server-side, via the confidential
   `m8flow-backend` Keycloak client) and sets `access_token` / `id_token`
@@ -78,7 +74,7 @@ npm run test:e2e
 ```
 
 Journeys: `e2e/login.spec.ts` (CHK-01 editor Home, CHK-02 platform admin) and
-`e2e/identity-auth-parity.spec.ts` (PAR-01–08: landing, editor onboarding/tasks,
+`e2e/identity-auth-parity.spec.ts` (PAR-01–07: landing, editor onboarding/tasks,
 multi-org picker, zero-org gate, auto-finalize, logout/cookie gate,
-accept-invitation, integrator service account). Requires docker compose
+accept-invitation). Requires docker compose
 (backend `:6840`, Keycloak `:6842`) plus designer `:6853`.

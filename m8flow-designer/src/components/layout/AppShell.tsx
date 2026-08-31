@@ -26,9 +26,6 @@ export type AppShellOutletContext = {
    * harnesses that build a minimal context still type-check; AppShell always
    * provides it, and consumers treat absent as "cannot manage". */
   canManageProcesses?: boolean;
-  /** YAML authentications grants (integrator / tenant-admin / viewer read). */
-  canReadAuthentications?: boolean;
-  canManageAuthentications?: boolean;
   /** YAML secrets grants (integrator / viewer / tenant-admin read). */
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
@@ -56,8 +53,6 @@ export function AppShell() {
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
   const [canManage, setCanManage] = useState(false);
-  const [canReadAuthentications, setCanReadAuthentications] = useState(false);
-  const [canManageAuthentications, setCanManageAuthentications] = useState(false);
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
@@ -73,8 +68,6 @@ export function AppShell() {
       .then((caps) => {
         if (!cancelled) {
           setCanManage(Boolean(caps.can_manage_processes));
-          setCanReadAuthentications(Boolean(caps.can_read_authentications));
-          setCanManageAuthentications(Boolean(caps.can_manage_authentications));
           setCanReadSecrets(Boolean(caps.can_read_secrets));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));
           setCanReadConnectors(Boolean(caps.can_read_connectors));
@@ -85,8 +78,6 @@ export function AppShell() {
       .catch(() => {
         if (!cancelled) {
           setCanManage(false);
-          setCanReadAuthentications(false);
-          setCanManageAuthentications(false);
           setCanReadSecrets(false);
           setCanManageSecrets(false);
           setCanReadConnectors(false);
@@ -155,8 +146,6 @@ export function AppShell() {
     selectedTenantId,
     isSuperAdmin: superAdmin,
     canManageProcesses: canManage,
-    canReadAuthentications,
-    canManageAuthentications,
     canReadSecrets,
     canManageSecrets,
     canReadConnectors,
@@ -180,7 +169,6 @@ export function AppShell() {
         activeTenantLabel={activeTenantLabel}
         onLogout={logout}
         userLabel={userLabel}
-        showAuthentications={canReadAuthentications}
         showConfiguration={canReadSecrets}
         showConnectors={canReadConnectors}
         showTenantsNav={superAdmin}

@@ -21,8 +21,6 @@ vi.mock('@/lib/auth', () => ({
 
 const mockFetchCapabilities = vi.fn().mockResolvedValue({
   can_manage_processes: false,
-  can_read_authentications: false,
-  can_manage_authentications: false,
   can_manage_tenant: false,
 });
 
@@ -61,8 +59,6 @@ describe('AppShell', () => {
     mockFetchOrganizationMemberships.mockResolvedValue([]);
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: false,
-      can_read_authentications: false,
-      can_manage_authentications: false,
       can_read_secrets: false,
       can_manage_secrets: false,
       can_read_connectors: false,
@@ -166,28 +162,10 @@ describe('AppShell', () => {
     expect(mockFetchOrganizationMemberships).toHaveBeenCalled();
   });
 
-  it('shows Setup → Authentications when capabilities allow read', async () => {
-    mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
-    mockFetchCapabilities.mockResolvedValue({
-      can_manage_processes: false,
-      can_read_authentications: true,
-      can_manage_authentications: true,
-    });
-
-    renderShell();
-
-    expect(await screen.findByRole('link', { name: 'Authentications' })).toHaveAttribute(
-      'href',
-      '/authentications',
-    );
-  });
-
   it('shows Setup → Configuration when capabilities allow secrets read', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: false,
-      can_read_authentications: true,
-      can_manage_authentications: true,
       can_read_secrets: true,
       can_manage_secrets: true,
     });
@@ -220,8 +198,6 @@ describe('AppShell', () => {
     mockGetCurrentUser.mockReturnValue({ username: 'tenant-admin', email: null });
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: true,
-      can_read_authentications: true,
-      can_manage_authentications: true,
       can_manage_tenant: true,
     });
 

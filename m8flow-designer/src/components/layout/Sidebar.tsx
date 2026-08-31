@@ -55,8 +55,6 @@ export type SidebarProps = {
    * (prototypes). Ignored when a React Router context is present.
    */
   activeNavId?: LiveNavId | null;
-  /** Setup → Authentications live link when the user has YAML authentications grants. */
-  showAuthentications?: boolean;
   /** Setup → Configuration live link when the user has YAML secrets read. */
   showConfiguration?: boolean;
   /** Setup → Connectors live link when the user has YAML connectors-grouped read. */
@@ -121,7 +119,6 @@ const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
 };
-const AUTHENTICATIONS_CHILD: SidebarChild = { label: 'Authentications', to: '/authentications' };
 const SYSTEM_CHILDREN: SidebarChild[] = [{ label: 'Celery' }, { label: 'NATS' }];
 
 function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavId | null {
@@ -185,7 +182,6 @@ function SidebarView({
   userLabel = null,
   activeNavId = 'home',
   linkLiveNav = false,
-  showAuthentications = false,
   showConfiguration = false,
   showConnectors = false,
   showTenantsNav = false,
@@ -197,7 +193,6 @@ function SidebarView({
   const [systemOpen, setSystemOpen] = useState(true);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
-    ...(showAuthentications ? [AUTHENTICATIONS_CHILD] : []),
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     SETUP_CHILDREN[2],
   ];

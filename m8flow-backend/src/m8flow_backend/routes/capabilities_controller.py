@@ -6,8 +6,6 @@ from m8flow_backend.auth import require_current_user
 from m8flow_backend.authorization import actor_is_super_admin, allow_uri
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 
-_AUTH_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
-_AUTH_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
 _SECRET_READ_ROLES = frozenset({"integrator", "viewer", "tenant-admin"})
 _SECRET_MANAGE_ROLES = frozenset({"integrator", "tenant-admin"})
 _CONNECTOR_READ_ROLES = frozenset({"tenant-admin", "editor", "integrator"})
@@ -41,11 +39,10 @@ def get_capabilities():
     allow_uri resolves from the user's groups, so this also answers correctly
     for a super-admin in All-Tenants mode.
 
-    Authentications and secrets flags follow `m8flow.yml` role grants
-    (integrator / tenant-admin manage; viewer + those roles read), not the
-    editor/tenant-admin allow_uri fallback that would otherwise light up every
-    URI. Tenant-admin is on the read hint because manage `actions: [all]`
-    already includes list/show.
+    Secrets flags follow `m8flow.yml` role grants (integrator / tenant-admin
+    manage; viewer + those roles read), not the editor/tenant-admin allow_uri
+    fallback that would otherwise light up every URI. Tenant-admin is on the
+    read hint because manage `actions: [all]` already includes list/show.
 
     Connector flags follow the same YAML: `can_read_connectors` is the
     Connectors page / grouped catalog (tenant-admin, editor, integrator,
@@ -64,8 +61,6 @@ def get_capabilities():
     ) or allow_uri(user, "DELETE", "/v1.0/process-models", session=session)
     roles = _local_role_names(user)
     super_admin = actor_is_super_admin(user)
-    can_read_authentications = super_admin or bool(roles & _AUTH_READ_ROLES)
-    can_manage_authentications = super_admin or bool(roles & _AUTH_MANAGE_ROLES)
     can_read_secrets = super_admin or bool(roles & _SECRET_READ_ROLES)
     can_manage_secrets = super_admin or bool(roles & _SECRET_MANAGE_ROLES)
     can_read_connectors = super_admin or bool(roles & _CONNECTOR_READ_ROLES)
@@ -76,8 +71,6 @@ def get_capabilities():
     return success_response(
         {
             "can_manage_processes": bool(can_manage),
-            "can_read_authentications": can_read_authentications,
-            "can_manage_authentications": can_manage_authentications,
             "can_read_secrets": can_read_secrets,
             "can_manage_secrets": can_manage_secrets,
             "can_read_connectors": can_read_connectors,

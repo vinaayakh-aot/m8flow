@@ -1,4 +1,4 @@
-import { expect, request, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import { cookieValue, SELECTED_TENANT_COOKIE } from './auth';
 import {
@@ -213,46 +213,6 @@ export async function removeTenantMember(page: Page, tenantId: string, username:
   );
   if (result.status !== 200 && result.status !== 404) {
     throw new Error(`removeTenantMember failed: ${result.status} ${JSON.stringify(result.body)}`);
-  }
-}
-
-export async function listAuthenticationsWithKey(
-  apiKey: string,
-  foreignTenantCookie?: string,
-): Promise<{ status: number; body: unknown }> {
-  const extraHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-  };
-  if (foreignTenantCookie) {
-    extraHeaders.Cookie = `${SELECTED_TENANT_COOKIE}=${foreignTenantCookie}`;
-  }
-  const context: APIRequestContext = await request.newContext({
-    baseURL: BACKEND_BASE_URL,
-    extraHTTPHeaders: extraHeaders,
-  });
-  try {
-    const response = await context.get('/v1.0/authentications');
-    return { status: response.status(), body: await parseJson(response) };
-  } finally {
-    await context.dispose();
-  }
-}
-
-export async function expectServiceAccountCanCallProtectedRoutes(apiKey: string): Promise<void> {
-  const context = await request.newContext({
-    baseURL: BACKEND_BASE_URL,
-    extraHTTPHeaders: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-  });
-  try {
-    const authentications = await context.get('/v1.0/authentications');
-    expect(authentications.status(), await authentications.text()).toBe(200);
-    expect(Array.isArray(await authentications.json())).toBe(true);
-  } finally {
-    await context.dispose();
   }
 }
 

@@ -305,20 +305,8 @@ def install_auth_middleware(app: Flask) -> None:
         # and invitations work. Truly public callers (no token) stay anonymous.
         if not token:
             return
-        from m8flow_backend.auth.service_accounts import authenticate_api_key, looks_like_api_key
-        from m8flow_backend.tenancy import set_context_tenant_id
 
         session: Session = g.db_session
-        if looks_like_api_key(token):
-            resolved = authenticate_api_key(session, token)
-            if resolved is None:
-                return
-            user, tenant_id = resolved
-            g.user = user
-            g.m8flow_tenant_id = tenant_id
-            g.service_account_tenant_id = tenant_id
-            g._m8flow_ctx_token = set_context_tenant_id(tenant_id)
-            return
         try:
             decoded = decode_auth_token(token)
         except jwt.PyJWTError:
@@ -438,12 +426,11 @@ def _sync_groups_from_token(
     # Without this, allow_uri's real DB-grant check (_uri_permitted) has
     # nothing to find for a freshly-synced tenant role and silently falls
     # through to _group_identifier_fallback on every request -- see
-    # architecture review finding C5. import_yaml's grant() calls are
-    # idempotent (existing-row lookup before insert), so re-running this on
-    # every enrichment is safe, matching the same pattern
-    # tenant_role_service._ensure_tenant_yaml_permissions_and_everybody_membership
-    # already uses for the Keycloak-organization-member-sync path.
-    identity.import_yaml(session, tenant_id=str(canonical_tenant_id))
+    # architecture review finding C5. Skip once the tenant already has YAML
+    # grants; re-importing on every Home GET was ~500 SQL statements and
+    # contended UPDATEs on permission_assignment.
+    if not identity.tenant_yaml_grants_present(session, tenant_id=str(canonical_tenant_id)):
+        identity.import_yaml(session, tenant_id=str(canonical_tenant_id))
     session.flush()
     try:
         session.expire(user, ["groups"])

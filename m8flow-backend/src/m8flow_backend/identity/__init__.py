@@ -170,7 +170,6 @@ def sync_groups(
 class _YamlGrantCache:
     """In-memory grant rows for one ``import_yaml`` pass.
 
-    Login enrichment re-runs YAML seeding on every authenticated request.
     Without a cache each ``grant()`` issues a permission_target lookup by
     (uri, command) and a permission_assignment lookup — thousands of
     round-trips for an idempotent no-op.
@@ -214,7 +213,12 @@ class _YamlGrantCache:
         key = (principal_id, target_id, permission)
         existing = self.assignments.get(key)
         if existing is not None:
-            existing.grant_type = grant_type
+            # Same value is a no-op. Assigning anyway dirties the row and
+            # every authenticated request would UPDATE hundreds of
+            # permission_assignment rows (row locks under Home's parallel
+            # GETs).
+            if existing.grant_type != grant_type:
+                existing.grant_type = grant_type
             return existing
         created = PermissionAssignmentModel(
             principal_id=principal_id,
@@ -298,13 +302,45 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
     groups = document.get("groups") or {}
     permissions = document.get("permissions") or {}
     grant_cache = _YamlGrantCache.load(session)
+    # One SELECT per distinct group/principal for this pass. The YAML file
+    # repeats the same role names on tens of permission specs; looking them
+    # up each time was ~400 round-trips on every authenticated request.
+    groups_by_identifier: dict[str, GroupModel] = {}
+    principals_by_group_id: dict[int, PrincipalModel] = {}
+
+    def _group(identifier: str) -> GroupModel:
+        cached = groups_by_identifier.get(identifier)
+        if cached is not None:
+            return cached
+        group = _ensure_group(session, identifier)
+        groups_by_identifier[identifier] = group
+        return group
+
+    def _principal_for(group: GroupModel) -> PrincipalModel:
+        cached = principals_by_group_id.get(group.id)
+        if cached is not None:
+            return cached
+        # Query the principal rather than reading group.principal: _ensure_group
+        # already creates one for new groups, but the relationship may not be
+        # populated on this instance yet, and a blind add() here duplicates it
+        # (UNIQUE principal.group_id). Idempotent lookup instead.
+        principal = session.scalars(
+            select(PrincipalModel).where(PrincipalModel.group_id == group.id)
+        ).first()
+        if principal is None:
+            principal = PrincipalModel(group_id=group.id)
+            session.add(principal)
+            session.flush()
+        principals_by_group_id[group.id] = principal
+        return principal
+
     for group_name in groups:
         identifier = group_name if group_name == GLOBAL_GROUP else (
             f"{tenant_id}:{group_name}" if tenant_id and ":" not in group_name else group_name
         )
         if ":" not in identifier and identifier != GLOBAL_GROUP:
             continue
-        _ensure_group(session, identifier)
+        _group(identifier)
     for _name, spec in permissions.items():
         uris = spec.get("uri")
         if isinstance(uris, str):
@@ -322,18 +358,8 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
                 if identifier != "everybody":
                     continue
                 identifier = f"{tenant_id}:user" if tenant_id else identifier
-            group = _ensure_group(session, identifier)
-            # Query the principal rather than reading group.principal: _ensure_group
-            # already creates one for new groups, but the relationship may not be
-            # populated on this instance yet, and a blind add() here duplicates it
-            # (UNIQUE principal.group_id). Idempotent lookup instead.
-            principal = session.scalars(
-                select(PrincipalModel).where(PrincipalModel.group_id == group.id)
-            ).first()
-            if principal is None:
-                principal = PrincipalModel(group_id=group.id)
-                session.add(principal)
-                session.flush()
+            group = _group(identifier)
+            principal = _principal_for(group)
             for uri in uris or []:
                 for action in actions:
                     grant(
@@ -348,6 +374,31 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
+
+
+# Marker role import_yaml always creates for a tenant. Presence of any grant
+# on `{tenant_id}:editor` means this tenant already has YAML permissions.
+_YAML_SEED_MARKER_ROLE = "editor"
+
+
+def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
+    """True when ``import_yaml`` has already materialized grants for this tenant.
+
+    Auth used to re-run YAML seeding on every authenticated request. After the
+    first seed this is a single exists-query so Home's parallel GETs don't
+    each repeat hundreds of group/principal lookups.
+    """
+    if not tenant_id or not str(tenant_id).strip():
+        return False
+    identifier = f"{str(tenant_id).strip()}:{_YAML_SEED_MARKER_ROLE}"
+    stmt = (
+        select(PermissionAssignmentModel.id)
+        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
+        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .where(GroupModel.identifier == identifier)
+        .limit(1)
+    )
+    return session.scalars(stmt).first() is not None
 
 
 def allocate_lane_group_id(lane_name: str) -> int:

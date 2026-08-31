@@ -25,7 +25,7 @@ export type SecretListResponse = {
 export type SecretListFilters = {
   page?: number;
   perPage?: number;
-  /** Super-admin only; same convention as fetchAuthentications. */
+  /** Super-admin only; `tenantId` query for cross-tenant list. */
   tenantId?: string | null;
 };
 

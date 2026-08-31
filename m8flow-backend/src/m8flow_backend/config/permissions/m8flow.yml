@@ -25,7 +25,7 @@ groups:
   # The "viewer" group has read-only access to most features in the frontend and backend, but does not have access to tenant management or any features that allow modifying data.
   "viewer":
     users: []
-  # The "integrator" group has access to features that are relevant for integrating M8Flow with other systems, such as managing authentications and secrets, 
+  # The "integrator" group has access to features that are relevant for integrating M8Flow with other systems, such as managing secrets,
   # but does not have access to tenant management or most frontend features.
   "integrator":
     users: []
@@ -324,32 +324,6 @@ permissions:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
     uri: /secrets/*
-  # authentication (singular)
-  read-authentication-items:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentication/*
-  manage-authentication-items:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentication/*
-  # authentications (plural)
-  read-authentications:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentications
-  read-authentications-items:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentications/*
-  manage-authentications:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentications
-  manage-authentications-items:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentications/*
   manage-templates:
     groups: ["tenant-admin", "editor"]
     actions: [all]

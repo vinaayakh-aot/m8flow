@@ -234,8 +234,6 @@ export function fetchTenants(): Promise<TenantSummary[]> {
 
 export type Capabilities = {
   can_manage_processes: boolean;
-  can_read_authentications?: boolean;
-  can_manage_authentications?: boolean;
   can_read_secrets?: boolean;
   can_manage_secrets?: boolean;
   /** YAML connectors-grouped read (tenant-admin / editor / integrator). */

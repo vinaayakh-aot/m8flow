@@ -5,7 +5,6 @@ import {
   editorCredentials,
   expectCombinedKeycloakLoginPage,
   expectTwoButtonLanding,
-  integratorCredentials,
   logOutFromDesigner,
   SELECTED_TENANT_COOKIE,
   signInAsPlatformAdmin,
@@ -19,10 +18,8 @@ import {
   createTenantInvitation,
   ensureSecondParityTenant,
   expectOnboardingAndTasks,
-  expectServiceAccountCanCallProtectedRoutes,
   getSeedTenant,
   invitationPassword,
-  listAuthenticationsWithKey,
   removeTenantMember,
   tokenFromInvitationLink,
   uniqueEmail,
@@ -30,9 +27,9 @@ import {
 import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_LABEL } from './helpers/fixtures';
 
 /**
- * Identity + Auth parity (ticket 06). Closed spec: the eight Module B
- * journeys. Arrange invitations/tenants/members via host APIs; act on the
- * designer → backend → Keycloak seam.
+ * Identity + Auth parity (ticket 06). Closed spec: PAR-01–07. Arrange
+ * invitations/tenants/members via host APIs; act on the designer → backend →
+ * Keycloak seam.
  */
 test.describe('Identity + Auth parity', () => {
   test.beforeAll(async ({ browser }) => {
@@ -41,7 +38,6 @@ test.describe('Identity + Auth parity', () => {
       await signInAsPlatformAdmin(page, superAdminCredentials());
       const seed = await getSeedTenant(page);
       await addTenantMember(page, seed.id, editorCredentials().username, ['Designers']);
-      await addTenantMember(page, seed.id, integratorCredentials().username, ['Support']);
     } finally {
       await page.close();
     }
@@ -201,39 +197,5 @@ test.describe('Identity + Auth parity', () => {
 
     await signInAsSharedRealmUser(page, { username: email, password });
     await expectOnboardingAndTasks(page, { username: email });
-  });
-
-  test('PAR-08: integrator creates a tenant-scoped service account and it does not leak', async ({
-    page,
-  }) => {
-    await signInAsPlatformAdmin(page, superAdminCredentials());
-    const foreignTenant = await ensureSecondParityTenant(page);
-    await logOutFromDesigner(page);
-
-    await signInAsSharedRealmUser(page, integratorCredentials());
-    await page.goto('/authentications');
-    await expect(page.getByRole('heading', { name: 'Authentications', exact: true })).toBeVisible();
-
-    const accountName = `e2e-sa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await page.getByRole('button', { name: 'New service account' }).click();
-    await page.getByTestId('authentication-name').fill(accountName);
-    await page.getByTestId('authentication-create').click();
-
-    const apiKeyLocator = page.getByTestId('authentication-api-key');
-    await expect(apiKeyLocator).toBeVisible();
-    const apiKey = (await apiKeyLocator.textContent())?.trim() ?? '';
-    expect(apiKey.startsWith('m8sa_')).toBe(true);
-
-    await page.getByTestId('authentication-secret-done').click();
-    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
-
-    await expectServiceAccountCanCallProtectedRoutes(apiKey);
-
-    // Cookie cannot move a tenant-pinned key onto another organization.
-    const leaked = await listAuthenticationsWithKey(apiKey, foreignTenant.id);
-    expect(leaked.status).toBe(200);
-    const rows = leaked.body as Array<{ name?: string }>;
-    expect(Array.isArray(rows)).toBe(true);
-    expect(rows.some((row) => row.name === accountName)).toBe(true);
   });
 });

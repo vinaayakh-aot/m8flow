@@ -33,9 +33,6 @@ _AFTER_BEGIN_REGISTERED = False
 
 
 def _cookie_tenant() -> str | None:
-    sa_tenant = getattr(g, "service_account_tenant_id", None)
-    if isinstance(sa_tenant, str) and sa_tenant.strip():
-        return sa_tenant.strip()
     raw = request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
@@ -134,17 +131,11 @@ def _path_is_exempt() -> bool:
 def resolve_request_tenant() -> None:
     """Bind the active tenant for this request, or fail closed.
 
-    Order: service-account pin; super-admin tenantId override or exempt;
-    selected-tenant cookie when it matches shared-realm membership; JWT
-    tenant claim; x-m8flow-tenant-id when the user belongs; cookie fallback;
-    fail closed for authenticated non-exempt paths.
+    Order: super-admin tenantId override or exempt; selected-tenant cookie
+    when it matches shared-realm membership; JWT tenant claim;
+    x-m8flow-tenant-id when the user belongs; cookie fallback; fail closed
+    for authenticated non-exempt paths.
     """
-    if getattr(g, "service_account_tenant_id", None):
-        pinned = str(g.service_account_tenant_id).strip()
-        if is_concrete_tenant_id(pinned):
-            bind_request_tenant(pinned)
-            return
-
     if is_super_admin_request():
         override = tenant_override_for_super_admin(is_super_admin=True)
         if is_concrete_tenant_id(override):

@@ -19,13 +19,6 @@ export function superAdminCredentials(): DesignerPersona {
   };
 }
 
-export function integratorCredentials(): DesignerPersona {
-  return {
-    username: process.env.M8FLOW_E2E_INTEGRATOR_USERNAME ?? 'integrator',
-    password: process.env.M8FLOW_E2E_INTEGRATOR_PASSWORD ?? 'integrator',
-  };
-}
-
 export const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
 
 function isDesignerOrigin(url: URL): boolean {

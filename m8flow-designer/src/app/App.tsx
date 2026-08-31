@@ -34,7 +34,6 @@ const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/P
 // of the main entry chunk (same reasoning as the other page routes above).
 const TaskReviewInboxPage = lazy(() => import('@/pages/task-review/TaskReviewInboxPage'));
 const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDetailPage'));
-const AuthenticationsPage = lazy(() => import('@/pages/authentications/AuthenticationsPage'));
 const TenantsPage = lazy(() => import('@/pages/tenants/TenantsPage'));
 const TenantManagementPage = lazy(() => import('@/pages/tenant-management/TenantManagementPage'));
 const SecretListPage = lazy(() => import('@/pages/configuration/SecretListPage'));
@@ -124,14 +123,6 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading task…" />}>
               <TaskReviewDetailPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="authentications"
-          element={
-            <Suspense fallback={<LoadingFallback label="Loading authentications…" />}>
-              <AuthenticationsPage />
             </Suspense>
           }
         />

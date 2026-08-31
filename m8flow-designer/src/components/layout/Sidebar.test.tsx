@@ -37,7 +37,6 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
     expect(screen.getByText('Connectors')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Authentications' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
     expect(screen.queryByText('Tenant Management')).not.toBeInTheDocument();
@@ -79,28 +78,6 @@ describe('Sidebar live nav', () => {
 
     expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
-  });
-
-  it('shows Setup → Authentications when the role can read them', () => {
-    const router = createMemoryRouter(
-      [
-        {
-          path: '/',
-          element: <Sidebar showAuthentications />,
-        },
-        {
-          path: '/authentications',
-          element: <Sidebar showAuthentications />,
-        },
-      ],
-      { initialEntries: ['/'] },
-    );
-    render(<RouterProvider router={router} />);
-
-    expect(screen.getByRole('link', { name: 'Authentications' })).toHaveAttribute(
-      'href',
-      '/authentications',
-    );
   });
 
   it('makes Configuration a live /configuration/secrets link when secrets can be read', () => {

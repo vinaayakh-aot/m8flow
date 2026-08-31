@@ -11,12 +11,6 @@ from m8flow_backend.auth import (
     require_current_user,
     set_selected_tenant_cookie,
 )
-from m8flow_backend.auth.service_accounts import (
-    create_account as create_service_account,
-    get_account as get_service_account,
-    list_accounts as list_service_accounts,
-    revoke_account as revoke_service_account,
-)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
@@ -262,48 +256,6 @@ def register_v1_routes(app: Flask) -> None:
         session = g.db_session
         tenant_id = require_tenant_id(user)
         secrets.delete_secret(session, tenant_id=tenant_id, key=key)
-        return jsonify({"ok": True})
-
-    @app.get("/v1.0/authentications")
-    @require_permission(on_deny="empty", empty_response=[])
-    def list_authentications():
-        user = require_current_user()
-        session = g.db_session
-        tenant_id = require_tenant_id(user)
-        return jsonify(list_service_accounts(session, tenant_id=tenant_id))
-
-    @app.post("/v1.0/authentications")
-    @require_permission(forbidden_message="Not allowed to manage authentications")
-    def create_authentication():
-        user = require_current_user()
-        session = g.db_session
-        tenant_id = require_tenant_id(user)
-        body = request.get_json(force=True) or {}
-        payload = create_service_account(
-            session,
-            tenant_id=tenant_id,
-            name=str(body.get("name") or ""),
-            created_by=user,
-        )
-        return jsonify(payload), 201
-
-    @app.get("/v1.0/authentications/<int:account_id>")
-    @app.get("/v1.0/authentication/<int:account_id>")
-    @require_permission(on_deny="404", forbidden_message="Service account not found")
-    def get_authentication(account_id: int):
-        user = require_current_user()
-        session = g.db_session
-        tenant_id = require_tenant_id(user)
-        return jsonify(get_service_account(session, tenant_id=tenant_id, account_id=account_id))
-
-    @app.delete("/v1.0/authentications/<int:account_id>")
-    @app.delete("/v1.0/authentication/<int:account_id>")
-    @require_permission(forbidden_message="Not allowed to manage authentications")
-    def delete_authentication(account_id: int):
-        user = require_current_user()
-        session = g.db_session
-        tenant_id = require_tenant_id(user)
-        revoke_service_account(session, tenant_id=tenant_id, account_id=account_id)
         return jsonify({"ok": True})
 
     if is_unit_testing_environment():
