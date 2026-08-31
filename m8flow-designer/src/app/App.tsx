@@ -24,11 +24,12 @@ const ProcessModelModelerPage = lazy(() => import('@/pages/process-model-modeler
 const ProcessesPage = lazy(() => import('@/pages/processes/ProcessesPage'));
 const ProcessModelDetailPage = lazy(() => import('@/pages/process-model-detail/ProcessModelDetailPage'));
 const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'));
+const TemplateModelerPage = lazy(() => import('@/pages/templates/TemplateModelerPage'));
 // Lazy, same bpmn-js/dmn-js reasoning as ProcessModelModelerPage above —
 // this page reuses the same DiagramCanvas/BpmnCanvas/DmnCanvas bundle.
-const TemplateModelerPage = lazy(() => import('@/pages/templates/TemplateModelerPage'));
+const TemplateFileModelerPage = lazy(() => import('@/pages/templates/TemplateFileModelerPage'));
 const ProcessInstancesPage = lazy(() => import('@/pages/process-instances/ProcessInstancesPage'));
-// Lazy, same bpmn-js reasoning as ProcessModelModelerPage/TemplateModelerPage.
+// Lazy, same bpmn-js reasoning as ProcessModelModelerPage / TemplateFileModelerPage.
 const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/ProcessInstanceDetailPage'));
 // Task Review — inbox list + single-task review detail. Lazy to keep them out
 // of the main entry chunk (same reasoning as the other page routes above).
@@ -83,6 +84,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading templates…" />}>
               <TemplatesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="templates/:templateId/modeler/:fileName"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading template file…" />}>
+              <TemplateFileModelerPage />
             </Suspense>
           }
         />

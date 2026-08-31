@@ -14,6 +14,12 @@ import { startErrorMessage } from '@/lib/startProcessError';
 import { AddProcessModelFileDialog, fileOpensInModeler } from './AddProcessModelFileDialog';
 import { CopyProcessModelDialog } from './CopyProcessModelDialog';
 import { HeaderActionsMenu } from './HeaderActionsMenu';
+import {
+  SaveAsTemplateDialog,
+  isSupportedTemplateSourceFile,
+  mimeForTemplateSourceFile,
+  sortFilesPrimaryFirst,
+} from './SaveAsTemplateDialog';
 import { ProcessModelTestsCard } from './ProcessModelTestsCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -188,6 +194,8 @@ export type ProcessModelOverviewProps = {
   onStart?: () => Promise<void>;
   /** Catalog write: tenant-admin / editor; not super-admin. */
   onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
+  /** POST /m8flow/templates: same catalog managers as Copy. Super-admin stays disabled. */
+  onSaveAsTemplate?: (templateId: number) => void;
   onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
   onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
   onCreateScriptUnitTest?: (input: {
@@ -202,9 +210,9 @@ export type ProcessModelOverviewProps = {
  * Process-model overview layout matching Processes.dc.html inModel.
  * Live fields come from the detail API; mockup-only extras are omitted or
  * placeholder. Header Copy / Edit identity live in the overflow menu when
- * wired; Save as template stays an inert menu item; Start is live when
- * `onStart` is provided (same gate as the processes list). Tests are live
- * for catalog managers.
+ * wired; Save as template is live for catalog managers (not super-admin);
+ * Start is live when `onStart` is provided (same gate as the processes list).
+ * Tests are live for catalog managers.
  */
 export function ProcessModelOverview({
   detail,
@@ -216,6 +224,7 @@ export function ProcessModelOverview({
   onSetPrimary,
   onStart,
   onCopy,
+  onSaveAsTemplate,
   onRunBpmnTests,
   onFetchScriptUnitTests,
   onCreateScriptUnitTest,
@@ -234,6 +243,7 @@ export function ProcessModelOverview({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
   const viewAllLabel = `View all ${detail.runs_30d}`;
   // "View all" pre-filters the shared Process Instances list to this
@@ -314,6 +324,7 @@ export function ProcessModelOverview({
                 : undefined
             }
             onCopy={onCopy ? () => setCopyOpen(true) : undefined}
+            onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
           />
         </div>
       </div>
@@ -564,6 +575,35 @@ export function ProcessModelOverview({
           defaultDisplayName={`${detail.display_name} (copy)`}
           onCopy={onCopy}
           onCopied={() => setCopyOpen(false)}
+        />
+      ) : null}
+      {onSaveAsTemplate ? (
+        <SaveAsTemplateDialog
+          open={saveAsTemplateOpen}
+          onClose={() => setSaveAsTemplateOpen(false)}
+          defaultName={detail.display_name}
+          getFiles={async () => {
+            const supported = detail.files.filter((file) => isSupportedTemplateSourceFile(file.name));
+            const packed = await Promise.all(
+              supported.map(async (file) => {
+                const text = await fetchProcessModelFileContent(
+                  encodeProcessModelId(detail.id),
+                  file.name,
+                  tenantId,
+                );
+                return {
+                  name: file.name,
+                  content: new Blob([text], { type: mimeForTemplateSourceFile(file.name) }),
+                };
+              }),
+            );
+            const primaryName = detail.files.find((file) => file.primary)?.name ?? '';
+            return sortFilesPrimaryFirst(packed, primaryName);
+          }}
+          onCreated={(templateId) => {
+            setSaveAsTemplateOpen(false);
+            onSaveAsTemplate(templateId);
+          }}
         />
       ) : null}
       {canManage && onAddFile ? (

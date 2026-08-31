@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { API_BASE_URL } from './api';
-import { templatePath, templateFileDownloadUrl, templatesPath } from './templatesApi';
+import {
+  contentTypeForTemplateFileName,
+  templatePath,
+  templateFileDownloadUrl,
+  templateModelerFilePath,
+  templatesPath,
+} from './templatesApi';
 
 describe('templatesPath', () => {
   it('builds the bare path with no filters', () => {
@@ -55,6 +61,23 @@ describe('templatePath', () => {
     expect(templatePath(7, { includeContents: true, includeDeleted: true })).toBe(
       '/v1.0/m8flow/templates/7?include_contents=true&include_deleted=true',
     );
+  });
+});
+
+describe('templateModelerFilePath', () => {
+  it('encodes the file name on the designer modeler route', () => {
+    expect(templateModelerFilePath(3, 'task schema.json')).toBe(
+      '/templates/3/modeler/task%20schema.json',
+    );
+  });
+});
+
+describe('contentTypeForTemplateFileName', () => {
+  it('picks mime from extension', () => {
+    expect(contentTypeForTemplateFileName('a.bpmn')).toBe('application/xml');
+    expect(contentTypeForTemplateFileName('a.dmn')).toBe('application/xml');
+    expect(contentTypeForTemplateFileName('a.json')).toBe('application/json');
+    expect(contentTypeForTemplateFileName('a.md')).toBe('text/markdown');
   });
 });
 

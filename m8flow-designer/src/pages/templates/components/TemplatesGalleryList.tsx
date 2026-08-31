@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { ChevronLeft, ChevronRight, Download, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileText, Plus, RotateCcw, Search, Trash2, Upload } from 'lucide-react';
 
 import type { Template, TemplateVisibility } from '@/lib/templatesApi';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,15 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
+import {
+  canDeleteGalleryTemplate,
+  canRestoreGalleryTemplate,
+  deleteDisabledReason,
+  type TemplateGalleryActor,
+  type TemplateGalleryMode,
+} from './templateGalleryPermissions';
 
+export type { TemplateGalleryMode };
 export type VisibilityFilter = TemplateVisibility | 'ALL';
 
 export type TemplatesGalleryListProps = {
@@ -32,8 +40,12 @@ export type TemplatesGalleryListProps = {
   onUseTemplate?: (template: Template) => void;
   onExportTemplate?: (template: Template) => void;
   onDeleteTemplate?: (template: Template) => void;
+  onRestoreTemplate?: (template: Template) => void;
   onImportClick?: () => void;
-  /** Gates "Use template"/delete/import: every template-mutating backend
+  galleryMode: TemplateGalleryMode;
+  onGalleryModeChange: (mode: TemplateGalleryMode) => void;
+  actor: TemplateGalleryActor;
+  /** Gates "Use template"/import: every template-mutating backend
    * route unconditionally 403s for super-admin identities
    * (`TemplateService`'s own `is_super_admin_request()` guard, checked
    * regardless of tenant selection) — disabled here rather than letting
@@ -73,7 +85,11 @@ export function TemplatesGalleryList({
   onUseTemplate,
   onExportTemplate,
   onDeleteTemplate,
+  onRestoreTemplate,
   onImportClick,
+  galleryMode,
+  onGalleryModeChange,
+  actor,
   isSuperAdmin = false,
 }: TemplatesGalleryListProps) {
   const searchRef = useRef<HTMLInputElement>(null);
@@ -106,6 +122,38 @@ export function TemplatesGalleryList({
           <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">Templates</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <div
+            className="flex items-center rounded-full bg-muted p-[3px]"
+            role="group"
+            aria-label="Template mode"
+          >
+            <button
+              type="button"
+              aria-pressed={galleryMode === 'active'}
+              onClick={() => onGalleryModeChange('active')}
+              className={cn(
+                'rounded-full px-4 py-2 text-[12.5px] font-semibold',
+                galleryMode === 'active'
+                  ? 'bg-card text-foreground shadow-xs'
+                  : 'text-muted-foreground',
+              )}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              aria-pressed={galleryMode === 'deleted'}
+              onClick={() => onGalleryModeChange('deleted')}
+              className={cn(
+                'rounded-full px-4 py-2 text-[12.5px] font-semibold',
+                galleryMode === 'deleted'
+                  ? 'bg-card text-foreground shadow-xs'
+                  : 'text-muted-foreground',
+              )}
+            >
+              Deleted
+            </button>
+          </div>
           <Button
             type="button"
             variant="pill-outline"
@@ -196,11 +244,15 @@ export function TemplatesGalleryList({
 
         {isEmpty ? (
           <Card variant="bordered" className="px-6 py-[52px] text-center">
-            <div className="text-[15.5px] font-semibold text-foreground">No templates found</div>
+            <div className="text-[15.5px] font-semibold text-foreground">
+              {galleryMode === 'deleted' ? 'No deleted templates' : 'No templates found'}
+            </div>
             <p className="mt-2 text-[13.5px] text-muted-foreground">
               {search.trim() || visibility !== 'ALL'
                 ? 'Try a different search or clear the filters.'
-                : 'No templates are available for this tenant yet.'}
+                : galleryMode === 'deleted'
+                  ? 'No soft-deleted templates for this tenant.'
+                  : 'No templates are available for this tenant yet.'}
             </p>
           </Card>
         ) : null}
@@ -211,11 +263,14 @@ export function TemplatesGalleryList({
               <TemplateCard
                 key={template.id}
                 template={template}
+                galleryMode={galleryMode}
+                actor={actor}
                 isSuperAdmin={isSuperAdmin}
                 onOpen={() => onOpenTemplate?.(template)}
                 onUse={() => onUseTemplate?.(template)}
                 onExport={() => onExportTemplate?.(template)}
                 onDelete={() => onDeleteTemplate?.(template)}
+                onRestore={() => onRestoreTemplate?.(template)}
               />
             ))}
           </div>
@@ -256,46 +311,60 @@ export function TemplatesGalleryList({
 
 function TemplateCard({
   template,
+  galleryMode,
+  actor,
   isSuperAdmin,
   onOpen,
   onUse,
   onExport,
   onDelete,
+  onRestore,
 }: {
   template: Template;
+  galleryMode: TemplateGalleryMode;
+  actor: TemplateGalleryActor;
   isSuperAdmin: boolean;
   onOpen: () => void;
   onUse: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onRestore: () => void;
 }) {
-  // "Use template" (create-process-model-from-template) is real, but
-  // gated: the backend only accepts *published* templates
-  // (`TemplateService.create_process_model_from_template`'s own
-  // `is_published` check, a 400 otherwise) and unconditionally forbids
-  // super-admin identities (see this file's own `isSuperAdmin` doc
-  // comment) — disabled with an explanatory title in either case rather
-  // than left to fail server-side every time.
-  const useDisabled = !template.isPublished || isSuperAdmin;
+  const deletedMode = galleryMode === 'deleted';
+  const useDisabled = deletedMode || !template.isPublished || isSuperAdmin;
   const useTitle = isSuperAdmin
     ? 'Not available to super-admin'
-    : !template.isPublished
-      ? 'Only published templates can be used to create a process model'
-      : undefined;
+    : deletedMode
+      ? 'Restore this template before creating a process model'
+      : !template.isPublished
+        ? 'Only published templates can be used to create a process model'
+        : undefined;
+  const canDelete = canDeleteGalleryTemplate(template, actor);
+  const deleteTitle = canDelete ? 'Delete template' : deleteDisabledReason(template, actor);
+  const canRestore = canRestoreGalleryTemplate(actor);
+  const restoreTitle = canRestore
+    ? 'Restore template'
+    : actor.isSuperAdmin
+      ? 'Not available to super-admin'
+      : 'Insufficient permissions to restore deleted templates.';
 
   return (
     <Card
       variant="bordered"
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="flex cursor-pointer flex-col gap-3 p-5"
+      role={deletedMode ? undefined : 'button'}
+      tabIndex={deletedMode ? undefined : 0}
+      onClick={deletedMode ? undefined : onOpen}
+      onKeyDown={
+        deletedMode
+          ? undefined
+          : (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpen();
+              }
+            }
+      }
+      className={cn('flex flex-col gap-3 p-5', deletedMode ? '' : 'cursor-pointer')}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -338,26 +407,35 @@ function TemplateCard({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        <Button type="button" variant="pill-outline" size="pill" onClick={onOpen} className="px-3.5 py-1.5 text-[11.5px]">
+        <Button
+          type="button"
+          variant="pill-outline"
+          size="pill"
+          onClick={onOpen}
+          disabled={deletedMode}
+          className="px-3.5 py-1.5 text-[11.5px]"
+        >
           Open
         </Button>
-        <button
-          type="button"
-          aria-disabled={useDisabled}
-          title={useTitle}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!useDisabled) onUse();
-          }}
-          className={cn(
-            'inline-flex items-center rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold tracking-[0.04em] uppercase select-none',
-            'border border-border',
-            useDisabled ? 'cursor-default text-muted-foreground' : 'cursor-pointer text-foreground hover:bg-muted',
-          )}
-        >
-          Use template
-        </button>
+        {deletedMode ? null : (
+          <button
+            type="button"
+            aria-disabled={useDisabled}
+            title={useTitle}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!useDisabled) onUse();
+            }}
+            className={cn(
+              'inline-flex items-center rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold tracking-[0.04em] uppercase select-none',
+              'border border-border',
+              useDisabled ? 'cursor-default text-muted-foreground' : 'cursor-pointer text-foreground hover:bg-muted',
+            )}
+          >
+            Use template
+          </button>
+        )}
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -371,24 +449,45 @@ function TemplateCard({
           >
             <Download className="size-3.5" strokeWidth={1.8} />
           </button>
-          <button
-            type="button"
-            aria-disabled={isSuperAdmin}
-            title={isSuperAdmin ? 'Not available to super-admin' : 'Delete template'}
-            aria-label="Delete template"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!isSuperAdmin) onDelete();
-            }}
-            className={cn(
-              'flex size-7 items-center justify-center rounded-full',
-              isSuperAdmin
-                ? 'cursor-default text-muted-foreground/50'
-                : 'cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
-            )}
-          >
-            <Trash2 className="size-3.5" strokeWidth={1.8} />
-          </button>
+          {deletedMode ? (
+            <button
+              type="button"
+              aria-disabled={!canRestore}
+              title={restoreTitle}
+              aria-label="Restore template"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canRestore) onRestore();
+              }}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-full',
+                canRestore
+                  ? 'cursor-pointer text-muted-foreground hover:bg-muted hover:text-foreground'
+                  : 'cursor-default text-muted-foreground/50',
+              )}
+            >
+              <RotateCcw className="size-3.5" strokeWidth={1.8} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-disabled={!canDelete}
+              title={deleteTitle}
+              aria-label="Delete template"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canDelete) onDelete();
+              }}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-full',
+                canDelete
+                  ? 'cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive'
+                  : 'cursor-default text-muted-foreground/50',
+              )}
+            >
+              <Trash2 className="size-3.5" strokeWidth={1.8} />
+            </button>
+          )}
         </span>
       </div>
     </Card>

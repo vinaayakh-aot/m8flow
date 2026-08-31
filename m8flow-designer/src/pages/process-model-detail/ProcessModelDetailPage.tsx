@@ -180,6 +180,13 @@ export default function ProcessModelDetailPage() {
               }
             : undefined
         }
+        onSaveAsTemplate={
+          canManageCatalog
+            ? (templateId) => {
+                navigate(`/templates/${templateId}`);
+              }
+            : undefined
+        }
         onRunBpmnTests={
           canManageCatalog
             ? () => runProcessModelTests(modifiedId, scopedTenantId)

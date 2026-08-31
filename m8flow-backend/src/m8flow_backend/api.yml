@@ -5606,6 +5606,8 @@ components:
           enum: [PRIVATE, TENANT, PUBLIC]
         status:
           type: string
+        is_published:
+          type: boolean
 
     MessageData:
       type: object

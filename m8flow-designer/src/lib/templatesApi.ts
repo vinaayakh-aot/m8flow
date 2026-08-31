@@ -109,12 +109,38 @@ export async function fetchTemplates(filters: TemplateListFilters = {}): Promise
   return (await response.json()) as TemplateListResponse;
 }
 
+/** Every version of a template key (`latest_only=false`). Soft-deleted rows stay excluded. */
+export async function fetchTemplateVersions(
+  templateKey: string,
+  options: { tenantId?: string | null } = {},
+): Promise<Template[]> {
+  const response = await fetchTemplates({
+    templateKey,
+    latestOnly: false,
+    perPage: 100,
+    ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+  });
+  return Array.isArray(response.results) ? response.results : [];
+}
+
 export function templatePath(id: number, options: { includeContents?: boolean; includeDeleted?: boolean } = {}): string {
   const params = new URLSearchParams();
   if (options.includeContents !== undefined) params.set('include_contents', String(options.includeContents));
   if (options.includeDeleted !== undefined) params.set('include_deleted', String(options.includeDeleted));
   const qs = params.toString();
   return qs ? `/v1.0/m8flow/templates/${id}?${qs}` : `/v1.0/m8flow/templates/${id}`;
+}
+
+/** Designer route that opens one template file in DiagramCanvas. */
+export function templateModelerFilePath(templateId: number, fileName: string): string {
+  return `/templates/${templateId}/modeler/${encodeURIComponent(fileName)}`;
+}
+
+export function contentTypeForTemplateFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.json')) return 'application/json';
+  if (lower.endsWith('.md')) return 'text/markdown';
+  return 'application/xml';
 }
 
 export async function fetchTemplate(
@@ -214,7 +240,8 @@ export async function createTemplateWithFiles(
   return (await response.json()) as Template;
 }
 
-/** Partial metadata update (no BPMN body) — JSON body, matching the backend's "legacy format" branch. */
+/** Partial metadata update (no BPMN body) — JSON body, matching the backend's "legacy format" branch.
+ * `isPublished` is sent as `is_published` so draft publish is a PUT `{ is_published: true }`. */
 export async function updateTemplateMetadata(id: number, updates: Partial<TemplateMetadataInput>): Promise<Template> {
   const body: Record<string, unknown> = {};
   if (updates.name !== undefined) body.name = updates.name;
@@ -223,6 +250,7 @@ export async function updateTemplateMetadata(id: number, updates: Partial<Templa
   if (updates.tags !== undefined) body.tags = updates.tags;
   if (updates.visibility !== undefined) body.visibility = updates.visibility;
   if (updates.status !== undefined) body.status = updates.status;
+  if (updates.isPublished !== undefined) body.is_published = updates.isPublished;
   const response = await apiFetch(`/v1.0/m8flow/templates/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

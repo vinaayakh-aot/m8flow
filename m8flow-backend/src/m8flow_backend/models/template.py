@@ -1,8 +1,3 @@
-from m8flow_backend.models.native import TemplateModel
-
-class TemplateVisibility:
-    private = "PRIVATE"
-    tenant = "TENANT"
-    public = "PUBLIC"
+from m8flow_backend.models.native import TemplateModel, TemplateVisibility
 
 __all__ = ["TemplateModel", "TemplateVisibility"]

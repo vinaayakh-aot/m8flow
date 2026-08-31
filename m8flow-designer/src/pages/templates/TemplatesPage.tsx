@@ -5,15 +5,22 @@ import {
   deleteTemplate,
   exportTemplate,
   fetchTemplates,
+  restoreTemplate,
   type Template,
   type TemplatePagination,
 } from '@/lib/templatesApi';
 import { downloadBlob } from '@/lib/download';
+import { getCurrentUser } from '@/lib/auth';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import { Card } from '@/components/ui/card';
 import { CreateProcessModelFromTemplateDialog } from './components/CreateProcessModelFromTemplateDialog';
 import { ImportTemplateDialog } from './components/ImportTemplateDialog';
+import {
+  TemplateDeleteConfirmDialog,
+  TemplateRestoreConfirmDialog,
+} from './components/TemplateGalleryConfirmDialogs';
 import { TemplatesGalleryList, type VisibilityFilter } from './components/TemplatesGalleryList';
+import type { TemplateGalleryMode } from './components/templateGalleryPermissions';
 
 const PER_PAGE = 12;
 /** Matches ProcessesModelsList's own ⌘K-search debounce intent — avoids
@@ -32,15 +39,21 @@ const SEARCH_DEBOUNCE_MS = 300;
  * rather than relying on that backend leniency.
  */
 export default function TemplatesPage() {
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, canManageTenant } = useOutletContext<AppShellOutletContext>();
   const navigate = useNavigate();
   const needsTenant = isSuperAdmin && !scopedTenantId;
+  const actor = {
+    isSuperAdmin,
+    canManageTenant: Boolean(canManageTenant) && !isSuperAdmin,
+    currentUsername: getCurrentUser()?.username ?? null,
+  };
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [visibility, setVisibility] = useState<VisibilityFilter>('ALL');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
+  const [galleryMode, setGalleryMode] = useState<TemplateGalleryMode>('active');
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pagination, setPagination] = useState<TemplatePagination | null>(null);
@@ -56,6 +69,9 @@ export default function TemplatesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [useTemplateTarget, setUseTemplateTarget] = useState<Template | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<Template | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   // Debounce the raw input into the value that actually drives the fetch,
   // and reset to page 1 whenever the effective search term changes.
@@ -69,7 +85,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [visibility, order]);
+  }, [visibility, order, galleryMode]);
 
   useEffect(() => {
     if (needsTenant) {
@@ -92,6 +108,9 @@ export default function TemplatesPage() {
       page,
       perPage: PER_PAGE,
       tenantId: scopedTenantId ?? undefined,
+      latestOnly: galleryMode === 'deleted' ? false : undefined,
+      deletedOnly: galleryMode === 'deleted' ? true : undefined,
+      includeDeleted: galleryMode === 'deleted' ? true : undefined,
     })
       .then(({ results, pagination: pg }) => {
         if (!cancelled) {
@@ -115,7 +134,7 @@ export default function TemplatesPage() {
     return () => {
       cancelled = true;
     };
-  }, [needsTenant, scopedTenantId, search, visibility, order, page, reloadKey]);
+  }, [needsTenant, scopedTenantId, search, visibility, order, page, reloadKey, galleryMode]);
 
   const handleExport = useCallback(async (template: Template) => {
     setActionError(null);
@@ -127,21 +146,45 @@ export default function TemplatesPage() {
     }
   }, []);
 
-  const handleDelete = useCallback(async (template: Template) => {
-    // Native confirm, not a custom dialog — no mockup/prior pattern in this
-    // app for a delete-confirmation modal, and this is a single yes/no
-    // gate on an otherwise real, working action (see ticket 04's notes).
-    if (!window.confirm(`Delete "${template.name}"? This cannot be undone.`)) {
-      return;
-    }
+  const handleDelete = useCallback((template: Template) => {
+    setActionError(null);
+    setDeleteTarget(template);
+  }, []);
+
+  const handleRestore = useCallback((template: Template) => {
+    setActionError(null);
+    setRestoreTarget(template);
+  }, []);
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setActionBusy(true);
     setActionError(null);
     try {
-      await deleteTemplate(template.id);
+      await deleteTemplate(deleteTarget.id);
+      setDeleteTarget(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to delete template');
+    } finally {
+      setActionBusy(false);
     }
-  }, []);
+  }
+
+  async function confirmRestore() {
+    if (!restoreTarget) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await restoreTemplate(restoreTarget.id);
+      setRestoreTarget(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to restore template');
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   if (needsTenant) {
     return (
@@ -187,8 +230,29 @@ export default function TemplatesPage() {
         onUseTemplate={setUseTemplateTarget}
         onExportTemplate={handleExport}
         onDeleteTemplate={handleDelete}
+        onRestoreTemplate={handleRestore}
         onImportClick={() => setImportOpen(true)}
+        galleryMode={galleryMode}
+        onGalleryModeChange={setGalleryMode}
+        actor={actor}
         isSuperAdmin={isSuperAdmin}
+      />
+
+      <TemplateDeleteConfirmDialog
+        open={Boolean(deleteTarget)}
+        templateName={deleteTarget?.name ?? ''}
+        isPublished={Boolean(deleteTarget?.isPublished)}
+        submitting={actionBusy}
+        onCancel={() => { if (!actionBusy) setDeleteTarget(null); }}
+        onConfirm={() => void confirmDelete()}
+      />
+
+      <TemplateRestoreConfirmDialog
+        open={Boolean(restoreTarget)}
+        templateName={restoreTarget?.name ?? ''}
+        submitting={actionBusy}
+        onCancel={() => { if (!actionBusy) setRestoreTarget(null); }}
+        onConfirm={() => void confirmRestore()}
       />
 
       {useTemplateTarget ? (

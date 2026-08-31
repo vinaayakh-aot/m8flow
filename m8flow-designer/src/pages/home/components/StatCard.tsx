@@ -12,7 +12,7 @@ interface StatCardProps {
 }
 
 /**
- * One of Home's 6 stat cards — icon badge, big number, label underneath.
+ * One of Home's 6 stat cards — icon badge with label on one row, big number below.
  * Generalizes the pattern m8flow-frontend's page-scoped `ActivityMetricCard`
  * (McpConnection.tsx) established, as a shared, mockup-styled component.
  */
@@ -20,16 +20,18 @@ export function StatCard({ icon: Icon, iconClassName, value, label }: StatCardPr
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <span
-          className={cn(
-            'flex size-9 items-center justify-center rounded-full',
-            iconClassName,
-          )}
-        >
-          <Icon className="size-4" />
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'flex size-9 items-center justify-center rounded-full',
+              iconClassName,
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+          <span className="text-sm text-muted-foreground">{label}</span>
+        </div>
         <span className="text-3xl font-semibold tracking-tight text-foreground">{value}</span>
-        <span className="text-sm text-muted-foreground">{label}</span>
       </CardContent>
     </Card>
   );

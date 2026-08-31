@@ -167,3 +167,39 @@ _Avoid_: HTTP Connector canvas, canvas as this product, connector (alone)
 **m8flow_profile**:
 The Service Task parameter whose value is a connector profile's `profile_name`. The host removes it at execute so it never reaches the proxy.
 _Avoid_: profile as this parameter, secret sentinel as this binding
+
+**Template**:
+A reusable pack of BPMN and accompanying files, versioned under a key, stored outside the catalog. Distinct from a process model.
+_Avoid_: process model, connector template, Keycloak realm template
+
+**Template gallery**:
+The designer page that lists templates for the active tenant.
+_Avoid_: catalog, templates as the catalog tree
+
+**Template modeler**:
+The canvas for editing a template's BPMN, DMN, form schema files, and markdown files. Distinct from the process modeler, which edits a catalog process model.
+_Avoid_: process modeler as this page, template editor (alone)
+
+**Template publish**:
+The one-way freeze of a draft template version so it can be used to create a process model. There is no unpublish; further edits create a new draft version.
+_Avoid_: unpublish, visibility as this action, save as publish
+
+**Save as template**:
+Creating a new template from a process model's files. Distinct from Import ZIP and from a blank New template.
+_Avoid_: export, copy, New template as this path
+
+**Create process model from template**:
+Instantiating a published template version as a new process model in the catalog.
+_Avoid_: import, copy process model, use template as the entity
+
+**Template version**:
+One stored edition of a template key (`V1`, `V2`, …). Editing a published version creates a new draft version. Distinct from Revision on process instance detail.
+_Avoid_: revision, git version
+
+**Created from template**:
+The process-model overview record that a process model was instantiated from a template version.
+_Avoid_: provenance as the user-facing label, owner, template-info as the entity
+
+**Template visibility**:
+PUBLIC, TENANT, or PRIVATE — who can see a template. Distinct from whether the version is published, and from RBAC groups.
+_Avoid_: published as this field, permission as this field

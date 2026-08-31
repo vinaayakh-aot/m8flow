@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProcessModelDetail } from '@/lib/api';
 import {
@@ -71,6 +71,10 @@ describe('formatDuration / formatBytes / fileKind', () => {
 });
 
 describe('ProcessModelOverview', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders live identity, stats, instances, and files', () => {
     renderOverview();
 
@@ -152,6 +156,48 @@ describe('ProcessModelOverview', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/missing a start event/);
     });
+  });
+
+  it('packs supported files and creates a draft when onSaveAsTemplate is provided', async () => {
+    const onSaveAsTemplate = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (String(url).includes('/v1.0/m8flow/templates') && init?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ id: 7 }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '<bpmn/>',
+        });
+      }),
+    );
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} onSaveAsTemplate={onSaveAsTemplate} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const saveAs = screen.getByRole('menuitem', { name: 'Save as template' });
+    expect(saveAs).not.toBeDisabled();
+    fireEvent.click(saveAs);
+    fireEvent.click(screen.getByRole('button', { name: 'Create template' }));
+    await waitFor(() => {
+      expect(onSaveAsTemplate).toHaveBeenCalledWith(7);
+    });
+    const fileGets = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url, init]) => String(url).includes('/files/') && (!init || !init.method || init.method === 'GET'));
+    expect(fileGets.map(([url]) => String(url))).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/process-models/finance:invoice-approval/files/invoice-approval.bpmn'),
+        expect.stringContaining('/process-models/finance:invoice-approval/files/invoice-form-schema.json'),
+      ]),
+    );
+    expect(fileGets).toHaveLength(2);
   });
 
   it('opens copy when onCopy is provided', async () => {

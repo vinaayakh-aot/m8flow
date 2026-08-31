@@ -15,6 +15,7 @@ from m8flow_backend.models.native import (
     TaskDraftDataModel,
     TaskInstructionsForEndUserModel,
     TemplateModel,
+    TemplateVisibility,
     TypeaheadModel,
 )
 
@@ -35,6 +36,7 @@ __all__ = [
     "TaskDraftDataModel",
     "TaskInstructionsForEndUserModel",
     "TemplateModel",
+    "TemplateVisibility",
     "TenantStatus",
     "TypeaheadModel",
 ]

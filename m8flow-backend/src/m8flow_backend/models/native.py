@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text, UniqueConstraint
+from enum import Enum
+
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from m8flow_backend.models.host_base import HostBase
+
+
+class TemplateVisibility(str, Enum):
+    private = "PRIVATE"
+    tenant = "TENANT"
+    public = "PUBLIC"
 
 
 class SecretModel(HostBase):
@@ -123,6 +131,9 @@ class ProcessInstanceFileDataModel(HostBase):
 
 class TemplateModel(HostBase):
     __tablename__ = "m8flow_templates"
+    __table_args__ = (
+        UniqueConstraint("m8f_tenant_id", "template_key", "version", name="uq_template_key_version_tenant"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     template_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -132,7 +143,7 @@ class TemplateModel(HostBase):
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
     category: Mapped[str | None] = mapped_column(String(255))
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="PRIVATE")
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default=TemplateVisibility.private.value)
     files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str | None] = mapped_column(String(50))
@@ -142,14 +153,46 @@ class TemplateModel(HostBase):
     created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    def is_private(self) -> bool:
+        return self.visibility == TemplateVisibility.private.value
+
+    def is_tenant_visible(self) -> bool:
+        return self.visibility == TemplateVisibility.tenant.value
+
+    def is_public(self) -> bool:
+        return self.visibility == TemplateVisibility.public.value
+
 
 class ProcessModelTemplateModel(HostBase):
     __tablename__ = "m8flow_process_model_template"
+    __table_args__ = (
+        UniqueConstraint("m8f_tenant_id", "process_model_identifier", name="uq_process_model_identifier_tenant"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     process_model_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
-    template_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_template_id: Mapped[int] = mapped_column(Integer, ForeignKey("m8flow_templates.id"), nullable=False)
+    source_template_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_template_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_template_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def serialized(self) -> dict:
+        return {
+            "id": self.id,
+            "process_model_identifier": self.process_model_identifier,
+            "source_template_id": self.source_template_id,
+            "source_template_key": self.source_template_key,
+            "source_template_version": self.source_template_version,
+            "source_template_name": self.source_template_name,
+            "m8f_tenant_id": self.m8f_tenant_id,
+            "created_by": self.created_by,
+            "created_at_in_seconds": self.created_at_in_seconds,
+            "updated_at_in_seconds": self.updated_at_in_seconds,
+        }
 
 
 class M8flowNatsApiKeyModel(HostBase):

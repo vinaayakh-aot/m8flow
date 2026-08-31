@@ -25,6 +25,7 @@ function renderDetail(context: AppShellOutletContext, path = '/processes/finance
         <Route element={<Outlet context={context} />}>
           <Route path="/processes/:processModelId" element={<ProcessModelDetailPage />} />
           <Route path="/process-instances/:instanceId" element={<p>Instance started</p>} />
+          <Route path="/templates/:templateId" element={<p>Template modeler</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -225,6 +226,108 @@ describe('ProcessModelDetailPage', () => {
       .mock.calls.map((c) => String(c[0]))
       .find((url) => url.includes('/start'));
     expect(startUrl).toContain('/v1.0/m8flow/process-models/finance:invoice-approval/start');
+  });
+
+  it('saves as a draft template and opens the template modeler for a catalog manager', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const path = String(url);
+        if (path.includes('/v1.0/m8flow/templates') && init?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ id: 42, name: 'Invoice Approval', templateKey: 'invoice-approval' }),
+          });
+        }
+        if (path.includes('/files/')) {
+          return Promise.resolve({
+            ok: true,
+            text: async () => '<bpmn/>',
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...DETAIL,
+            files: [
+              {
+                name: 'invoice-approval.bpmn',
+                size_bytes: 12,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: true,
+              },
+              {
+                name: 'notes.txt',
+                size_bytes: 4,
+                updated_at_in_seconds: 1_700_000_000,
+                primary: false,
+              },
+            ],
+          }),
+        });
+      }),
+    );
+
+    renderDetail({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save as template' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create template' }));
+    await waitFor(() => {
+      expect(screen.getByText('Template modeler')).toBeInTheDocument();
+    });
+    const createUrl = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).includes('/v1.0/m8flow/templates') && init?.method === 'POST');
+    expect(createUrl).toBeDefined();
+    const fileGets = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).includes('/files/'))
+      .map(([url]) => String(url));
+    expect(fileGets).toHaveLength(1);
+    expect(fileGets[0]).toContain('/files/invoice-approval.bpmn');
+    expect(fileGets.some((url) => url.includes('notes.txt'))).toBe(false);
+  });
+
+  it('keeps Save as template disabled for super-admin even when they can start', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...DETAIL,
+          files: [
+            {
+              name: 'invoice-approval.bpmn',
+              size_bytes: 12,
+              updated_at_in_seconds: 1_700_000_000,
+              primary: true,
+            },
+          ],
+        }),
+      }),
+    );
+
+    renderDetail({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: true,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toBeDisabled();
   });
 
   it('copies a process model and navigates to the copy overview', async () => {

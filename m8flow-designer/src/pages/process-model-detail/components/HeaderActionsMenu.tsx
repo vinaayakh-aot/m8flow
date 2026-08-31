@@ -6,12 +6,18 @@ import { cn } from '@/lib/utils';
 export type HeaderActionsMenuProps = {
   onEditIdentity?: () => void;
   onCopy?: () => void;
+  onSaveAsTemplate?: () => void;
 };
 
 /** Overflow menu for secondary process-model actions. Same outside-click /
  * Escape close as the Processes list kebab — the app has no shared
- * DropdownMenu primitive. Save as template is listed but not wired yet. */
-export function HeaderActionsMenu({ onEditIdentity, onCopy }: HeaderActionsMenuProps) {
+ * DropdownMenu primitive. Save as template is enabled only when the caller
+ * can POST templates (catalog manager, not super-admin). */
+export function HeaderActionsMenu({
+  onEditIdentity,
+  onCopy,
+  onSaveAsTemplate,
+}: HeaderActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -73,8 +79,12 @@ export function HeaderActionsMenu({ onEditIdentity, onCopy }: HeaderActionsMenuP
           <HeaderMenuItem
             icon={<Files className="size-3.5" strokeWidth={2} />}
             label="Save as template"
-            disabled
-            onSelect={() => undefined}
+            disabled={!onSaveAsTemplate}
+            onSelect={() => {
+              if (!onSaveAsTemplate) return;
+              setOpen(false);
+              onSaveAsTemplate();
+            }}
           />
         </div>
       ) : null}

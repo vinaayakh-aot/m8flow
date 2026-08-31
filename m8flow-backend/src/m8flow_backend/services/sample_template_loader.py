@@ -12,7 +12,7 @@ import re
 
 from sqlalchemy.exc import IntegrityError
 
-from m8flow_backend.db import db
+from m8flow_backend.db import get_session_factory
 from m8flow_backend.errors import ApiError
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
@@ -26,7 +26,7 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
-VERSION = "V1"
+VERSION = "V2"
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
 _SAMPLE_TEMPLATES_DIR = os.path.join(
@@ -102,85 +102,88 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
         storage = FilesystemTemplateStorageService()
         loaded = 0
         skipped = 0
-
-        for zip_filename in zip_files:
-            try:
-                template_key = _derive_template_key(zip_filename)
-                display_name = _derive_display_name(zip_filename)
-
-                if not template_key:
-                    logger.warning("Could not derive template key from %s; skipping", zip_filename)
-                    skipped += 1
-                    continue
-
-                existing = (
-                    db.session.query(TemplateModel)
-                    .filter_by(template_key=template_key, m8f_tenant_id=tenant_id)
-                    .first()
-                )
-                if existing is not None:
-                    logger.info("Sample template '%s' already exists; skipping", template_key)
-                    skipped += 1
-                    continue
-
-                zip_path = os.path.join(sample_dir, zip_filename)
+        session = get_session_factory()()
+        try:
+            for zip_filename in zip_files:
                 try:
-                    files = _extract_zip(zip_path)
-                except ValueError as exc:
-                    logger.error("Failed to extract %s: %s", zip_filename, exc)
-                    skipped += 1
-                    continue
+                    template_key = _derive_template_key(zip_filename)
+                    display_name = _derive_display_name(zip_filename)
 
-                has_bpmn = any(file_type_from_filename(name) == "bpmn" for name, _ in files)
-                if not has_bpmn:
-                    logger.warning("ZIP %s contains no BPMN file; skipping", zip_filename)
-                    skipped += 1
-                    continue
+                    if not template_key:
+                        logger.warning("Could not derive template key from %s; skipping", zip_filename)
+                        skipped += 1
+                        continue
 
-                file_entries: list[dict] = []
-                try:
-                    for file_name, content in files:
-                        ft = file_type_from_filename(file_name)
-                        storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
-                        file_entries.append({"file_type": ft, "file_name": file_name})
+                    existing = (
+                        session.query(TemplateModel)
+                        .filter_by(template_key=template_key, version=VERSION, m8f_tenant_id=tenant_id)
+                        .first()
+                    )
+                    if existing is not None:
+                        logger.info("Sample template '%s' already exists; skipping", template_key)
+                        skipped += 1
+                        continue
+
+                    zip_path = os.path.join(sample_dir, zip_filename)
+                    try:
+                        files = _extract_zip(zip_path)
+                    except ValueError as exc:
+                        logger.error("Failed to extract %s: %s", zip_filename, exc)
+                        skipped += 1
+                        continue
+
+                    has_bpmn = any(file_type_from_filename(name) == "bpmn" for name, _ in files)
+                    if not has_bpmn:
+                        logger.warning("ZIP %s contains no BPMN file; skipping", zip_filename)
+                        skipped += 1
+                        continue
+
+                    file_entries: list[dict] = []
+                    try:
+                        for file_name, content in files:
+                            ft = file_type_from_filename(file_name)
+                            storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
+                            file_entries.append({"file_type": ft, "file_name": file_name})
+                    except Exception:
+                        logger.exception("Failed to store files for %s", zip_filename)
+                        skipped += 1
+                        continue
+
+                    template = TemplateModel(
+                        template_key=template_key,
+                        version=VERSION,
+                        name=display_name,
+                        description=f"Sample template: {display_name}",
+                        tags=["sample"],
+                        category="Sample",
+                        m8f_tenant_id=tenant_id,
+                        visibility=TemplateVisibility.public.value,
+                        files=file_entries,
+                        is_published=True,
+                        status="published",
+                        created_by=SYSTEM_USER,
+                        modified_by=SYSTEM_USER,
+                    )
+
+                    try:
+                        session.add(template)
+                        session.commit()
+                        loaded += 1
+                        logger.info("Loaded sample template: %s (key=%s)", display_name, template_key)
+                    except IntegrityError as exc:
+                        session.rollback()
+                        err_msg = str(getattr(exc, "orig", exc))
+                        if UNIQUE_TEMPLATE_CONSTRAINT in err_msg:
+                            logger.info("Sample template '%s' already exists (concurrent); skipping", template_key)
+                        else:
+                            logger.warning("Failed to insert sample template '%s': %s", template_key, err_msg)
+                        skipped += 1
+
                 except Exception:
-                    logger.exception("Failed to store files for %s", zip_filename)
+                    logger.exception("Unexpected error loading sample template %s", zip_filename)
                     skipped += 1
                     continue
-
-                template = TemplateModel(
-                    template_key=template_key,
-                    version=VERSION,
-                    name=display_name,
-                    description=f"Sample template: {display_name}",
-                    tags=["sample"],
-                    category="Sample",
-                    m8f_tenant_id=tenant_id,
-                    visibility=TemplateVisibility.public.value,
-                    files=file_entries,
-                    is_published=True,
-                    status="published",
-                    created_by=SYSTEM_USER,
-                    modified_by=SYSTEM_USER,
-                )
-
-                try:
-                    db.session.add(template)
-                    db.session.commit()
-                    loaded += 1
-                    logger.info("Loaded sample template: %s (key=%s)", display_name, template_key)
-                except IntegrityError as exc:
-                    db.session.rollback()
-                    err_msg = str(getattr(exc, "orig", exc))
-                    if UNIQUE_TEMPLATE_CONSTRAINT in err_msg:
-                        logger.info("Sample template '%s' already exists (concurrent); skipping", template_key)
-                    else:
-                        logger.warning("Failed to insert sample template '%s': %s", template_key, err_msg)
-                    skipped += 1
-
-            except Exception:
-                logger.exception("Unexpected error loading sample template %s", zip_filename)
-                skipped += 1
-                continue
+        finally:
+            session.close()
 
         logger.info("Sample templates loading complete: %d loaded, %d skipped", loaded, skipped)

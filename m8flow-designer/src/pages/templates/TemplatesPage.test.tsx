@@ -3,6 +3,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import * as auth from '@/lib/auth';
 import TemplatesPage from './TemplatesPage';
 
 function renderWithOutlet(context: AppShellOutletContext, initial = '/templates') {
@@ -120,8 +121,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
   });
 
-  it('deletes a template after confirmation and refetches the list', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('deletes a published template after dialog confirmation and refetches the list', async () => {
     const fetchMock = vi.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
         return { ok: true, status: 204, json: async () => ({}) };
@@ -133,40 +133,49 @@ describe('TemplatesPage', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    // Not super-admin: delete is unconditionally forbidden for super-admin
-    // identities server-side (same gate as "Use template" — see
-    // TemplatesGalleryList's own doc comment), so the button is disabled
-    // there and this needs a regular tenant-scoped user to exercise it.
-    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageTenant: true,
+    });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete "Invoice Approval"? This cannot be undone.');
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      '"Invoice Approval" will be soft-deleted and can be restored from the Deleted tab.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
     await waitFor(() => {
       const deleteCall = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE');
       expect(deleteCall).toBeDefined();
       expect(String(deleteCall?.[0])).toContain('/v1.0/m8flow/templates/1');
     });
-    // Refetch after delete: at least one GET beyond the initial load.
     await waitFor(() => {
       const getCalls = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'DELETE');
       expect(getCalls.length).toBeGreaterThan(1);
     });
   });
 
-  it('does not delete when the confirmation is declined', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('does not delete when the confirmation dialog is cancelled', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ results: [mockTemplate()], pagination: { count: 1, total: 1, pages: 1 } }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageTenant: true,
+    });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(
       false,
@@ -319,5 +328,137 @@ describe('TemplatesPage', () => {
       expect(screen.queryByText('Import template')).not.toBeInTheDocument();
     });
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/templates/import'))).toBe(true);
+  });
+
+  it('disables published delete for an editor who is not tenant-admin', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: [mockTemplate()], pagination: { count: 1, total: 1, pages: 1 } }),
+      }),
+    );
+    vi.spyOn(auth, 'getCurrentUser').mockReturnValue({ username: 'editor', email: null });
+
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false, canManageTenant: false });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Delete template' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('hard-deletes an editor\'s own draft with permanent-delete copy', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        return { ok: true, status: 204, json: async () => ({}) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          results: [mockTemplate({ isPublished: false, status: 'draft' })],
+          pagination: { count: 1, total: 1, pages: 1 },
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(auth, 'getCurrentUser').mockReturnValue({ username: 'editor', email: null });
+
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false, canManageTenant: false });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('"Invoice Approval" will be permanently deleted.');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(true);
+    });
+  });
+
+  it('lists deleted templates and restores one as tenant-admin', async () => {
+    const deleted = mockTemplate({
+      id: 9,
+      isDeleted: true,
+      name: 'Invoice Approval_deleted_20260101120000',
+    });
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.includes('/restore')) {
+        return { ok: true, json: async () => mockTemplate({ id: 9 }) };
+      }
+      if (url.includes('deleted_only=true')) {
+        return {
+          ok: true,
+          json: async () => ({ results: [deleted], pagination: { count: 1, total: 1, pages: 1 } }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ results: [mockTemplate()], pagination: { count: 1, total: 1, pages: 1 } }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: false,
+      canManageTenant: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Deleted' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Invoice Approval_deleted_20260101120000')).toBeInTheDocument();
+    });
+    const deletedUrl = String(fetchMock.mock.calls.find(([input]) => String(input).includes('deleted_only=true'))?.[0]);
+    expect(deletedUrl).toContain('include_deleted=true');
+    expect(deletedUrl).toContain('latest_only=false');
+    expect(screen.queryByRole('button', { name: 'Delete template' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore template' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      '"Invoice Approval_deleted_20260101120000" will be restored and become active again.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes('/templates/9/restore') && (init as RequestInit | undefined)?.method === 'POST')).toBe(true);
+    });
+  });
+
+  it('hides restore for super-admin on the Deleted tab', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('deleted_only=true')) {
+          return {
+            ok: true,
+            json: async () => ({
+              results: [mockTemplate({ id: 9, isDeleted: true, name: 'Gone' })],
+              pagination: { count: 1, total: 1, pages: 1 },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ results: [], pagination: { count: 0, total: 0, pages: 0 } }),
+        };
+      }),
+    );
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: true,
+      canManageTenant: true,
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Deleted' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Deleted' }));
+    await waitFor(() => expect(screen.getByText('Gone')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Restore template' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Export template' })).toBeEnabled();
   });
 });

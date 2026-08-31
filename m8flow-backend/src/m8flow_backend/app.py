@@ -151,6 +151,13 @@ def create_app() -> FlaskApp:
     install_auth_middleware(app)
     install_tenant_runtime(app)
 
+    from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
+
+    if not is_unit_testing_environment():
+        from m8flow_backend.services.sample_template_loader import load_sample_templates
+
+        load_sample_templates(app)
+
     from m8flow_backend.routes.v1 import register_v1_routes
 
     register_v1_routes(app)
