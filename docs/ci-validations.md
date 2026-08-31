@@ -145,10 +145,6 @@ If you touched:
 
 then validate the relevant image builds locally if practical.
 
-## Current Non-Required Checks
-
-Browser E2E tests under `extensions/m8flow-frontend/test/browser` are not part of the required default CI flow right now. They can still be run manually when a change affects login flows, tenant selection, or other browser-only behavior.
-
 ## Rules For Keeping CI Green
 
 - Do not modify upstream/vendor folders directly:
