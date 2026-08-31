@@ -1,25 +1,43 @@
-import { useOutletContext } from 'react-router-dom';
+import { Navigate, useLocation, useOutletContext, useParams } from 'react-router-dom';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import { Card } from '@/components/ui/card';
 import { getActiveTenantDisplayLabel, getSelectedTenantId } from '@/lib/auth';
 import TenantAdminPanel from './TenantAdminPanel';
 
+type TenantManagementLocationState = {
+  tenantName?: string;
+};
+
 /**
- * Tenant admin for the active tenant (tenant-admin) or the sidebar tenant
- * (super-admin). Invitation management is composed onto the shared panel for
- * super-admin only. Super-admins can also reach the same panel by expanding a
- * tenant registry row — that path does not set `m8flow_selected_tenant`.
+ * Tenant admin for one tenant.
+ *
+ * Tenant-admin: `/tenant-management` uses the active-tenant cookie.
+ * Super-admin: `/tenant-management/:tenantId` after picking a row on `/tenants`.
+ * Bare `/tenant-management` for a super-admin redirects to the registry.
+ * Does not set `m8flow_selected_tenant`.
  */
 export default function TenantManagementPage() {
+  const { tenantId: routeTenantId } = useParams<{ tenantId: string }>();
+  const location = useLocation();
   const {
-    scopedTenantId,
     isSuperAdmin,
     canManageTenant = false,
     refreshTenants,
+    tenants = [],
   } = useOutletContext<AppShellOutletContext>();
 
-  const tenantId = isSuperAdmin ? scopedTenantId : getSelectedTenantId();
+  if (isSuperAdmin && !routeTenantId) {
+    return <Navigate to="/tenants" replace />;
+  }
+
+  const tenantId = isSuperAdmin ? routeTenantId : getSelectedTenantId();
+  const locationState = location.state as TenantManagementLocationState | null;
+  const tenantName = isSuperAdmin
+    ? locationState?.tenantName
+      || tenants.find((row) => row.id === tenantId)?.name
+      || tenantId
+    : getActiveTenantDisplayLabel() ?? tenantId;
   const needsTenant = canManageTenant && !tenantId;
 
   if (!canManageTenant) {
@@ -52,8 +70,8 @@ export default function TenantManagementPage() {
         <Card variant="bordered" className="max-w-lg p-6">
           <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Members are tenant-scoped. Select a concrete tenant in the sidebar — All
-            Tenants is not supported here.
+            Members are tenant-scoped. Sign in with an active tenant to manage members,
+            groups, and roles.
           </p>
         </Card>
       </main>
@@ -63,7 +81,7 @@ export default function TenantManagementPage() {
   return (
     <TenantAdminPanel
       tenantId={tenantId}
-      tenantName={getActiveTenantDisplayLabel() ?? tenantId}
+      tenantName={tenantName ?? tenantId}
       isSuperAdmin={isSuperAdmin}
       refreshTenants={refreshTenants}
     />

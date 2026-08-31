@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -93,5 +94,32 @@ describe('HomeStatsGrid', () => {
     const calledUrl = String(fetchMock.mock.calls[0]?.[0] ?? '');
     expect(calledUrl).toContain('/v1.0/m8flow/home-stats');
     expect(calledUrl).toContain('tenantId=t2');
+  });
+
+  it('issues a single home-stats fetch when StrictMode remounts the effect', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        active_process_instances: 2,
+        tasks_waiting_on_me: 1,
+        errors_needing_review: 0,
+        completed_today: 0,
+        avg_completion_minutes: null,
+        total_tenants: 4,
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <React.StrictMode>
+        <HomeStatsGrid tenantId="t2" />
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2')).toBeInTheDocument();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

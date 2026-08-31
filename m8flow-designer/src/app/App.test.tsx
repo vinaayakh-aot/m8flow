@@ -131,6 +131,15 @@ describe('AppRoutes tenant gate', () => {
     expect(await screen.findByText('tenant-management-page')).toBeInTheDocument();
   });
 
+  it('renders Tenant Management for a specific tenant', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/tenant-management/t1');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('tenant-management-page')).toBeInTheDocument();
+  });
+
   it('redirects /configuration to the secrets list', async () => {
     mockShouldShowTenantSelectionGate.mockReturnValue(false);
 

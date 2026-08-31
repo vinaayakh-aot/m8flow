@@ -40,6 +40,8 @@ export type AppShellOutletContext = {
   canManageTenant?: boolean;
   /** Super-admin switcher should reload after registry create/rename. */
   refreshTenants?: () => void;
+  /** Super-admin registry rows, used to resolve display names on tenant admin. */
+  tenants?: TenantSummary[];
 };
 
 /**
@@ -161,6 +163,7 @@ export function AppShell() {
     canManageConnectorProfiles,
     canManageTenant,
     refreshTenants: () => setTenantsReloadKey((key) => key + 1),
+    tenants,
   };
   const tenantOptions =
     selectedTenantId && !tenants.some((t) => t.id === selectedTenantId)
@@ -181,7 +184,7 @@ export function AppShell() {
         showConfiguration={canReadSecrets}
         showConnectors={canReadConnectors}
         showTenantsNav={superAdmin}
-        showTenantManagement={canManageTenant}
+        showTenantManagement={canManageTenant && !superAdmin}
       />
       <Outlet context={outletContext} />
     </div>

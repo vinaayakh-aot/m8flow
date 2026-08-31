@@ -73,7 +73,10 @@ vi.mock('@/lib/invitationManagementApi', async () => {
   };
 });
 
-function renderWithOutlet(context: Partial<AppShellOutletContext> = {}) {
+function renderWithOutlet(
+  context: Partial<AppShellOutletContext> = {},
+  path = '/tenant-management',
+) {
   const full: AppShellOutletContext = {
     scopedTenantId: null,
     selectedTenantId: null,
@@ -83,10 +86,12 @@ function renderWithOutlet(context: Partial<AppShellOutletContext> = {}) {
     ...context,
   };
   return render(
-    <MemoryRouter initialEntries={['/tenant-management']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route element={<Outlet context={full} />}>
+          <Route path="/tenants" element={<div data-testid="tenants-registry">tenants-list</div>} />
           <Route path="/tenant-management" element={<TenantManagementPage />} />
+          <Route path="/tenant-management/:tenantId" element={<TenantManagementPage />} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -167,14 +172,14 @@ describe('TenantManagementPage', () => {
     expect(screen.queryByTestId('tenant-invite-user-button')).not.toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('redirects super-admin from /tenant-management to the tenants registry', () => {
     renderWithOutlet({
       isSuperAdmin: true,
       scopedTenantId: null,
       selectedTenantId: null,
       canManageTenant: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
+    expect(screen.getByTestId('tenants-registry')).toBeInTheDocument();
     expect(mockFetchTenantMembers).not.toHaveBeenCalled();
   });
 
@@ -192,26 +197,36 @@ describe('TenantManagementPage', () => {
     });
     expect(screen.queryByTestId('tenant-invite-user-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pending-invitations-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-management-back-to-tenants')).not.toBeInTheDocument();
     expect(mockFetchTenantInvitations).not.toHaveBeenCalled();
     expect(screen.getByTestId('tenant-group-add-button')).toBeInTheDocument();
     expect(screen.getByTestId('tenant-group-name-cell-g1')).toBeInTheDocument();
     expect(screen.getByTestId('tenant-group-role-chip-g1-editor')).toBeInTheDocument();
   });
 
-  it('lists members for a super-admin against the sidebar tenant', async () => {
+  it('lists members for a super-admin against the tenant in the URL', async () => {
     mockGetSelectedTenantId.mockReturnValue(null);
-    renderWithOutlet({
-      canManageTenant: true,
-      isSuperAdmin: true,
-      scopedTenantId: 't9',
-      selectedTenantId: 't9',
-    });
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't9', name: 'Tenant Nine' }],
+      },
+      '/tenant-management/t9',
+    );
 
     expect(await screen.findByText('Ed Itor')).toBeInTheDocument();
     expect(mockFetchTenantMembers).toHaveBeenCalledWith('t9', expect.any(Object));
     expect(screen.getByTestId('tenant-invite-user-button')).toBeInTheDocument();
     expect(screen.getByTestId('pending-invitations-panel')).toBeInTheDocument();
     expect(mockFetchTenantInvitations).toHaveBeenCalledWith('t9', { limit: 100 });
+    expect(screen.getByTestId('tenant-management-back-to-tenants')).toHaveAttribute(
+      'href',
+      '/tenants',
+    );
+    expect(screen.getAllByText('Tenant Nine').length).toBeGreaterThan(0);
   });
 
   it('debounces the search box into a server-side search param', async () => {
@@ -431,12 +446,16 @@ describe('TenantManagementPage', () => {
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
-    renderWithOutlet({
-      canManageTenant: true,
-      isSuperAdmin: true,
-      scopedTenantId: 't1',
-      selectedTenantId: 't1',
-    });
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't1', name: 'Acme Corp' }],
+      },
+      '/tenant-management/t1',
+    );
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-invite-user-button'));
@@ -496,12 +515,16 @@ describe('TenantManagementPage', () => {
       tenant_id: 't1',
       invitation: { id: 'inv1', status: 'REVOKED' },
     });
-    renderWithOutlet({
-      canManageTenant: true,
-      isSuperAdmin: true,
-      scopedTenantId: 't1',
-      selectedTenantId: 't1',
-    });
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't1', name: 'Acme Corp' }],
+      },
+      '/tenant-management/t1',
+    );
 
     expect(await screen.findByText('pending@example.com')).toBeInTheDocument();
     expect(screen.getByText('done@example.com')).toBeInTheDocument();

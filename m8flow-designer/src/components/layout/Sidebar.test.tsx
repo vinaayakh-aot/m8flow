@@ -180,6 +180,30 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Tenant Management' })).toBeInTheDocument();
   });
 
+  it('keeps Tenants selected when a super-admin is on a tenant-management URL', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showTenantsNav />,
+        },
+        {
+          path: '/tenants',
+          element: <Sidebar showTenantsNav />,
+        },
+        {
+          path: '/tenant-management/:tenantId',
+          element: <Sidebar showTenantsNav />,
+        },
+      ],
+      { initialEntries: ['/tenant-management/t1'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Tenants' })).toHaveClass('border-nav-active');
+    expect(screen.queryByText('Tenant Management')).not.toBeInTheDocument();
+  });
+
   it('shows Tenant Management as a live link when the role can manage the tenant', () => {
     const router = createMemoryRouter(
       [

@@ -156,18 +156,34 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 }
 
 /**
+ * Concurrent identical GETs share one in-flight promise. React StrictMode
+ * remounts effects in development (setup → cleanup → setup) without aborting
+ * the first fetch, which would otherwise hit the backend twice for the same
+ * path. Cleared when the request settles so a later load (refresh, tenant
+ * change) still fetches.
+ */
+const inFlightGets = new Map<string, Promise<unknown>>();
+
+/**
  * Thin authenticated GET against m8flow-backend. Uses the access_token cookie
  * as a Bearer header (same pattern as m8flow-frontend HttpService).
  */
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetchWithAuthRetry(path, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) {
-    throw new ApiError(path, response.status);
+  const existing = inFlightGets.get(path);
+  if (existing) {
+    return existing as Promise<T>;
   }
-  return (await response.json()) as T;
+  const request = (async () => {
+    const response = await apiFetch(path, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    return (await response.json()) as T;
+  })().finally(() => {
+    inFlightGets.delete(path);
+  });
+  inFlightGets.set(path, request);
+  return request;
 }
 
 const ORGANIZATION_MEMBERSHIPS_PATH = '/v1.0/m8flow/organization-memberships';

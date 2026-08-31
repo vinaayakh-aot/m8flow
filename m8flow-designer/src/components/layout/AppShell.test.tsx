@@ -234,10 +234,14 @@ describe('AppShell', () => {
     expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
   });
 
-  it('for a super-admin: shows Tenant selector and fetches tenants', () => {
+  it('for a super-admin: shows Tenant selector and fetches tenants', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'super-admin', email: null });
     mockIsSuperAdmin.mockReturnValue(true);
     mockFetchTenants.mockResolvedValue([{ id: 't1', name: 'Tenant One' }]);
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: false,
+      can_manage_tenant: true,
+    });
 
     renderShell();
 
@@ -245,6 +249,10 @@ describe('AppShell', () => {
     expect(mockFetchTenants).toHaveBeenCalled();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Tenant One' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
   it('restores the persisted tenant on refresh', () => {

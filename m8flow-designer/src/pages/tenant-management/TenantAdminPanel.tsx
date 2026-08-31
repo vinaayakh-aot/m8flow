@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MailPlus, Pencil, Plus, Search, UserPlus, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -46,13 +47,12 @@ export type TenantAdminPanelProps = {
   isSuperAdmin: boolean;
   refreshTenants?: () => void;
   onTenantNameChange?: (name: string) => void;
-  embedded?: boolean;
 };
 
 /**
  * Members, groups, role grants, and (for super-admin) invitation management
- * for one tenant. The page and the tenant-registry row expansion both render
- * this panel so they stay in sync. Does not set `m8flow_selected_tenant`.
+ * for one tenant. Super-admin reaches this from the tenant registry; a
+ * breadcrumb returns to `/tenants`. Does not set `m8flow_selected_tenant`.
  */
 export default function TenantAdminPanel({
   tenantId,
@@ -60,7 +60,6 @@ export default function TenantAdminPanel({
   isSuperAdmin,
   refreshTenants,
   onTenantNameChange,
-  embedded = false,
 }: TenantAdminPanelProps) {
   const [tenantName, setTenantName] = useState(initialTenantName);
   const [searchInput, setSearchInput] = useState('');
@@ -331,43 +330,52 @@ export default function TenantAdminPanel({
     }
   }
 
-  const Wrapper = embedded ? 'div' : 'main';
-
   return (
-    <Wrapper className={embedded ? undefined : 'flex-1 px-11 py-10'}>
-      {embedded ? (
-        <p className="mb-4 text-sm text-muted-foreground">
-          Add existing users as members and manage groups and roles associated with{' '}
-          <span className="font-medium text-foreground">{tenantName || tenantId}</span>.
-        </p>
-      ) : (
-        <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-[32px] font-semibold tracking-tight">
-              Tenant Management
-            </h1>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Add existing users as members, manage groups, and grant roles on groups
-              for{' '}
-              <span className="font-medium text-foreground">{tenantName || tenantId}</span>.
-              Members show effective roles from their groups.
-              {isSuperAdmin
-                ? ' Invitation management is available here for platform admins.'
-                : ''}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="pill-outline"
-            size="pill"
-            onClick={openRename}
-            data-testid="tenant-management-edit-button"
+    <main className="flex-1 px-11 py-10">
+      {isSuperAdmin ? (
+        <nav
+          aria-label="Breadcrumb"
+          className="mb-4 flex min-w-0 flex-wrap items-center gap-1.5 text-[13.5px] text-muted-foreground"
+        >
+          <Link
+            to="/tenants"
+            className="shrink-0 font-semibold text-info no-underline hover:underline"
+            data-testid="tenant-management-back-to-tenants"
           >
-            <Pencil className="size-3.5" aria-hidden />
-            Edit Tenant
-          </Button>
+            Tenants
+          </Link>
+          <span aria-hidden="true">/</span>
+          <span className="min-w-0 truncate font-semibold text-foreground" aria-current="page">
+            {tenantName || tenantId}
+          </span>
+        </nav>
+      ) : null}
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">
+            Tenant Management
+          </h1>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+            Add existing users as members, manage groups, and grant roles on groups
+            for{' '}
+            <span className="font-medium text-foreground">{tenantName || tenantId}</span>.
+            Members show effective roles from their groups.
+            {isSuperAdmin
+              ? ' Invitation management is available here for platform admins.'
+              : ''}
+          </p>
         </div>
-      )}
+        <Button
+          type="button"
+          variant="pill-outline"
+          size="pill"
+          onClick={openRename}
+          data-testid="tenant-management-edit-button"
+        >
+          <Pencil className="size-3.5" aria-hidden />
+          Edit Tenant
+        </Button>
+      </div>
 
       {error ? (
         <p className="mb-4 text-sm text-destructive" role="alert">
@@ -796,6 +804,6 @@ export default function TenantAdminPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Wrapper>
+    </main>
   );
 }

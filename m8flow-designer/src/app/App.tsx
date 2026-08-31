@@ -151,6 +151,14 @@ function AppShellRoutes() {
             </Suspense>
           }
         />
+        <Route
+          path="tenant-management/:tenantId"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading tenant management…" />}>
+              <TenantManagementPage />
+            </Suspense>
+          }
+        />
         <Route path="configuration" element={<Navigate to="/configuration/secrets" replace />} />
         <Route
           path="configuration/secrets"

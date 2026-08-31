@@ -63,7 +63,7 @@ export type SidebarProps = {
   showConnectors?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
-  /** Tenant-admin / super-admin: Tenant Management is a live `/tenant-management` link. Hidden otherwise. */
+  /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
   showTenantManagement?: boolean;
   className?: string;
 };
@@ -124,7 +124,7 @@ const CONNECTORS_CHILD: SidebarChild = {
 const AUTHENTICATIONS_CHILD: SidebarChild = { label: 'Authentications', to: '/authentications' };
 const SYSTEM_CHILDREN: SidebarChild[] = [{ label: 'Celery' }, { label: 'NATS' }];
 
-function activeNavIdFromPath(pathname: string): LiveNavId | null {
+function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavId | null {
   if (pathname === '/' || pathname === '') {
     return 'home';
   }
@@ -132,7 +132,8 @@ function activeNavIdFromPath(pathname: string): LiveNavId | null {
     return 'tenants';
   }
   if (pathname === '/tenant-management' || pathname.startsWith('/tenant-management/')) {
-    return 'tenant-management';
+    // Super-admin reaches tenant admin from the registry; keep Tenants selected.
+    return showTenantsNav ? 'tenants' : 'tenant-management';
   }
   if (pathname === '/processes' || pathname.startsWith('/processes/')) {
     return 'processes';
@@ -169,7 +170,7 @@ function SidebarInRouter(props: SidebarProps) {
   return (
     <SidebarView
       {...props}
-      activeNavId={activeNavIdFromPath(pathname)}
+      activeNavId={activeNavIdFromPath(pathname, props.showTenantsNav)}
       linkLiveNav
     />
   );

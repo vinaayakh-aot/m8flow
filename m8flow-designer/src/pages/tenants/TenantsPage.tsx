@@ -1,6 +1,6 @@
-import { FormEvent, Fragment, useEffect, useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { ArrowDown, ArrowUp, Building2, ChevronDown, Plus, Search } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
+import { ArrowDown, ArrowUp, Building2, Plus, Search } from 'lucide-react';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import { Badge } from '@/components/ui/badge';
@@ -22,20 +22,16 @@ import {
   isDuplicateTenantName,
   MAX_TENANT_NAME_LENGTH,
   tenantsErrorMessage,
-  updateTenantName,
   validateTenantDisplayName,
   type Tenant,
   type TenantStatus,
 } from '@/lib/tenantsApi';
 import { cn } from '@/lib/utils';
-import TenantAdminPanel from '@/pages/tenant-management/TenantAdminPanel';
 
 type SearchField = 'name' | 'slug';
 type SortField = 'name' | 'slug';
 type SortDirection = 'asc' | 'desc';
 type StatusFilter = 'all' | 'ACTIVE' | 'INACTIVE';
-
-type TenantDialogMode = 'create' | 'rename';
 
 const STATUS_BADGE: Record<TenantStatus, 'success' | 'warning' | 'destructive'> = {
   ACTIVE: 'success',
@@ -47,8 +43,8 @@ const SELECT_CLASS =
   'appearance-none rounded-full border border-border bg-card px-3.5 py-2 pr-8 text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40';
 
 /**
- * Super-admin tenant registry. List / search / sort / status filter / create
- * / rename, plus row expansion into tenant admin (members, groups, invites).
+ * Super-admin tenant registry. List / search / sort / status filter / create.
+ * Selecting a tenant opens tenant admin for that tenant.
  * Does not set `m8flow_selected_tenant`, mutate status, or delete.
  */
 export default function TenantsPage() {
@@ -65,12 +61,10 @@ export default function TenantsPage() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  const [dialogMode, setDialogMode] = useState<TenantDialogMode | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [dialogName, setDialogName] = useState('');
-  const [dialogTenant, setDialogTenant] = useState<Tenant | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -127,16 +121,6 @@ export default function TenantsPage() {
     });
   }, [rows, searchQuery, searchField, statusFilter, sortField, sortDirection]);
 
-  useEffect(() => {
-    if (expandedTenantId && !visible.some((tenant) => tenant.id === expandedTenantId)) {
-      setExpandedTenantId(null);
-    }
-  }, [expandedTenantId, visible]);
-
-  function toggleExpansion(tenantId: string) {
-    setExpandedTenantId((current) => (current === tenantId ? null : tenantId));
-  }
-
   function toggleSort(field: SortField) {
     if (sortField === field) {
       setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
@@ -147,16 +131,8 @@ export default function TenantsPage() {
   }
 
   function openCreate() {
-    setDialogMode('create');
-    setDialogTenant(null);
+    setCreateOpen(true);
     setDialogName('');
-    setDialogError(null);
-  }
-
-  function openRename(tenant: Tenant) {
-    setDialogMode('rename');
-    setDialogTenant(tenant);
-    setDialogName(tenant.name);
     setDialogError(null);
   }
 
@@ -164,15 +140,14 @@ export default function TenantsPage() {
     if (saving) {
       return;
     }
-    setDialogMode(null);
-    setDialogTenant(null);
+    setCreateOpen(false);
     setDialogName('');
     setDialogError(null);
   }
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
-    if (!dialogMode || saving) {
+    if (!createOpen || saving) {
       return;
     }
     const trimmed = dialogName.trim();
@@ -181,7 +156,7 @@ export default function TenantsPage() {
       setDialogError(nameError);
       return;
     }
-    if (isDuplicateTenantName(trimmed, rows, dialogTenant?.id)) {
+    if (isDuplicateTenantName(trimmed, rows)) {
       setDialogError('A tenant with this name already exists.');
       return;
     }
@@ -189,23 +164,13 @@ export default function TenantsPage() {
     setSaving(true);
     setDialogError(null);
     try {
-      if (dialogMode === 'create') {
-        await createTenant(trimmed, rows);
-      } else if (dialogTenant) {
-        await updateTenantName(dialogTenant.id, trimmed);
-      }
-      setDialogMode(null);
-      setDialogTenant(null);
+      await createTenant(trimmed, rows);
+      setCreateOpen(false);
       setDialogName('');
       setReloadKey((key) => key + 1);
       refreshTenants?.();
     } catch (err: unknown) {
-      setDialogError(
-        tenantsErrorMessage(
-          err,
-          dialogMode === 'create' ? 'Failed to create tenant' : 'Failed to rename tenant',
-        ),
-      );
+      setDialogError(tenantsErrorMessage(err, 'Failed to create tenant'));
     } finally {
       setSaving(false);
     }
@@ -241,8 +206,8 @@ export default function TenantsPage() {
         <div>
           <h1 className="font-display text-[32px] font-semibold tracking-tight">Tenants</h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Register and rename the organizations that back access in Keycloak. Expand a
-            row to manage members, groups, roles, and invitations for that tenant.
+            Register the organizations that back access in Keycloak. Select a tenant
+            to manage members, groups, roles, and invitations.
           </p>
         </div>
         <Button
@@ -343,89 +308,41 @@ export default function TenantsPage() {
             </thead>
             <tbody>
               {visible.map((tenant) => {
-                const canRename = tenant.status !== 'DELETED';
-                const isExpanded = expandedTenantId === tenant.id;
+                const managementPath = `/tenant-management/${encodeURIComponent(tenant.id)}`;
                 return (
-                  <Fragment key={tenant.id}>
-                    <tr
-                      className="border-b border-border last:border-b-0"
-                      data-testid={`tenant-row-${tenant.id}`}
-                    >
-                      <td className="px-[22px] py-3 font-medium text-foreground">
-                        <button
-                          type="button"
-                          className="text-left font-medium"
-                          onClick={() => toggleExpansion(tenant.id)}
-                          data-testid={`tenant-accordion-summary-${tenant.id}`}
-                          aria-expanded={isExpanded}
-                          aria-controls={`tenant-accordion-details-${tenant.id}`}
+                  <tr
+                    key={tenant.id}
+                    className="border-b border-border last:border-b-0"
+                    data-testid={`tenant-row-${tenant.id}`}
+                  >
+                    <td className="px-[22px] py-3 font-medium text-foreground">
+                      <Link
+                        to={managementPath}
+                        state={{ tenantName: tenant.name }}
+                        className="text-left font-medium text-foreground no-underline hover:underline"
+                        data-testid={`tenant-open-${tenant.id}`}
+                      >
+                        {tenant.name}
+                      </Link>
+                    </td>
+                    <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
+                      {tenant.slug}
+                    </td>
+                    <td className="px-[22px] py-3">
+                      <Badge variant={STATUS_BADGE[tenant.status]}>{tenant.status}</Badge>
+                    </td>
+                    <td className="px-[22px] py-3 text-right whitespace-nowrap">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link
+                          to={managementPath}
+                          state={{ tenantName: tenant.name }}
+                          data-testid={`tenant-manage-${tenant.id}`}
                         >
-                          {tenant.name}
-                        </button>
-                      </td>
-                      <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
-                        {tenant.slug}
-                      </td>
-                      <td className="px-[22px] py-3">
-                        <Badge variant={STATUS_BADGE[tenant.status]}>{tenant.status}</Badge>
-                      </td>
-                      <td className="px-[22px] py-3 text-right whitespace-nowrap">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={!canRename}
-                          onClick={() => openRename(tenant)}
-                          data-testid={`tenant-rename-${tenant.id}`}
-                        >
-                          Rename
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleExpansion(tenant.id)}
-                          data-testid={`tenant-accordion-toggle-${tenant.id}`}
-                          aria-expanded={isExpanded}
-                          aria-controls={`tenant-accordion-details-${tenant.id}`}
-                          aria-label={isExpanded ? `Collapse ${tenant.name}` : `Expand ${tenant.name}`}
-                        >
-                          <ChevronDown
-                            className={cn(
-                              'size-4 transition-transform',
-                              isExpanded ? 'rotate-180' : 'rotate-0',
-                            )}
-                            aria-hidden
-                          />
-                        </Button>
-                      </td>
-                    </tr>
-                    {isExpanded ? (
-                      <tr className="border-b border-border last:border-b-0 bg-muted/30">
-                        <td
-                          colSpan={4}
-                          className="px-[22px] py-4"
-                          id={`tenant-accordion-details-${tenant.id}`}
-                          data-testid={`tenant-accordion-details-${tenant.id}`}
-                        >
-                          <TenantAdminPanel
-                            tenantId={tenant.id}
-                            tenantName={tenant.name}
-                            isSuperAdmin
-                            embedded
-                            refreshTenants={refreshTenants}
-                            onTenantNameChange={(name) => {
-                              setRows((current) =>
-                                current.map((row) =>
-                                  row.id === tenant.id ? { ...row, name } : row,
-                                ),
-                              );
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
+                          Manage
+                        </Link>
+                      </Button>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
@@ -433,15 +350,13 @@ export default function TenantsPage() {
         )}
       </Card>
 
-      <Dialog open={dialogMode !== null} onOpenChange={(open) => !open && closeDialog()}>
+      <Dialog open={createOpen} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={(event) => void handleSave(event)}>
             <DialogHeader>
-              <DialogTitle>{dialogMode === 'rename' ? 'Rename tenant' : 'Add Tenant'}</DialogTitle>
+              <DialogTitle>Add Tenant</DialogTitle>
               <DialogDescription>
-                {dialogMode === 'rename'
-                  ? 'The alias stays the same. Only the display name changes.'
-                  : 'Give this organization a display name. The alias is generated from it.'}
+                Give this organization a display name. The alias is generated from it.
               </DialogDescription>
             </DialogHeader>
             <label className="mt-4 block text-sm font-medium text-foreground">
@@ -456,7 +371,7 @@ export default function TenantsPage() {
                 required
               />
             </label>
-            {dialogMode === 'create' && dialogName.trim() ? (
+            {dialogName.trim() ? (
               <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Building2 className="size-3" aria-hidden />
                 Alias: {generateUniqueTenantAlias(dialogName, rows)}
@@ -478,7 +393,7 @@ export default function TenantsPage() {
                 disabled={!dialogName.trim() || saving}
                 data-testid="tenant-save"
               >
-                {saving ? 'Saving…' : dialogMode === 'rename' ? 'Save' : 'Create'}
+                {saving ? 'Saving…' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
