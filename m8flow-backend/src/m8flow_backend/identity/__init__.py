@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
@@ -165,6 +166,68 @@ def sync_groups(
             session.add(UserGroupAssignmentModel(user_id=user.id, group_id=group.id))
 
 
+@dataclass
+class _YamlGrantCache:
+    """In-memory grant rows for one ``import_yaml`` pass.
+
+    Login enrichment re-runs YAML seeding on every authenticated request.
+    Without a cache each ``grant()`` issues a permission_target lookup by
+    (uri, command) and a permission_assignment lookup — thousands of
+    round-trips for an idempotent no-op.
+    """
+
+    session: Session
+    targets: dict[tuple[str, str | None], PermissionTargetModel] = field(default_factory=dict)
+    assignments: dict[tuple[int, int, str], PermissionAssignmentModel] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, session: Session) -> _YamlGrantCache:
+        cache = cls(session=session)
+        cache.targets = {
+            (row.uri, row.command): row for row in session.scalars(select(PermissionTargetModel)).all()
+        }
+        cache.assignments = {
+            (row.principal_id, row.permission_target_id, row.permission): row
+            for row in session.scalars(select(PermissionAssignmentModel)).all()
+        }
+        return cache
+
+    def target(self, uri: str, command: str | None) -> PermissionTargetModel:
+        key = (uri, command)
+        existing = self.targets.get(key)
+        if existing is not None:
+            return existing
+        created = PermissionTargetModel(uri=uri, command=command)
+        self.session.add(created)
+        self.session.flush()
+        self.targets[key] = created
+        return created
+
+    def assignment(
+        self,
+        *,
+        principal_id: int,
+        target_id: int,
+        permission: str,
+        grant_type: str,
+    ) -> PermissionAssignmentModel:
+        key = (principal_id, target_id, permission)
+        existing = self.assignments.get(key)
+        if existing is not None:
+            existing.grant_type = grant_type
+            return existing
+        created = PermissionAssignmentModel(
+            principal_id=principal_id,
+            permission_target_id=target_id,
+            permission=permission,
+            grant_type=grant_type,
+        )
+        self.session.add(created)
+        self.session.flush()
+        self.assignments[key] = created
+        return created
+
+
 def grant(
     session: Session,
     *,
@@ -173,8 +236,17 @@ def grant(
     permission: str,
     grant_type: str = "permit",
     command: str | None = None,
+    cache: _YamlGrantCache | None = None,
 ) -> PermissionAssignmentModel:
     uri = _normalize_target_uri(uri)
+    if cache is not None:
+        target = cache.target(uri, command)
+        return cache.assignment(
+            principal_id=principal.id,
+            target_id=target.id,
+            permission=permission,
+            grant_type=grant_type,
+        )
     target = session.scalars(
         select(PermissionTargetModel).where(
             PermissionTargetModel.uri == uri,
@@ -225,6 +297,7 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         document = yaml.safe_load(handle) or {}
     groups = document.get("groups") or {}
     permissions = document.get("permissions") or {}
+    grant_cache = _YamlGrantCache.load(session)
     for group_name in groups:
         identifier = group_name if group_name == GLOBAL_GROUP else (
             f"{tenant_id}:{group_name}" if tenant_id and ":" not in group_name else group_name
@@ -269,6 +342,7 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
                         uri=str(uri),
                         permission=str(action),
                         command=command,
+                        cache=grant_cache,
                     )
     if tenant_id:
         from m8flow_bpmn_core.services.authorization import ensure_v1_role

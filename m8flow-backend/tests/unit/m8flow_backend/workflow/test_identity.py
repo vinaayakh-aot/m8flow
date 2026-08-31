@@ -80,3 +80,33 @@ def test_import_yaml_is_idempotent_and_expands_macros(db_session):
     identity.import_yaml(db_session, tenant_id="t1")
     db_session.flush()
     assert _start_grant_permissions(db_session, "t1", "editor") == first
+
+
+def test_import_yaml_does_not_lookup_permission_target_per_grant(db_session):
+    """Second import_yaml must reuse a cached target list, not SELECT by uri."""
+    from sqlalchemy import event
+
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.flush()
+
+    statements: list[str] = []
+    engine = db_session.get_bind()
+
+    def _before(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", _before)
+    try:
+        identity.import_yaml(db_session, tenant_id="t1")
+        db_session.flush()
+    finally:
+        event.remove(engine, "before_cursor_execute", _before)
+
+    by_uri = [
+        sql
+        for sql in statements
+        if "permission_target.uri =" in sql.replace('"', "")
+    ]
+    # Leftover lookups are core `ensure_v1_role`, not per-YAML-grant `grant()`.
+    assert len(by_uri) < 20, (len(by_uri), by_uri[:2])

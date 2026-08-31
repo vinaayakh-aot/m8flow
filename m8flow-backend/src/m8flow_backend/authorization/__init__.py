@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from m8flow_bpmn_core import api
 from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
@@ -171,11 +171,15 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
         principal_ids.extend(p.id for p in group_principals)
     if not principal_ids:
         return False
-    assignments = session.scalars(
-        select(PermissionAssignmentModel).where(
-            PermissionAssignmentModel.principal_id.in_(principal_ids)
+    assignments = (
+        session.scalars(
+            select(PermissionAssignmentModel)
+            .options(joinedload(PermissionAssignmentModel.permission_target))
+            .where(PermissionAssignmentModel.principal_id.in_(principal_ids))
         )
-    ).all()
+        .unique()
+        .all()
+    )
     permitted = False
     for assignment in assignments:
         target = assignment.permission_target
