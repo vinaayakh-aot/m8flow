@@ -85,6 +85,39 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     assert remaining <= {"alembic_version_m8flow"}
 
 
+def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
+    """A database stamped at a now-deleted revision must recover automatically.
+
+    This is the case that stranded existing databases after the squash: the old
+    chain left a head revision id (e.g. ``v6g7h8i9j0k1``) that no longer exists,
+    so ``upgrade head`` used to abort with "Can't locate revision". env.py now
+    clears the stale marker and replays the idempotent root instead.
+    """
+    db_path = tmp_path / "legacy.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+
+    # Build the schema, then forge a pre-squash stamp Alembic can't resolve.
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text("UPDATE alembic_version_m8flow SET version_num = 'v6g7h8i9j0k1'")
+        )
+
+    # Must not raise, and must land back on the real root — data preserved.
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        stamped = connection.execute(
+            sa.text("SELECT version_num FROM alembic_version_m8flow")
+        ).scalar()
+        seeded = connection.execute(
+            sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
+        ).scalar()
+    assert stamped == _ROOT_REVISION
+    assert seeded == "m8flow"
+
+
 @pytest.mark.skipif(
     not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
     reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
