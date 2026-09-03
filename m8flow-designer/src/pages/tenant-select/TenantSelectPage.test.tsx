@@ -34,28 +34,18 @@ describe('TenantSelectPage', () => {
     mockFetchOrganizationMemberships.mockResolvedValue([]);
   });
 
-  it('shows Sign In and Platform Admin Sign In when logged out and does not auto-redirect', () => {
+  it('auto-redirects straight to the shared-realm Keycloak sign-in when logged out', () => {
     mockIsLoggedIn.mockReturnValue(false);
+    mockGetOrganizationMemberships.mockReturnValue([]);
 
     render(<TenantSelectPage />);
 
-    expect(screen.getByTestId('shared-realm-sign-in-button')).toHaveTextContent('Sign In');
-    expect(screen.getByTestId('global-admin-sign-in-button')).toHaveTextContent(
-      'Platform Admin Sign In',
-    );
-    expect(mockLogin).not.toHaveBeenCalled();
-    expect(mockLoginAsPlatformAdmin).not.toHaveBeenCalled();
-    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByTestId('shared-realm-sign-in-button'));
+    expect(screen.getByTestId('sign-in-redirecting')).toBeInTheDocument();
     expect(mockClearSelectedTenantCookie).toHaveBeenCalled();
     expect(mockLogin).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByTestId('global-admin-sign-in-button'));
-    expect(mockLoginAsPlatformAdmin).toHaveBeenCalledTimes(1);
-    expect(mockLoginAsPlatformAdmin).toHaveBeenCalledWith({
-      redirectUrl: `${window.location.origin}/tenants`,
-    });
+    expect(mockLogin).toHaveBeenCalledWith({ redirectUrl: `${window.location.origin}/` });
+    expect(mockLoginAsPlatformAdmin).not.toHaveBeenCalled();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
   });
 
   it('blocks a logged-in user with zero organizations and logs out from Back to login', async () => {
@@ -110,7 +100,7 @@ describe('TenantSelectPage', () => {
     expect(screen.getByText('Finalizing tenant access')).toBeInTheDocument();
   });
 
-  it('lets a multi-organization user pick a tenant and loads missing display names', async () => {
+  it('lets a multi-organization user pick a tenant from a dropdown and confirm', async () => {
     mockIsLoggedIn.mockReturnValue(true);
     mockGetOrganizationMemberships.mockReturnValue([
       { alias: 'acme', id: 'tenant-acme', name: null },
@@ -123,6 +113,8 @@ describe('TenantSelectPage', () => {
 
     render(<TenantSelectPage />);
 
+    fireEvent.click(await screen.findByTestId('tenant-select-trigger'));
+
     await waitFor(() => {
       expect(screen.getByTestId('organization-option-acme')).toHaveTextContent('Acme Corp');
     });
@@ -130,6 +122,8 @@ describe('TenantSelectPage', () => {
     expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('organization-option-other'));
+    fireEvent.click(screen.getByTestId('tenant-select-confirm-button'));
+
     expect(mockFinalizeTenantLogin).toHaveBeenCalledWith({
       alias: 'other',
       id: 'tenant-other',

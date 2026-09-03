@@ -290,7 +290,8 @@ describe('TenantManagementPage', () => {
     fireEvent.click(screen.getByTestId('tenant-member-add-button'));
     expect(await screen.findByText('Rev')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('tenant-available-user-reviewer'));
-    fireEvent.click(screen.getByTestId('tenant-add-member-group-editors'));
+    fireEvent.click(screen.getByTestId('tenant-member-add-next'));
+    fireEvent.click(await screen.findByTestId('tenant-add-member-group-editors'));
     fireEvent.click(screen.getByTestId('tenant-member-add-submit'));
 
     await waitFor(() => {
@@ -299,6 +300,25 @@ describe('TenantManagementPage', () => {
         group_names: ['editors'],
       });
     });
+  });
+
+  it('does not submit the member add API when the dialog form submits implicitly on step 1', async () => {
+    // Regression test: step 1 has no type="submit" button, so a form with
+    // exactly one text field (the user search box) submits implicitly on
+    // Enter per the HTML spec. That must advance to step 2, not call the
+    // add-member API with no groups selected.
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-member-add-button'));
+    expect(await screen.findByText('Rev')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('tenant-available-user-reviewer'));
+
+    const searchInput = screen.getByPlaceholderText('Search available users…');
+    fireEvent.submit(searchInput.closest('form') as HTMLFormElement);
+
+    expect(await screen.findByTestId('tenant-add-member-group-editors')).toBeInTheDocument();
+    expect(mockAddTenantMember).not.toHaveBeenCalled();
   });
 
   it('removes a member after confirm', async () => {

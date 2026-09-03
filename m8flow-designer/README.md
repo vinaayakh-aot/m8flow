@@ -17,9 +17,12 @@ once the user authenticates, with `access_token` / `id_token` cookies set by
 the backend. `src/auth.ts` here follows that same pattern:
 
 - `login()` / `loginAsPlatformAdmin()` send the browser to
-  `${VITE_BACKEND_BASE_URL}/v1.0/login?...`. Logged-out visits land on the
-  designer tenant selection gate: **Sign In** (shared realm) and **Platform
-  Admin Sign In** (master realm). After shared-realm login, a user with one
+  `${VITE_BACKEND_BASE_URL}/v1.0/login?...`. Logged-out visits auto-redirect
+  straight to Keycloak's shared "m8flow" realm sign-in — the designer's
+  tenant-selection gate no longer renders a realm chooser. Platform admins
+  reach the master realm via the "Platform Admin Sign In" link Keycloak's own
+  login page renders (see `m8flow-backend/keycloak/themes/m8flow/login/`).
+  After shared-realm login, a user with one
   organization is finalized via `GET /v1.0/login?...&tenant=<alias>&tenant_finalization=1`;
   a user with many organizations picks one on the same page. The active tenant
   is the `m8flow_selected_tenant` cookie — not `localStorage`.

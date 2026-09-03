@@ -1,9 +1,22 @@
 <#import "template.ftl" as layout>
 <@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
     <#if section = "header">
-        ${msg("loginAccountTitle")}
+        <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
+        <#if isM8flowRealmLogin>${msg("loginHeadingShared")}<#else>${msg("loginHeadingMaster")}</#if>
     <#elseif section = "form">
-        <#assign isM8flowRealmLogin = url.loginAction?contains("/realms/m8flow/")>
+        <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
+        <#-- The master realm is a distinct, higher-privilege context reached only
+             via the "Platform Admin Sign In" link below (the frontend's old
+             two-button realm chooser was replaced by an auto-redirect straight to
+             this page — see m8flow-designer/m8flow-frontend TenantSelectPage), so
+             it gets its own heading and a subtly different accent color (see
+             template.ftl's m8f-org-realm/m8f-admin-realm html class) rather than
+             looking identical to the regular shared-realm sign-in. The heading
+             text alone ("Platform Admin Sign In") already says which page this
+             is, so there's no separate badge repeating it. -->
+        <p class="m8f-login-subtitle">
+            <#if isM8flowRealmLogin>${msg("loginSubtitleShared")}<#else>${msg("loginSubtitleMaster")}</#if>
+        </p>
         <div id="kc-form">
           <div id="kc-form-wrapper">
             <#if usernameHidden??>
@@ -82,10 +95,11 @@
                           <input tabindex="7" class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}" name="login" id="kc-login" type="submit" value="${msg("doLogIn")}"/>
                       </div>
                       <#if isM8flowRealmLogin>
-                          <div class="m8f-master-login-action">
+                          <div class="m8f-realm-switch-hint">
+                              <span>${msg("platformAdminHint")}</span>
                               <a
                                   id="m8f-master-login-button"
-                                  class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!} m8f-master-login-link"
+                                  class="m8f-master-login-link"
                                   data-master-realm-login-button
                                   data-master-realm="master"
                                   data-platform-admin-path="/tenants"
@@ -94,7 +108,8 @@
                               >${msg("platformAdminSignIn")}</a>
                           </div>
                       <#else>
-                          <div class="m8f-back-to-main-login-action">
+                          <div class="m8f-realm-switch-hint">
+                              <span>${msg("backToMainHint")}</span>
                               <a
                                   id="m8f-back-to-main-login-button"
                                   class="m8f-back-to-main-login-link"
@@ -123,7 +138,7 @@
             </div>
         </#if>
     <#elseif section = "socialProviders" >
-        <#assign isM8flowRealmLogin = url.loginAction?contains("/realms/m8flow/")>
+        <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
         <#assign visibleSocialProviders = social.providers![]>
         <#if isM8flowRealmLogin>
             <#-- The "master" IdP is an internal Grafana broker, not the app's

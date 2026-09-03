@@ -1,25 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fetchOrganizationMemberships } from '@/lib/api';
 import {
   clearSelectedTenantCookie,
   finalizeTenantLogin,
   getOrganizationMemberships,
-  GLOBAL_ADMIN_LANDING_PATH,
   isLoggedIn,
   login,
-  loginAsPlatformAdmin,
   logout,
   type OrganizationMembership,
 } from '@/lib/auth';
 
 function designerRootUrl(): string {
   return `${window.location.origin}/`;
-}
-
-function globalAdminLandingUrl(): string {
-  return `${window.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
 }
 
 function mergeOrganizationMemberships(
@@ -60,11 +55,33 @@ export default function TenantSelectPage() {
     () => !loggedIn || tokenOrganizations.length > 0,
   );
   const autoFinalizeStarted = useRef(false);
+  const autoSignInStarted = useRef(false);
+  // Seeded from tokenOrganizations (not left `null` until an effect runs) so
+  // <Select> is controlled from its very first render — starting `undefined`
+  // and flipping to a string once an effect sets it trips React's "Select is
+  // changing from uncontrolled to controlled" warning.
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(() =>
+    tokenOrganizations.length > 1 ? tokenOrganizations[0].alias : null,
+  );
 
   useEffect(() => {
     setOrganizations(tokenOrganizations);
     // tokenOrganizations is rebuilt each render; the JSON key is the actual dependency.
   }, [organizationMembershipsKey]);
+
+  useEffect(() => {
+    // Skip the realm-chooser page entirely: send logged-out visitors straight
+    // to Keycloak's shared "m8flow" realm login. Platform admins reach the
+    // master realm via the "Platform Admin Sign In" link Keycloak's own login
+    // page renders (see keycloak/themes/m8flow/login/login.ftl +
+    // masterRealmLogin.js), which reuses the redirect_url/state this call sets.
+    if (loggedIn || autoSignInStarted.current) {
+      return;
+    }
+    autoSignInStarted.current = true;
+    clearSelectedTenantCookie();
+    login({ redirectUrl: designerRootUrl() });
+  }, [loggedIn]);
 
   useEffect(() => {
     if (!loggedIn) {
@@ -114,40 +131,21 @@ export default function TenantSelectPage() {
     finalizeTenantLogin(organizations[0]);
   }, [loggedIn, directoryResolved, organizations]);
 
-  function handleSharedRealmSignIn() {
-    clearSelectedTenantCookie();
-    login({ redirectUrl: designerRootUrl() });
-  }
-
-  function handlePlatformAdminSignIn() {
-    clearSelectedTenantCookie();
-    loginAsPlatformAdmin({ redirectUrl: globalAdminLandingUrl() });
-  }
+  useEffect(() => {
+    if (!loggedIn || organizations.length < 2) {
+      return;
+    }
+    if (!selectedAlias || !organizations.some((organization) => organization.alias === selectedAlias)) {
+      setSelectedAlias(organizations[0].alias);
+    }
+  }, [loggedIn, organizations, selectedAlias]);
 
   if (!loggedIn) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-        <div className="w-full max-w-md space-y-6">
-          <div className="space-y-2">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in to M8Flow</h1>
-            <p className="text-sm text-muted-foreground">
-              Sign in with your organization account, or continue as a platform admin.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={handleSharedRealmSignIn} data-testid="shared-realm-sign-in-button">
-              Sign In
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handlePlatformAdminSignIn}
-              data-testid="global-admin-sign-in-button"
-            >
-              Platform Admin Sign In
-            </Button>
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground" data-testid="sign-in-redirecting">
+          Redirecting to sign in…
+        </p>
       </main>
     );
   }
@@ -197,6 +195,9 @@ export default function TenantSelectPage() {
     );
   }
 
+  const selectedOrganization =
+    organizations.find((organization) => organization.alias === selectedAlias) ?? organizations[0];
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
       <div className="w-full max-w-md space-y-6">
@@ -204,28 +205,38 @@ export default function TenantSelectPage() {
           <h1 className="font-display text-3xl font-semibold tracking-tight">Select a tenant</h1>
           <p className="text-sm text-muted-foreground">Choose the organization you want to work in.</p>
         </div>
-        <div className="flex flex-col gap-2">
-          {organizations.map((organization) => {
-            const displayName = organization.name || organization.alias;
-            const showAlias = displayName !== organization.alias;
-            return (
-              <Button
-                key={organization.alias}
-                type="button"
-                variant="outline"
-                className="h-auto justify-between gap-3 py-3 text-left whitespace-normal"
-                onClick={() => finalizeTenantLogin(organization)}
-                data-testid={`organization-option-${organization.alias}`}
-              >
-                <span className="min-w-0 flex-1 font-semibold">{displayName}</span>
-                {showAlias ? (
-                  <span className="max-w-[45%] shrink-0 text-xs font-normal text-muted-foreground">
-                    {organization.alias}
-                  </span>
-                ) : null}
-              </Button>
-            );
-          })}
+        <div className="space-y-4">
+          <Select value={selectedAlias ?? undefined} onValueChange={setSelectedAlias}>
+            <SelectTrigger data-testid="tenant-select-trigger">
+              <SelectValue placeholder="Select an organization" />
+            </SelectTrigger>
+            <SelectContent>
+              {organizations.map((organization) => {
+                const displayName = organization.name || organization.alias;
+                const showAlias = displayName !== organization.alias;
+                return (
+                  <SelectItem
+                    key={organization.alias}
+                    value={organization.alias}
+                    data-testid={`organization-option-${organization.alias}`}
+                  >
+                    {displayName}
+                    {showAlias ? ` (${organization.alias})` : ''}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              disabled={!selectedOrganization}
+              onClick={() => selectedOrganization && finalizeTenantLogin(selectedOrganization)}
+              data-testid="tenant-select-confirm-button"
+            >
+              Continue
+            </Button>
+          </div>
         </div>
       </div>
     </main>

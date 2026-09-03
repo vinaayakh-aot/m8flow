@@ -166,7 +166,7 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
    Go to [http://localhost:6841/](http://localhost:6841/) in your web browser.
 
 2. **Sign in as Global Admin:**  
-   Click on **"Platform admin sign in"**.  
+   You'll be sent straight to the shared-realm Keycloak sign-in page. Click **"Platform Admin Sign In"** on that page to switch to the master realm.
    <div align="center">
        <img src="./docs/images/access-m8flow-1.png" />
    </div>

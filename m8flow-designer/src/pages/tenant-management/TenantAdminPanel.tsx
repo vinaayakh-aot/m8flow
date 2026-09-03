@@ -80,13 +80,16 @@ export default function TenantAdminPanel({
   const [savingName, setSavingName] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [addStep, setAddStep] = useState<1 | 2>(1);
   const [availableUsers, setAvailableUsers] = useState<TenantAvailableUser[]>([]);
   const [availableSearch, setAvailableSearch] = useState('');
   const [availableOffset, setAvailableOffset] = useState(0);
   const [availableHasMore, setAvailableHasMore] = useState(false);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<TenantAvailableUser | null>(null);
   const [addGroupNames, setAddGroupNames] = useState<string[]>([]);
+  const [addGroupFilter, setAddGroupFilter] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -200,6 +203,13 @@ export default function TenantAdminPanel({
   }, [addOpen, tenantId, availableSearch, availableOffset]);
 
   const groupNames = useMemo(() => groups.map((group) => group.name), [groups]);
+  const filteredAddGroupNames = useMemo(() => {
+    const term = addGroupFilter.trim().toLowerCase();
+    if (!term) {
+      return groupNames;
+    }
+    return groupNames.filter((name) => name.toLowerCase().includes(term));
+  }, [groupNames, addGroupFilter]);
 
   function openRename() {
     setRenameName(tenantName);
@@ -235,10 +245,13 @@ export default function TenantAdminPanel({
 
   function openAdd() {
     setAddOpen(true);
+    setAddStep(1);
     setAvailableSearch('');
     setAvailableOffset(0);
     setSelectedUsername(null);
+    setSelectedUser(null);
     setAddGroupNames([]);
+    setAddGroupFilter('');
     setAddError(null);
   }
 
@@ -246,6 +259,22 @@ export default function TenantAdminPanel({
     setAddGroupNames((current) =>
       current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
     );
+  }
+
+  // Routes the dialog's single <form> submit (fired by clicking Next/Add, or
+  // implicitly by pressing Enter — step 1 has no submit button, and a form
+  // with no submit button but exactly one text field submits implicitly on
+  // Enter per the HTML spec, so this must stay step-aware rather than always
+  // calling the API).
+  function handleAddDialogSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (addStep === 1) {
+      if (selectedUsername) {
+        setAddStep(2);
+      }
+      return;
+    }
+    void handleAdd(event);
   }
 
   async function handleAdd(event: FormEvent) {
@@ -606,115 +635,179 @@ export default function TenantAdminPanel({
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-lg">
-          <form onSubmit={(event) => void handleAdd(event)}>
+          <form onSubmit={handleAddDialogSubmit}>
             <DialogHeader>
               <DialogTitle>Add Member</DialogTitle>
               <DialogDescription>
-                Pick an existing shared-realm user. This is not an email invitation.
+                {addStep === 1
+                  ? 'Step 1 of 2 — pick an existing shared-realm user. This is not an email invitation.'
+                  : 'Step 2 of 2 — choose which groups to add this member to.'}
               </DialogDescription>
             </DialogHeader>
-            <label className="mt-4 flex items-center gap-2 rounded-full border border-border px-3 py-2">
-              <Search className="size-4 text-muted-foreground" aria-hidden />
-              <Input
-                type="search"
-                value={availableSearch}
-                onChange={(event) => {
-                  setAvailableSearch(event.target.value);
-                  setAvailableOffset(0);
-                }}
-                placeholder="Search available users…"
-                className="h-auto border-none p-0 shadow-none focus-visible:ring-0"
-                aria-label="Search available users"
-              />
-            </label>
-            <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border">
-              {loadingAvailable ? (
-                <p className="px-3 py-3 text-sm text-muted-foreground">Loading users…</p>
-              ) : availableUsers.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-muted-foreground">No available users.</p>
-              ) : (
-                availableUsers.map((user) => (
-                  <label
-                    key={user.username}
-                    className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
-                    data-testid={`tenant-available-user-${user.username}`}
-                    onClick={() => setSelectedUsername(user.username)}
-                  >
-                    <input
-                      type="radio"
-                      name="available-user"
-                      checked={selectedUsername === user.username}
-                      onChange={() => setSelectedUsername(user.username)}
-                    />
-                    <span>
-                      <span className="font-medium">{user.display_name || user.username}</span>
-                      <span className="ml-2 text-muted-foreground">{user.username}</span>
-                    </span>
-                  </label>
-                ))
-              )}
-            </div>
-            {availableHasMore || availableOffset > 0 ? (
-              <div className="mt-2 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={availableOffset === 0}
-                  onClick={() =>
-                    setAvailableOffset((current) => Math.max(0, current - AVAILABLE_USERS_PAGE_SIZE))
-                  }
-                >
-                  Previous
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={!availableHasMore}
-                  onClick={() => setAvailableOffset((current) => current + AVAILABLE_USERS_PAGE_SIZE)}
-                >
-                  Next
-                </Button>
-              </div>
-            ) : null}
-            {groupNames.length > 0 ? (
-              <fieldset className="mt-4">
-                <legend className="text-sm font-medium">Optional groups</legend>
-                <div className="mt-2 flex flex-col gap-1">
-                  {groupNames.map((name) => (
-                    <label key={name} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={addGroupNames.includes(name)}
-                        onChange={() => toggleAddGroup(name)}
-                        data-testid={`tenant-add-member-group-${name}`}
-                      />
-                      {name}
-                    </label>
-                  ))}
+
+            {addStep === 1 ? (
+              <>
+                <label className="mt-4 flex items-center gap-2 rounded-full border border-border px-3 py-2">
+                  <Search className="size-4 text-muted-foreground" aria-hidden />
+                  <Input
+                    type="search"
+                    value={availableSearch}
+                    onChange={(event) => {
+                      setAvailableSearch(event.target.value);
+                      setAvailableOffset(0);
+                    }}
+                    placeholder="Search available users…"
+                    className="h-auto border-none p-0 shadow-none focus-visible:ring-0"
+                    aria-label="Search available users"
+                  />
+                </label>
+                <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border">
+                  {loadingAvailable ? (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">Loading users…</p>
+                  ) : availableUsers.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">No available users.</p>
+                  ) : (
+                    availableUsers.map((user) => (
+                      <label
+                        key={user.username}
+                        className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
+                        data-testid={`tenant-available-user-${user.username}`}
+                        onClick={() => {
+                          setSelectedUsername(user.username);
+                          setSelectedUser(user);
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="available-user"
+                          checked={selectedUsername === user.username}
+                          onChange={() => {
+                            setSelectedUsername(user.username);
+                            setSelectedUser(user);
+                          }}
+                        />
+                        <span>
+                          <span className="font-medium">{user.display_name || user.username}</span>
+                          <span className="ml-2 text-muted-foreground">{user.username}</span>
+                        </span>
+                      </label>
+                    ))
+                  )}
                 </div>
-              </fieldset>
-            ) : null}
+                {availableHasMore || availableOffset > 0 ? (
+                  <div className="mt-2 flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={availableOffset === 0}
+                      onClick={() =>
+                        setAvailableOffset((current) => Math.max(0, current - AVAILABLE_USERS_PAGE_SIZE))
+                      }
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!availableHasMore}
+                      onClick={() => setAvailableOffset((current) => current + AVAILABLE_USERS_PAGE_SIZE)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="mt-4 flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                  <span className="text-sm">
+                    <span className="font-medium">
+                      {selectedUser?.display_name || selectedUsername}
+                    </span>
+                    <span className="ml-2 text-muted-foreground">{selectedUsername}</span>
+                  </span>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setAddStep(1)}>
+                    Change
+                  </Button>
+                </div>
+                {groupNames.length > 0 ? (
+                  <fieldset className="mt-4">
+                    <legend className="text-sm font-medium">Groups (optional)</legend>
+                    {groupNames.length > 8 ? (
+                      <label className="mt-2 flex items-center gap-2 rounded-full border border-border px-3 py-2">
+                        <Search className="size-4 text-muted-foreground" aria-hidden />
+                        <Input
+                          type="search"
+                          value={addGroupFilter}
+                          onChange={(event) => setAddGroupFilter(event.target.value)}
+                          placeholder="Filter groups…"
+                          className="h-auto border-none p-0 shadow-none focus-visible:ring-0"
+                          aria-label="Filter groups"
+                        />
+                      </label>
+                    ) : null}
+                    <div className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
+                      {filteredAddGroupNames.length === 0 ? (
+                        <p className="px-1 py-1 text-sm text-muted-foreground">No matching groups.</p>
+                      ) : (
+                        filteredAddGroupNames.map((name) => (
+                          <label key={name} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
+                            <input
+                              type="checkbox"
+                              checked={addGroupNames.includes(name)}
+                              onChange={() => toggleAddGroup(name)}
+                              data-testid={`tenant-add-member-group-${name}`}
+                            />
+                            {name}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </fieldset>
+                ) : null}
+              </>
+            )}
+
             {addError ? (
               <p className="mt-3 text-sm text-destructive" role="alert">
                 {addError}
               </p>
             ) : null}
             <DialogFooter className="mt-4">
-              <Button type="button" variant="pill-cancel" size="pill" onClick={() => setAddOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="pill-dark"
-                size="pill"
-                disabled={!selectedUsername || adding}
-                data-testid="tenant-member-add-submit"
-              >
-                <Plus className="size-3.5" aria-hidden />
-                {adding ? 'Adding…' : 'Add'}
-              </Button>
+              {addStep === 1 ? (
+                <>
+                  <Button type="button" variant="pill-cancel" size="pill" onClick={() => setAddOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="pill-dark"
+                    size="pill"
+                    disabled={!selectedUsername}
+                    data-testid="tenant-member-add-next"
+                  >
+                    Next
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="pill-cancel" size="pill" onClick={() => setAddStep(1)}>
+                    Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="pill-dark"
+                    size="pill"
+                    disabled={!selectedUsername || adding}
+                    data-testid="tenant-member-add-submit"
+                  >
+                    <Plus className="size-3.5" aria-hidden />
+                    {adding ? 'Adding…' : 'Add'}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>
