@@ -3,6 +3,22 @@
 @import "shadcn/tailwind.css";
 @import "./aot-fonts.css";
 
+/* library/skeleton's shimmer placeholder — the mockup's `aot-shimmer`
+   keyframe, recreated verbatim (same timing/easing). No Tailwind v4
+   built-in equivalent exists (unlike `animate-spin`, used by
+   library/spinner instead), so this is referenced via Tailwind's
+   arbitrary-animation syntax (`animate-[shimmer_1.4s_ease-in-out_infinite]`)
+   rather than a JS-config keyframe — this project has no
+   tailwind.config.js (Tailwind v4 is CSS-first, see `@theme inline` below). */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

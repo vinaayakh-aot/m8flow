@@ -76,24 +76,38 @@ for (const row of rows) {
 }
 
 if (asJson) {
+  // Deliberately no `process.exit(0)` here (there used to be one). When
+  // stdout is a pipe rather than a TTY — exactly what `execFileSync`
+  // gives a caller like check-initial-load-budget.mjs — Node writes it
+  // asynchronously; a big single `console.log` (this repo's dist/ output
+  // is easily >8KB of JSON) can still be draining when `process.exit()`
+  // tears the process down, truncating the pipe mid-write. The reader
+  // then sees a cut-off JSON string and `JSON.parse` throws. Reproduced
+  // directly: calling this script via `execFileSync` failed consistently
+  // with "Unexpected end of JSON input" while piping the same command to
+  // a file in a shell always succeeded (the shell redirect doesn't hit
+  // this race the same way execFileSync's pipe does). Letting the script
+  // exit naturally — nothing else is scheduled once this branch finishes,
+  // so the process ends as soon as the event loop drains, after the write
+  // completes — fixes it without needing an artificial delay or a sync
+  // write API.
   console.log(JSON.stringify({ files: rows, totals, byExt: Object.fromEntries(byExt) }, null, 2));
-  process.exit(0);
-}
+} else {
+  console.log(`\nBundle size report — ${DIST_DIR}\n`);
+  console.log('Per-file (largest first):');
+  for (const row of rows) {
+    console.log(
+      `  ${row.file.padEnd(60)} raw ${fmtKb(row.raw).padStart(11)}  gzip ${fmtKb(row.gzip).padStart(11)}  brotli ${fmtKb(row.brotli).padStart(11)}`,
+    );
+  }
 
-console.log(`\nBundle size report — ${DIST_DIR}\n`);
-console.log('Per-file (largest first):');
-for (const row of rows) {
-  console.log(
-    `  ${row.file.padEnd(60)} raw ${fmtKb(row.raw).padStart(11)}  gzip ${fmtKb(row.gzip).padStart(11)}  brotli ${fmtKb(row.brotli).padStart(11)}`,
-  );
-}
+  console.log('\nBy extension:');
+  for (const [ext, bucket] of [...byExt.entries()].sort((a, b) => b[1].raw - a[1].raw)) {
+    console.log(
+      `  ${ext.padEnd(10)} (${bucket.count} file${bucket.count === 1 ? '' : 's'})  raw ${fmtKb(bucket.raw).padStart(11)}  gzip ${fmtKb(bucket.gzip).padStart(11)}  brotli ${fmtKb(bucket.brotli).padStart(11)}`,
+    );
+  }
 
-console.log('\nBy extension:');
-for (const [ext, bucket] of [...byExt.entries()].sort((a, b) => b[1].raw - a[1].raw)) {
-  console.log(
-    `  ${ext.padEnd(10)} (${bucket.count} file${bucket.count === 1 ? '' : 's'})  raw ${fmtKb(bucket.raw).padStart(11)}  gzip ${fmtKb(bucket.gzip).padStart(11)}  brotli ${fmtKb(bucket.brotli).padStart(11)}`,
-  );
+  console.log('\nTotals:');
+  console.log(`  raw ${fmtKb(totals.raw)}  gzip ${fmtKb(totals.gzip)}  brotli ${fmtKb(totals.brotli)}\n`);
 }
-
-console.log('\nTotals:');
-console.log(`  raw ${fmtKb(totals.raw)}  gzip ${fmtKb(totals.gzip)}  brotli ${fmtKb(totals.brotli)}\n`);

@@ -16,8 +16,21 @@
  * shape can be turned back into a plain task. Inactive MI toggles are hidden.
  */
 import inherits from 'inherits-browser';
-// @ts-expect-error missing type declarations
 import ReplaceMenuProvider from 'bpmn-js/lib/features/popup-menu/ReplaceMenuProvider';
+import type { PopupMenuTarget } from 'diagram-js/lib/features/popup-menu/PopupMenu';
+
+// bpmn-js@17.11.1 started shipping ReplaceMenuProvider.d.ts (the
+// `@ts-expect-error` this import used to need is gone). Its declared return
+// type for `getPopupMenuHeaderEntries` is `PopupMenuHeaderEntries`
+// (`PopupMenuHeaderEntry[]`, an array) — but the real implementation
+// (node_modules/bpmn-js/lib/features/popup-menu/ReplaceMenuProvider.js,
+// `getPopupMenuHeaderEntries`) builds and returns a plain object keyed by
+// action id (`{ 'toggle-parallel-mi': {...}, 'toggle-sequential-mi': {...} }`
+// via object spreads), never an array. That's an upstream `.d.ts`/runtime
+// mismatch in bpmn-js itself, confirmed by reading both files — not
+// something to "fix" by reshaping the working logic below to treat it as
+// an array. This local type documents the shape we actually receive.
+type HeaderEntriesRecord = Record<string, { active?: boolean }>;
 
 export const DROPPED_REPLACE_ACTIONS = [
   'replace-with-data-store-reference',
@@ -45,7 +58,12 @@ export function omitDroppedReplaceEntries<T extends Record<string, unknown>>(
   entries: T | undefined | null,
 ): T {
   if (!entries) {
-    return entries as T;
+    // Passes `null`/`undefined` straight through unchanged (see
+    // droppedConstructCreate.test.ts's "passes through empty/missing
+    // menus") — routed through `unknown` because TS considers a direct
+    // `null | undefined` -> `T` cast suspect (TS2352) even though this is
+    // intentionally just an identity return, not a real conversion.
+    return entries as unknown as T;
   }
   let changed = false;
   const next = { ...entries };
@@ -62,7 +80,8 @@ export function omitDroppedReplaceHeaderEntries<T extends Record<string, unknown
   entries: T | undefined | null,
 ): T {
   if (!entries) {
-    return entries as T;
+    // Same identity-passthrough reasoning as omitDroppedReplaceEntries above.
+    return entries as unknown as T;
   }
   let changed = false;
   const next = { ...entries };
@@ -76,7 +95,10 @@ export function omitDroppedReplaceHeaderEntries<T extends Record<string, unknown
   return changed ? next : entries;
 }
 
-export function DroppedConstructReplaceMenuProvider(this: any, ...args: unknown[]) {
+export function DroppedConstructReplaceMenuProvider(
+  this: any,
+  ...args: ConstructorParameters<typeof ReplaceMenuProvider>
+) {
   ReplaceMenuProvider.apply(this, args);
 }
 
@@ -86,7 +108,7 @@ inherits(DroppedConstructReplaceMenuProvider, ReplaceMenuProvider);
 
 DroppedConstructReplaceMenuProvider.prototype.getPopupMenuEntries = function getPopupMenuEntries(
   this: any,
-  target: unknown,
+  target: PopupMenuTarget,
 ) {
   return omitDroppedReplaceEntries(
     ReplaceMenuProvider.prototype.getPopupMenuEntries.call(this, target),
@@ -94,9 +116,15 @@ DroppedConstructReplaceMenuProvider.prototype.getPopupMenuEntries = function get
 };
 
 DroppedConstructReplaceMenuProvider.prototype.getPopupMenuHeaderEntries =
-  function getPopupMenuHeaderEntries(this: any, target: unknown) {
+  function getPopupMenuHeaderEntries(this: any, target: PopupMenuTarget) {
     return omitDroppedReplaceHeaderEntries(
-      ReplaceMenuProvider.prototype.getPopupMenuHeaderEntries.call(this, target),
+      // See the HeaderEntriesRecord comment at the top of this file: the
+      // real return value here is a plain dict, not the array bpmn-js's
+      // own .d.ts declares.
+      ReplaceMenuProvider.prototype.getPopupMenuHeaderEntries.call(
+        this,
+        target,
+      ) as unknown as HeaderEntriesRecord,
     );
   };
 

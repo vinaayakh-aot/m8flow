@@ -8,7 +8,7 @@ export default [
     ignores: ['dist/**', 'node_modules/**'],
   },
   {
-    files: ['src/**/*.{ts,tsx}', 'vite.config.ts'],
+    files: ['src/**/*.{ts,tsx}', 'vite.config.ts', '.storybook/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

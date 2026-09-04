@@ -106,7 +106,15 @@ function FileRow({
   tenantId?: string | null;
   canManage: boolean;
   onSetPrimary?: (fileName: string) => Promise<void>;
-  onDelete?: (fileName: string) => Promise<void>;
+  // Wider than `onSetPrimary`'s type on purpose: unlike `onSetPrimary`
+  // (which performs the API call directly), the caller below uses this to
+  // open the confirm-delete dialog synchronously — the actual async
+  // `onDeleteFile` call happens later, from that dialog's own confirm
+  // button, not from here. The call site already discards the return value
+  // (`void onDelete(file.name)`), so `void | Promise<void>` describes what
+  // callers actually do without forcing every caller to wrap a sync
+  // handler in an async no-op just to satisfy the type.
+  onDelete?: (fileName: string) => void | Promise<void>;
 }) {
   const kind = fileKind(file.name);
   const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at_in_seconds)}`;

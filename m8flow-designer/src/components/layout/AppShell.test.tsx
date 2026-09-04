@@ -8,7 +8,16 @@ import { AppShell } from './AppShell';
 const mockGetCurrentUser = vi.fn();
 const mockLogout = vi.fn();
 const mockIsSuperAdmin = vi.fn();
-const mockGetActiveTenantDisplayLabel = vi.fn((): string | null => null);
+// Explicit generic (rather than inferring the mock's type from its default
+// implementation) so the declared *type* accepts the optional arg both call
+// sites below actually pass (the forwarding shim a few lines down and the
+// `mockImplementation` override further below), without needing an unused
+// parameter in the default no-op implementation itself. The real
+// `getActiveTenantDisplayLabel` takes one `OrganizationMembership[]` param,
+// so a zero-arg mock signature was always a mismatch; `unknown` here
+// (rather than importing that type) keeps the fixtures below free to pass
+// loosely-shaped test data.
+const mockGetActiveTenantDisplayLabel = vi.fn<(extra?: unknown) => string | null>(() => null);
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
 
