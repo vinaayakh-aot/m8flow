@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { fetchHomeStats, type HomeStats } from '@/lib/api';
+import { Alert } from '@/components/library/alert/Alert';
 import { StatCard } from './StatCard';
 
 export type HomeStatsGridProps = {
@@ -90,11 +91,7 @@ export function HomeStatsGrid({
   }, [tenantId, statsOverride]);
 
   if (error) {
-    return (
-      <p className="text-sm text-destructive" role="alert">
-        {error}
-      </p>
-    );
+    return <Alert tone="error">{error}</Alert>;
   }
 
   const values = stats ?? {

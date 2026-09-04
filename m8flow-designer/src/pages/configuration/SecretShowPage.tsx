@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { Alert } from '@/components/library/alert/Alert';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +37,7 @@ function SecretShowBody() {
   const [draftValue, setDraftValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [updated, setUpdated] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (!keyFromRoute) {
@@ -70,9 +73,7 @@ function SecretShowBody() {
     if (!entry) {
       return;
     }
-    if (!window.confirm(`Delete secret “${entry.key}”? This cannot be undone.`)) {
-      return;
-    }
+    setConfirmingDelete(false);
     setError(null);
     try {
       await deleteSecret(entry.key, scopedTenantId);
@@ -118,15 +119,15 @@ function SecretShowBody() {
       </div>
 
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <Alert tone="error" className="mb-4">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       {updated ? (
-        <p className="mb-4 text-sm text-foreground" data-testid="secret-updated">
+        <Alert tone="success" className="mb-4" data-testid="secret-updated">
           Secret updated.
-        </p>
+        </Alert>
       ) : null}
 
       <Card variant="bordered" className="max-w-lg p-6">
@@ -160,7 +161,7 @@ function SecretShowBody() {
                 >
                   Edit value
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void handleDelete()}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingDelete(true)}>
                   Delete
                 </Button>
               </div>
@@ -208,6 +209,15 @@ function SecretShowBody() {
           <p className="text-sm text-muted-foreground">Secret not found.</p>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete secret?"
+        description={entry ? `Delete secret "${entry.key}"? This cannot be undone.` : undefined}
+        confirmLabel="Delete"
+        onConfirm={() => void handleDelete()}
+      />
     </main>
   );
 }

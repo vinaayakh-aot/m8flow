@@ -1,18 +1,21 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MailPlus, Pencil, Plus, Search, UserPlus, Users } from 'lucide-react';
+import { MailPlus, Pencil, Plus, UserPlus, Users } from 'lucide-react';
 
+import { Alert } from '@/components/library/alert/Alert';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Modal } from '@/components/library/modal/Modal';
+import { Pagination } from '@/components/library/pagination/Pagination';
+import { Pill } from '@/components/library/pill/Pill';
+import { RadioGroupField } from '@/components/library/radio-group-field/RadioGroupField';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
+import { WizardModal, type WizardModalStep } from '@/components/library/wizard-modal/WizardModal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   addTenantGroupMember,
@@ -49,6 +52,16 @@ export type TenantAdminPanelProps = {
   onTenantNameChange?: (name: string) => void;
 };
 
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 12). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 /**
  * Members, groups, role grants, and (for super-admin) invitation management
  * for one tenant. Super-admin reaches this from the tenant registry; a
@@ -80,7 +93,6 @@ export default function TenantAdminPanel({
   const [savingName, setSavingName] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [addStep, setAddStep] = useState<1 | 2>(1);
   const [availableUsers, setAvailableUsers] = useState<TenantAvailableUser[]>([]);
   const [availableSearch, setAvailableSearch] = useState('');
   const [availableOffset, setAvailableOffset] = useState(0);
@@ -245,7 +257,6 @@ export default function TenantAdminPanel({
 
   function openAdd() {
     setAddOpen(true);
-    setAddStep(1);
     setAvailableSearch('');
     setAvailableOffset(0);
     setSelectedUsername(null);
@@ -255,30 +266,18 @@ export default function TenantAdminPanel({
     setAddError(null);
   }
 
+  function selectAvailableUser(username: string) {
+    setSelectedUsername(username);
+    setSelectedUser(availableUsers.find((user) => user.username === username) ?? null);
+  }
+
   function toggleAddGroup(name: string) {
     setAddGroupNames((current) =>
       current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
     );
   }
 
-  // Routes the dialog's single <form> submit (fired by clicking Next/Add, or
-  // implicitly by pressing Enter — step 1 has no submit button, and a form
-  // with no submit button but exactly one text field submits implicitly on
-  // Enter per the HTML spec, so this must stay step-aware rather than always
-  // calling the API).
-  function handleAddDialogSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (addStep === 1) {
-      if (selectedUsername) {
-        setAddStep(2);
-      }
-      return;
-    }
-    void handleAdd(event);
-  }
-
-  async function handleAdd(event: FormEvent) {
-    event.preventDefault();
+  async function handleAdd() {
     if (!tenantId || !selectedUsername || adding) {
       return;
     }
@@ -359,25 +358,244 @@ export default function TenantAdminPanel({
     }
   }
 
+  const memberColumns: DataTableColumn<TenantMember>[] = [
+    {
+      key: 'member',
+      header: 'Member',
+      width: 'minmax(160px,1.4fr)',
+      render: (member) => (
+        <div>
+          <div className="font-medium text-foreground">
+            {member.display_name || member.username}
+          </div>
+          <div className="text-[13px] text-muted-foreground">{member.username}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'roles',
+      header: 'Effective roles',
+      width: 'minmax(140px,1.2fr)',
+      render: (member) => (
+        <div className="flex flex-wrap gap-1">
+          {member.roles.length === 0 ? (
+            <span className="text-muted-foreground">None</span>
+          ) : (
+            member.roles.map((role) => (
+              <Pill
+                key={role}
+                tone="info"
+                dot={false}
+                data-testid={`tenant-member-role-chip-${member.username}-${role}`}
+              >
+                {role}
+              </Pill>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'groups',
+      header: 'Groups',
+      width: 'minmax(140px,1.2fr)',
+      render: (member) => (
+        <div className="flex flex-wrap gap-1">
+          {member.groups.length === 0 ? (
+            <span className="text-muted-foreground">None</span>
+          ) : (
+            member.groups.map((group) => (
+              <Badge
+                key={group.id || group.name}
+                variant="outline"
+                data-testid={`tenant-member-group-chip-${member.username}-${group.name}`}
+              >
+                {group.name}
+              </Badge>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      className: 'text-right whitespace-nowrap',
+      width: 'minmax(180px,1fr)',
+      render: (member) => (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => openManageGroups(member)}
+            data-testid={`tenant-member-manage-groups-button-${member.username}`}
+          >
+            <Users className="size-3.5" aria-hidden />
+            Groups
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setMemberToRemove(member)}
+            data-testid={`tenant-member-remove-button-${member.username}`}
+          >
+            Remove
+          </Button>
+        </>
+      ),
+    },
+  ];
+
+  const addMemberSteps: WizardModalStep[] = [
+    {
+      title: 'Add Member',
+      canContinue: Boolean(selectedUsername),
+      continueTestId: 'tenant-member-add-next',
+      body: (
+        <>
+          <p className="mb-3 text-[13.5px] text-muted-foreground">
+            Pick an existing shared-realm user. This is not an email invitation.
+          </p>
+          <SearchBar
+            variant="sunken"
+            value={availableSearch}
+            onChange={(value) => {
+              setAvailableSearch(value);
+              setAvailableOffset(0);
+            }}
+            placeholder="Search available users…"
+            aria-label="Search available users"
+          />
+          {loadingAvailable ? (
+            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">Loading users…</p>
+          ) : availableUsers.length === 0 ? (
+            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">No available users.</p>
+          ) : (
+            <RadioGroupField
+              className="mt-3 flex max-h-72 flex-col items-stretch gap-0 overflow-y-auto rounded-lg border border-border"
+              optionClassName="w-full px-3 py-2 hover:bg-muted"
+              options={availableUsers.map((user) => ({
+                value: user.username,
+                label: (
+                  <span>
+                    <span className="font-medium">{user.display_name || user.username}</span>
+                    <span className="ml-2 text-muted-foreground">{user.username}</span>
+                  </span>
+                ),
+              }))}
+              value={selectedUsername ?? ''}
+              onValueChange={selectAvailableUser}
+            />
+          )}
+          {availableHasMore || availableOffset > 0 ? (
+            <div className="mt-2 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={availableOffset === 0}
+                onClick={() =>
+                  setAvailableOffset((current) => Math.max(0, current - AVAILABLE_USERS_PAGE_SIZE))
+                }
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!availableHasMore}
+                onClick={() => setAvailableOffset((current) => current + AVAILABLE_USERS_PAGE_SIZE)}
+              >
+                Next
+              </Button>
+            </div>
+          ) : null}
+          {addError ? (
+            <Alert tone="error" className="mt-3">
+              {addError}
+            </Alert>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      title: 'Add Member',
+      canContinue: Boolean(selectedUsername) && !adding,
+      continueLabel: (
+        <>
+          <Plus className="size-3.5" aria-hidden />
+          {adding ? 'Adding…' : 'Add'}
+        </>
+      ),
+      continueTestId: 'tenant-member-add-submit',
+      body: (
+        <>
+          <p className="mb-3 text-[13.5px] text-muted-foreground">
+            Choose which groups to add this member to.
+          </p>
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+            <span className="text-sm">
+              <span className="font-medium">{selectedUser?.display_name || selectedUsername}</span>
+              <span className="ml-2 text-muted-foreground">{selectedUsername}</span>
+            </span>
+          </div>
+          {groupNames.length > 0 ? (
+            <fieldset className="mt-4">
+              <legend className="text-sm font-medium">Groups (optional)</legend>
+              {groupNames.length > 8 ? (
+                <div className="mt-2">
+                  <SearchBar
+                    variant="sunken"
+                    value={addGroupFilter}
+                    onChange={setAddGroupFilter}
+                    placeholder="Filter groups…"
+                    aria-label="Filter groups"
+                  />
+                </div>
+              ) : null}
+              <div className="mt-2 flex max-h-72 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
+                {filteredAddGroupNames.length === 0 ? (
+                  <p className="px-1 py-1 text-sm text-muted-foreground">No matching groups.</p>
+                ) : (
+                  filteredAddGroupNames.map((name) => (
+                    <CheckboxField
+                      key={name}
+                      label={name}
+                      containerClassName="rounded px-1 py-1 hover:bg-muted"
+                      checked={addGroupNames.includes(name)}
+                      onCheckedChange={() => toggleAddGroup(name)}
+                      data-testid={`tenant-add-member-group-${name}`}
+                    />
+                  ))
+                )}
+              </div>
+            </fieldset>
+          ) : null}
+          {addError ? (
+            <Alert tone="error" className="mt-3">
+              {addError}
+            </Alert>
+          ) : null}
+        </>
+      ),
+    },
+  ];
+
   return (
     <main className="flex-1 px-11 py-10">
       {isSuperAdmin ? (
-        <nav
-          aria-label="Breadcrumb"
-          className="mb-4 flex min-w-0 flex-wrap items-center gap-1.5 text-[13.5px] text-muted-foreground"
-        >
-          <Link
-            to="/tenants"
-            className="shrink-0 font-semibold text-info no-underline hover:underline"
-            data-testid="tenant-management-back-to-tenants"
-          >
-            Tenants
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span className="min-w-0 truncate font-semibold text-foreground" aria-current="page">
-            {tenantName || tenantId}
-          </span>
-        </nav>
+        <Breadcrumbs
+          className="mb-4 text-[13.5px] text-muted-foreground"
+          LinkComponent={RouterBreadcrumbLink}
+          linkClassName="shrink-0 text-info font-semibold"
+          items={[
+            { label: 'Tenants', href: '/tenants' },
+            { label: tenantName || tenantId },
+          ]}
+        />
       ) : null}
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -407,9 +625,9 @@ export default function TenantAdminPanel({
       </div>
 
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <Alert tone="error" className="mb-4">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       <Card variant="bordered" className="overflow-hidden">
@@ -417,18 +635,14 @@ export default function TenantAdminPanel({
           className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
           data-testid="tenant-members-toolbar"
         >
-          <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2">
-            <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-            <Input
-              type="search"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search tenant members…"
-              className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] shadow-none outline-none focus-visible:ring-0"
-              data-testid="tenant-member-search-input"
-              aria-label="Search tenant members"
-            />
-          </label>
+          <SearchBar
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Search tenant members…"
+            aria-label="Search tenant members"
+            data-testid="tenant-member-search-input"
+            className="min-w-0 flex-1"
+          />
           <div className="flex flex-wrap items-center gap-2">
             {isSuperAdmin ? (
               <Button
@@ -462,113 +676,20 @@ export default function TenantAdminPanel({
             {search ? 'No members match this search.' : 'No members in this tenant yet.'}
           </p>
         ) : (
-          <table className="w-full text-left text-sm" data-testid="tenant-member-table-container">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">Member</th>
-                <th className="px-[22px] py-3 font-medium">Effective roles</th>
-                <th className="px-[22px] py-3 font-medium">Groups</th>
-                <th className="px-[22px] py-3 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr key={member.username} className="border-b border-border last:border-b-0">
-                  <td className="px-[22px] py-3">
-                    <div className="font-medium text-foreground">
-                      {member.display_name || member.username}
-                    </div>
-                    <div className="text-[13px] text-muted-foreground">{member.username}</div>
-                  </td>
-                  <td className="px-[22px] py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {member.roles.length === 0 ? (
-                        <span className="text-muted-foreground">None</span>
-                      ) : (
-                        member.roles.map((role) => (
-                          <Badge
-                            key={role}
-                            variant="info"
-                            data-testid={`tenant-member-role-chip-${member.username}-${role}`}
-                          >
-                            {role}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-[22px] py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {member.groups.length === 0 ? (
-                        <span className="text-muted-foreground">None</span>
-                      ) : (
-                        member.groups.map((group) => (
-                          <Badge
-                            key={group.id || group.name}
-                            variant="outline"
-                            data-testid={`tenant-member-group-chip-${member.username}-${group.name}`}
-                          >
-                            {group.name}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-[22px] py-3 text-right whitespace-nowrap">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openManageGroups(member)}
-                      data-testid={`tenant-member-manage-groups-button-${member.username}`}
-                    >
-                      <Users className="size-3.5" aria-hidden />
-                      Groups
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setMemberToRemove(member)}
-                      data-testid={`tenant-member-remove-button-${member.username}`}
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={memberColumns}
+            rows={members}
+            getRowKey={(member) => member.username}
+            data-testid="tenant-member-table-container"
+          />
         )}
 
-        <div className="flex items-center justify-between gap-3 px-[22px] py-3 text-sm">
-          <span data-testid="tenant-member-page-indicator" className="text-muted-foreground">
-            Page {page + 1}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              disabled={page === 0}
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-              data-testid="tenant-member-previous-page-button"
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              disabled={!hasMore}
-              onClick={() => setPage((current) => current + 1)}
-              data-testid="tenant-member-next-page-button"
-            >
-              Next
-            </Button>
-          </div>
+        <div className="px-[22px] py-3">
+          <Pagination
+            page={page + 1}
+            onPageChange={(nextPage) => setPage(nextPage - 1)}
+            hasMore={hasMore}
+          />
         </div>
       </Card>
 
@@ -589,293 +710,79 @@ export default function TenantAdminPanel({
         />
       ) : null}
 
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={(event) => void handleRename(event)}>
-            <DialogHeader>
-              <DialogTitle>Edit Tenant</DialogTitle>
-              <DialogDescription>
-                The alias stays the same. Only the display name changes.
-              </DialogDescription>
-            </DialogHeader>
-            <label className="mt-4 block text-sm font-medium text-foreground">
-              Tenant name
-              <Input
-                className="mt-1.5"
-                value={renameName}
-                onChange={(event) => setRenameName(event.target.value)}
-                autoComplete="off"
-                maxLength={MAX_TENANT_NAME_LENGTH}
-                data-testid="tenant-name"
-                required
-              />
-            </label>
-            {renameError ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {renameError}
-              </p>
-            ) : null}
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="pill-cancel" size="pill" onClick={() => setRenameOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="pill-dark"
-                size="pill"
-                disabled={!renameName.trim() || savingName}
-                data-testid="tenant-save"
-              >
-                {savingName ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <form onSubmit={handleAddDialogSubmit}>
-            <DialogHeader>
-              <DialogTitle>Add Member</DialogTitle>
-              <DialogDescription>
-                {addStep === 1
-                  ? 'Step 1 of 2 — pick an existing shared-realm user. This is not an email invitation.'
-                  : 'Step 2 of 2 — choose which groups to add this member to.'}
-              </DialogDescription>
-            </DialogHeader>
-
-            {addStep === 1 ? (
-              <>
-                <label className="mt-4 flex items-center gap-2 rounded-full border border-border px-3 py-2">
-                  <Search className="size-4 text-muted-foreground" aria-hidden />
-                  <Input
-                    type="search"
-                    value={availableSearch}
-                    onChange={(event) => {
-                      setAvailableSearch(event.target.value);
-                      setAvailableOffset(0);
-                    }}
-                    placeholder="Search available users…"
-                    className="h-auto border-none p-0 shadow-none focus-visible:ring-0"
-                    aria-label="Search available users"
-                  />
-                </label>
-                <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border">
-                  {loadingAvailable ? (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">Loading users…</p>
-                  ) : availableUsers.length === 0 ? (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">No available users.</p>
-                  ) : (
-                    availableUsers.map((user) => (
-                      <label
-                        key={user.username}
-                        className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
-                        data-testid={`tenant-available-user-${user.username}`}
-                        onClick={() => {
-                          setSelectedUsername(user.username);
-                          setSelectedUser(user);
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="available-user"
-                          checked={selectedUsername === user.username}
-                          onChange={() => {
-                            setSelectedUsername(user.username);
-                            setSelectedUser(user);
-                          }}
-                        />
-                        <span>
-                          <span className="font-medium">{user.display_name || user.username}</span>
-                          <span className="ml-2 text-muted-foreground">{user.username}</span>
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-                {availableHasMore || availableOffset > 0 ? (
-                  <div className="mt-2 flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={availableOffset === 0}
-                      onClick={() =>
-                        setAvailableOffset((current) => Math.max(0, current - AVAILABLE_USERS_PAGE_SIZE))
-                      }
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={!availableHasMore}
-                      onClick={() => setAvailableOffset((current) => current + AVAILABLE_USERS_PAGE_SIZE)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <div className="mt-4 flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                  <span className="text-sm">
-                    <span className="font-medium">
-                      {selectedUser?.display_name || selectedUsername}
-                    </span>
-                    <span className="ml-2 text-muted-foreground">{selectedUsername}</span>
-                  </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setAddStep(1)}>
-                    Change
-                  </Button>
-                </div>
-                {groupNames.length > 0 ? (
-                  <fieldset className="mt-4">
-                    <legend className="text-sm font-medium">Groups (optional)</legend>
-                    {groupNames.length > 8 ? (
-                      <label className="mt-2 flex items-center gap-2 rounded-full border border-border px-3 py-2">
-                        <Search className="size-4 text-muted-foreground" aria-hidden />
-                        <Input
-                          type="search"
-                          value={addGroupFilter}
-                          onChange={(event) => setAddGroupFilter(event.target.value)}
-                          placeholder="Filter groups…"
-                          className="h-auto border-none p-0 shadow-none focus-visible:ring-0"
-                          aria-label="Filter groups"
-                        />
-                      </label>
-                    ) : null}
-                    <div className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
-                      {filteredAddGroupNames.length === 0 ? (
-                        <p className="px-1 py-1 text-sm text-muted-foreground">No matching groups.</p>
-                      ) : (
-                        filteredAddGroupNames.map((name) => (
-                          <label key={name} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
-                            <input
-                              type="checkbox"
-                              checked={addGroupNames.includes(name)}
-                              onChange={() => toggleAddGroup(name)}
-                              data-testid={`tenant-add-member-group-${name}`}
-                            />
-                            {name}
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </fieldset>
-                ) : null}
-              </>
-            )}
-
-            {addError ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {addError}
-              </p>
-            ) : null}
-            <DialogFooter className="mt-4">
-              {addStep === 1 ? (
-                <>
-                  <Button type="button" variant="pill-cancel" size="pill" onClick={() => setAddOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="pill-dark"
-                    size="pill"
-                    disabled={!selectedUsername}
-                    data-testid="tenant-member-add-next"
-                  >
-                    Next
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button type="button" variant="pill-cancel" size="pill" onClick={() => setAddStep(1)}>
-                    Back
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="pill-dark"
-                    size="pill"
-                    disabled={!selectedUsername || adding}
-                    data-testid="tenant-member-add-submit"
-                  >
-                    <Plus className="size-3.5" aria-hidden />
-                    {adding ? 'Adding…' : 'Add'}
-                  </Button>
-                </>
-              )}
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(memberToRemove)} onOpenChange={(open) => !open && setMemberToRemove(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove member</DialogTitle>
-            <DialogDescription>
-              {memberToRemove
-                ? `Remove ${memberToRemove.display_name || memberToRemove.username} from this tenant? They will lose group memberships here.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="pill-cancel" size="pill" onClick={() => setMemberToRemove(null)}>
+      <Modal
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        title="Edit Tenant"
+        footer={
+          <>
+            <Button type="button" variant="pill-cancel" size="pill" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
             <Button
-              type="button"
+              type="submit"
+              form="tenant-rename-form"
               variant="pill-dark"
               size="pill"
-              disabled={removing}
-              onClick={() => void handleRemove()}
-              data-testid="tenant-member-remove-confirm-button"
+              disabled={!renameName.trim() || savingName}
+              data-testid="tenant-save"
             >
-              {removing ? 'Removing…' : 'Remove'}
+              {savingName ? 'Saving…' : 'Save'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <form id="tenant-rename-form" onSubmit={(event) => void handleRename(event)}>
+          <p className="text-[13.5px] text-muted-foreground">
+            The alias stays the same. Only the display name changes.
+          </p>
+          <label className="mt-4 block text-sm font-medium text-foreground">
+            Tenant name
+            <Input
+              className="mt-1.5"
+              value={renameName}
+              onChange={(event) => setRenameName(event.target.value)}
+              autoComplete="off"
+              maxLength={MAX_TENANT_NAME_LENGTH}
+              data-testid="tenant-name"
+              required
+            />
+          </label>
+          {renameError ? (
+            <Alert tone="error" className="mt-3">
+              {renameError}
+            </Alert>
+          ) : null}
+        </form>
+      </Modal>
 
-      <Dialog
+      <WizardModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onComplete={() => void handleAdd()}
+        steps={addMemberSteps}
+        size="md"
+      />
+
+      <ConfirmDialog
+        open={Boolean(memberToRemove)}
+        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        title="Remove member"
+        description={
+          memberToRemove
+            ? `Remove ${memberToRemove.display_name || memberToRemove.username} from this tenant? They will lose group memberships here.`
+            : undefined
+        }
+        confirmLabel={removing ? 'Removing…' : 'Remove'}
+        onConfirm={() => void handleRemove()}
+      />
+
+      <Modal
         open={Boolean(memberForGroups)}
         onOpenChange={(open) => !open && setMemberForGroups(null)}
-      >
-        <DialogContent className="sm:max-w-md" data-testid="tenant-member-groups-dialog">
-          <DialogHeader>
-            <DialogTitle>Member groups</DialogTitle>
-            <DialogDescription>
-              Effective roles come from these groups. There is no separate member-role
-              editor.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-3 flex flex-col gap-1">
-            {groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No groups in this tenant yet.</p>
-            ) : (
-              groups.map((group) => (
-                <label key={group.id || group.name} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={groupSelection.has(group.name)}
-                    onChange={() => toggleGroupSelection(group.name)}
-                    data-testid={`tenant-member-group-toggle-${group.name}`}
-                  />
-                  {group.name}
-                </label>
-              ))
-            )}
-          </div>
-          {groupsError ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
-              {groupsError}
-            </p>
-          ) : null}
-          <DialogFooter className="mt-4">
+        title="Member groups"
+        footer={
+          <>
             <Button
               type="button"
               variant="pill-cancel"
@@ -894,9 +801,34 @@ export default function TenantAdminPanel({
             >
               {savingGroups ? 'Saving…' : 'Save'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <p className="text-[13.5px] text-muted-foreground">
+          Effective roles come from these groups. There is no separate member-role
+          editor.
+        </p>
+        <div className="mt-3 flex flex-col gap-1">
+          {groups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No groups in this tenant yet.</p>
+          ) : (
+            groups.map((group) => (
+              <CheckboxField
+                key={group.id || group.name}
+                label={group.name}
+                checked={groupSelection.has(group.name)}
+                onCheckedChange={() => toggleGroupSelection(group.name)}
+                data-testid={`tenant-member-group-toggle-${group.name}`}
+              />
+            ))
+          )}
+        </div>
+        {groupsError ? (
+          <Alert tone="error" className="mt-3">
+            {groupsError}
+          </Alert>
+        ) : null}
+      </Modal>
     </main>
   );
 }

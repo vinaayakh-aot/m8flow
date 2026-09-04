@@ -1,17 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { MailPlus, RotateCw, Trash2 } from 'lucide-react';
 
+import { Alert } from '@/components/library/alert/Alert';
+import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Modal } from '@/components/library/modal/Modal';
+import { Pill, type PillProps } from '@/components/library/pill/Pill';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   createTenantInvitation,
@@ -33,9 +30,7 @@ type InvitationManagementSectionProps = {
   onInviteOpenChange: (open: boolean) => void;
 };
 
-function statusVariant(
-  status: TenantInvitation['status'],
-): 'warning' | 'success' | 'outline' | 'destructive' {
+function statusTone(status: TenantInvitation['status']): NonNullable<PillProps['tone']> {
   if (status === 'PENDING') {
     return 'warning';
   }
@@ -43,9 +38,9 @@ function statusVariant(
     return 'success';
   }
   if (status === 'EXPIRED') {
-    return 'destructive';
+    return 'error';
   }
-  return 'outline';
+  return 'muted';
 }
 
 function formatExpiry(seconds: number): string {
@@ -182,6 +177,86 @@ export default function InvitationManagementSection({
     }
   }
 
+  const columns: DataTableColumn<TenantInvitation>[] = [
+    {
+      key: 'email',
+      header: 'Email',
+      width: 'minmax(160px,1.6fr)',
+      render: (invitation) => invitation.email,
+    },
+    {
+      key: 'roles',
+      header: 'Roles',
+      width: 'minmax(120px,1fr)',
+      render: (invitation) => (
+        <div className="flex flex-wrap gap-1">
+          {invitation.roles.map((role) => (
+            <Badge key={role} variant="outline">
+              {role}
+            </Badge>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: 'minmax(100px,120px)',
+      render: (invitation) => (
+        <Pill tone={statusTone(invitation.status)} dot={false}>
+          {invitation.status}
+        </Pill>
+      ),
+    },
+    {
+      key: 'expires',
+      header: 'Expires',
+      width: 'minmax(140px,1fr)',
+      render: (invitation) => (
+        <span className="text-muted-foreground">
+          {formatExpiry(invitation.expires_at_in_seconds)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      className: 'text-right whitespace-nowrap',
+      width: 'minmax(160px,1fr)',
+      render: (invitation) => {
+        const isPending = invitation.status === 'PENDING';
+        const canResend = invitation.status === 'PENDING' || invitation.status === 'EXPIRED';
+        const isMutating = mutatingId === invitation.id;
+        return (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!canResend || isMutating}
+              onClick={() => void handleResend(invitation)}
+              data-testid={`invitation-resend-${invitation.id}`}
+            >
+              <RotateCw className="size-3.5" aria-hidden />
+              Resend
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!isPending || isMutating}
+              onClick={() => void handleRevoke(invitation)}
+              data-testid={`invitation-revoke-${invitation.id}`}
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+              Revoke
+            </Button>
+          </>
+        );
+      },
+    },
+  ];
+
   return (
     <>
       <Card variant="bordered" className="mt-6 overflow-hidden" data-testid="pending-invitations-panel">
@@ -190,9 +265,9 @@ export default function InvitationManagementSection({
         </div>
 
         {error ? (
-          <p className="px-[22px] pt-4 text-sm text-destructive" role="alert">
+          <Alert tone="error" className="mx-[22px] mt-4">
             {error}
-          </p>
+          </Alert>
         ) : null}
 
         {loading ? (
@@ -200,75 +275,11 @@ export default function InvitationManagementSection({
         ) : invitations.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">No invitations yet.</p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">Email</th>
-                <th className="px-[22px] py-3 font-medium">Roles</th>
-                <th className="px-[22px] py-3 font-medium">Status</th>
-                <th className="px-[22px] py-3 font-medium">Expires</th>
-                <th className="px-[22px] py-3 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {invitations.map((invitation) => {
-                const isPending = invitation.status === 'PENDING';
-                const canResend =
-                  invitation.status === 'PENDING' || invitation.status === 'EXPIRED';
-                const isMutating = mutatingId === invitation.id;
-                return (
-                  <tr key={invitation.id} className="border-b border-border last:border-b-0">
-                    <td className="px-[22px] py-3">{invitation.email}</td>
-                    <td className="px-[22px] py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {invitation.roles.map((role) => (
-                          <Badge key={role} variant="outline">
-                            {role}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-[22px] py-3">
-                      <Badge variant={statusVariant(invitation.status)}>{invitation.status}</Badge>
-                    </td>
-                    <td className="px-[22px] py-3 text-muted-foreground">
-                      {formatExpiry(invitation.expires_at_in_seconds)}
-                    </td>
-                    <td className="px-[22px] py-3 text-right whitespace-nowrap">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canResend || isMutating}
-                        onClick={() => void handleResend(invitation)}
-                        data-testid={`invitation-resend-${invitation.id}`}
-                      >
-                        <RotateCw className="size-3.5" aria-hidden />
-                        Resend
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={!isPending || isMutating}
-                        onClick={() => void handleRevoke(invitation)}
-                        data-testid={`invitation-revoke-${invitation.id}`}
-                      >
-                        <Trash2 className="size-3.5" aria-hidden />
-                        Revoke
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable columns={columns} rows={invitations} getRowKey={(invitation) => invitation.id} />
         )}
       </Card>
 
-      <Dialog
+      <Modal
         open={inviteOpen}
         onOpenChange={(open) => {
           if (!open) {
@@ -277,102 +288,97 @@ export default function InvitationManagementSection({
             onInviteOpenChange(true);
           }
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          {devLink ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Invitation created</DialogTitle>
-                <DialogDescription>
-                  Email is not configured, so share this single-use link. It uses the Accept
-                  invitation path, not this admin panel.
-                </DialogDescription>
-              </DialogHeader>
-              <Input className="mt-4" value={devLink} readOnly />
-              <DialogFooter className="mt-4">
-                <Button type="button" variant="pill-dark" size="pill" onClick={closeInvite}>
-                  Done
-                </Button>
-              </DialogFooter>
-            </>
+        title={devLink ? 'Invitation created' : 'Invite User'}
+        footer={
+          devLink ? (
+            <Button type="button" variant="pill-dark" size="pill" onClick={closeInvite}>
+              Done
+            </Button>
           ) : (
-            <form onSubmit={(event) => void handleCreate(event)}>
-              <DialogHeader>
-                <DialogTitle>Invite User</DialogTitle>
-                <DialogDescription>
-                  Email a new person to join this tenant. If they already have an account, use Add
-                  Member instead.
-                </DialogDescription>
-              </DialogHeader>
-              <label className="mt-4 block text-sm font-medium text-foreground">
-                Email address
-                <Input
-                  className="mt-1.5"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  autoComplete="off"
-                  data-testid="invite-user-email-input"
-                  required
-                />
-              </label>
-              <fieldset className="mt-4">
-                <legend className="text-sm font-medium">Roles</legend>
-                <div className="mt-2 flex flex-col gap-1">
-                  {TENANT_ROLES.map((role) => (
-                    <label key={role} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selectedRoles.includes(role)}
-                        onChange={() => toggleRole(role)}
-                        data-testid={`invite-user-role-${role}`}
-                      />
-                      {role}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <label className="mt-4 block text-sm font-medium text-foreground">
-                Invitation validity
-                <select
-                  className="mt-1.5 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-                  value={validityDays}
-                  onChange={(event) =>
-                    setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
-                  }
-                  data-testid="invite-user-validity"
-                >
-                  {VALIDITY_OPTIONS.map((days) => (
-                    <option key={days} value={days}>
-                      {days === 7 ? '7 days (Default)' : `${days} days`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {inviteError ? (
-                <p className="mt-3 text-sm text-destructive" role="alert">
-                  {inviteError}
-                </p>
-              ) : null}
-              <DialogFooter className="mt-4">
-                <Button type="button" variant="pill-cancel" size="pill" onClick={closeInvite}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="pill-dark"
-                  size="pill"
-                  disabled={!canSubmit}
-                  data-testid="invite-user-submit"
-                >
-                  <MailPlus className="size-3.5" aria-hidden />
-                  {sending ? 'Sending…' : 'Send Invitation'}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+            <>
+              <Button type="button" variant="pill-cancel" size="pill" onClick={closeInvite}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="invite-user-form"
+                variant="pill-dark"
+                size="pill"
+                disabled={!canSubmit}
+                data-testid="invite-user-submit"
+              >
+                <MailPlus className="size-3.5" aria-hidden />
+                {sending ? 'Sending…' : 'Send Invitation'}
+              </Button>
+            </>
+          )
+        }
+      >
+        {devLink ? (
+          <>
+            <p className="text-[13.5px] text-muted-foreground">
+              Email is not configured, so share this single-use link. It uses the Accept
+              invitation path, not this admin panel.
+            </p>
+            <Input className="mt-4" value={devLink} readOnly />
+          </>
+        ) : (
+          <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>
+            <p className="text-[13.5px] text-muted-foreground">
+              Email a new person to join this tenant. If they already have an account, use Add
+              Member instead.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-foreground">
+              Email address
+              <Input
+                className="mt-1.5"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="off"
+                data-testid="invite-user-email-input"
+                required
+              />
+            </label>
+            <fieldset className="mt-4">
+              <legend className="text-sm font-medium">Roles</legend>
+              <div className="mt-2 flex flex-col gap-1">
+                {TENANT_ROLES.map((role) => (
+                  <CheckboxField
+                    key={role}
+                    label={role}
+                    checked={selectedRoles.includes(role)}
+                    onCheckedChange={() => toggleRole(role)}
+                    data-testid={`invite-user-role-${role}`}
+                  />
+                ))}
+              </div>
+            </fieldset>
+            <label className="mt-4 block text-sm font-medium text-foreground">
+              Invitation validity
+              <select
+                className="mt-1.5 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+                value={validityDays}
+                onChange={(event) =>
+                  setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
+                }
+                data-testid="invite-user-validity"
+              >
+                {VALIDITY_OPTIONS.map((days) => (
+                  <option key={days} value={days}>
+                    {days === 7 ? '7 days (Default)' : `${days} days`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {inviteError ? (
+              <Alert tone="error" className="mt-3">
+                {inviteError}
+              </Alert>
+            ) : null}
+          </form>
+        )}
+      </Modal>
     </>
   );
 }

@@ -1,12 +1,7 @@
+import { Alert } from '@/components/library/alert/Alert';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
 export function UnsavedChangesDialog({
   open,
@@ -18,24 +13,15 @@ export function UnsavedChangesDialog({
   onLeave: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onStay(); }}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Unsaved changes</DialogTitle>
-          <DialogDescription>
-            Leave this file? Unsaved edits will be lost.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onStay}>
-            Stay
-          </Button>
-          <Button type="button" variant="destructive" onClick={onLeave}>
-            Leave
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => { if (!next) onStay(); }}
+      title="Unsaved changes"
+      description="Leave this file? Unsaved edits will be lost."
+      cancelLabel="Stay"
+      confirmLabel="Leave"
+      onConfirm={onLeave}
+    />
   );
 }
 
@@ -53,24 +39,15 @@ export function DeleteFileDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete file</DialogTitle>
-          <DialogDescription>
-            Delete {fileName}? This cannot be undone. You will return to the process-model overview.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button type="button" variant="destructive" onClick={onConfirm} disabled={submitting}>
-            {submitting ? 'Deleting…' : 'Delete'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}
+      title="Delete file"
+      description={`Delete ${fileName}? This cannot be undone. You will return to the process-model overview.`}
+      confirmLabel={submitting ? 'Deleting…' : 'Delete'}
+      pending={submitting}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -88,27 +65,25 @@ export function ViewXmlDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>View XML</DialogTitle>
-          <DialogDescription>{fileName}</DialogDescription>
-        </DialogHeader>
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : (
-          <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">
-            {xml ?? 'Loading…'}
-          </pre>
-        )}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="View XML"
+      size="md"
+      footer={
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <p className="-mt-1 mb-3 text-sm text-muted-foreground">{fileName}</p>
+      {error ? (
+        <Alert tone="error">{error}</Alert>
+      ) : (
+        <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">
+          {xml ?? 'Loading…'}
+        </pre>
+      )}
+    </Modal>
   );
 }

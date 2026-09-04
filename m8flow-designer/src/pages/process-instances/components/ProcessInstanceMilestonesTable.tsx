@@ -4,8 +4,8 @@ import {
   fetchProcessInstanceMilestones,
   type ProcessInstanceMilestoneRow,
 } from '@/lib/processInstancesApi';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 
 export type ProcessInstanceMilestonesTableProps = {
   instanceId: number;
@@ -13,9 +13,6 @@ export type ProcessInstanceMilestonesTableProps = {
   /** When set, skip the network fetch (page-shell prototype / tests). */
   milestones?: ProcessInstanceMilestoneRow[] | null;
 };
-
-const GRID_COLS = 'grid-cols-[minmax(120px,1.4fr)_minmax(200px,2.6fr)_minmax(0,180px)]';
-const GRID_MIN_WIDTH = 'min-w-[700px]';
 
 function cell(value: string | null | undefined): string {
   const trimmed = value?.trim();
@@ -79,21 +76,38 @@ export function ProcessInstanceMilestonesTable({
     };
   }, [instanceId, tenantId, milestonesOverride]);
 
+  const columns: DataTableColumn<ProcessInstanceMilestoneRow>[] = [
+    {
+      key: 'milestone',
+      header: 'Milestone',
+      width: 'minmax(120px,1.4fr)',
+      className: 'text-[14px] font-semibold text-foreground',
+      render: (row) => row.milestone,
+    },
+    {
+      key: 'bpmn_process',
+      header: 'Bpmn process',
+      width: 'minmax(200px,2.6fr)',
+      className: 'min-w-0 break-all font-mono text-[12.5px] text-muted-foreground',
+      render: (row) => cell(row.bpmn_process),
+    },
+    {
+      key: 'timestamp',
+      header: 'Timestamp',
+      width: 'minmax(0,180px)',
+      render: (row) => (
+        <time
+          className="font-mono text-[12.5px] text-foreground"
+          dateTime={row.timestamp != null ? new Date(row.timestamp * 1000).toISOString() : undefined}
+        >
+          {formatMilestoneTimestamp(row.timestamp)}
+        </time>
+      ),
+    },
+  ];
+
   return (
     <Card variant="bordered" className="overflow-x-auto">
-      <div
-        className={cn(
-          'grid gap-4 border-b border-border bg-muted/60 px-[22px] py-3',
-          'text-[11px] tracking-[0.05em] text-muted-foreground uppercase',
-          GRID_MIN_WIDTH,
-          GRID_COLS,
-        )}
-      >
-        <div>Milestone</div>
-        <div>Bpmn process</div>
-        <div>Timestamp</div>
-      </div>
-
       {error ? (
         <p className="px-[22px] py-4 text-sm text-destructive" role="alert">
           {error}
@@ -104,30 +118,15 @@ export function ProcessInstanceMilestonesTable({
         <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
           Loading milestones…
         </p>
-      ) : null}
-
-      {!loading &&
-        milestones.map((row) => (
-          <div
-            key={row.milestone}
-            className={cn(
-              'grid items-center gap-4 border-b border-border px-[22px] py-[14px]',
-              GRID_MIN_WIDTH,
-              GRID_COLS,
-            )}
-          >
-            <div className="text-[14px] font-semibold text-foreground">{row.milestone}</div>
-            <div className="min-w-0 break-all font-mono text-[12.5px] text-muted-foreground">
-              {cell(row.bpmn_process)}
-            </div>
-            <time
-              className="font-mono text-[12.5px] text-foreground"
-              dateTime={row.timestamp != null ? new Date(row.timestamp * 1000).toISOString() : undefined}
-            >
-              {formatMilestoneTimestamp(row.timestamp)}
-            </time>
-          </div>
-        ))}
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={milestones}
+          getRowKey={(row) => row.milestone}
+          emptyState=""
+          minWidth="700px"
+        />
+      )}
     </Card>
   );
 }

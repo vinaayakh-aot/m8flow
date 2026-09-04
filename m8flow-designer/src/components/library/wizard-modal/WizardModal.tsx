@@ -7,6 +7,30 @@ import { Modal } from "@/components/library/modal/Modal"
 export interface WizardModalStep {
   title: React.ReactNode
   body: React.ReactNode
+  /**
+   * Gates the Continue/Finish button for this step — disabled whenever this
+   * is `false`. Defaults to `true` (unchanged for any caller that doesn't
+   * pass it). Re-evaluated on every render, so a caller can flip it live as
+   * the step's own selection state changes (component-adoption map, ticket
+   * 12 follow-up — tenant-management's "Add Member" wizard needs "Next"
+   * disabled until a user is picked, and "Add" disabled while the final
+   * submit is in flight — this is the gap the map's own "Not yet specified"
+   * section flagged when `WizardModal` had only one candidate consumer).
+   */
+  canContinue?: boolean
+  /**
+   * Overrides the Continue/Finish button's content for this step — e.g. a
+   * busy "Adding…" label (with a leading icon) while the final step's
+   * `onComplete` is in flight. Defaults to "Continue" / "Finish" (the last
+   * step), unchanged for any caller that doesn't pass it.
+   */
+  continueLabel?: React.ReactNode
+  /**
+   * `data-testid` applied to the Continue/Finish button for this step —
+   * lets an existing per-step test id survive onto the single shared
+   * button `WizardModal` renders. Omit for no testid (unchanged default).
+   */
+  continueTestId?: string
 }
 
 export interface WizardModalProps {
@@ -22,6 +46,13 @@ export interface WizardModalProps {
    * wizard doesn't close itself first — callers decide whether finishing
    * also closes the dialog. */
   onComplete: () => void
+  /** Forwarded straight to the underlying `Modal`'s own `size` prop — see
+   * its doc comment for the three tiers. Defaults to `"sm"` (460px),
+   * unchanged for any caller that doesn't pass it. A step with a scrollable
+   * list (a search box + picker rows, e.g. `tenant-management`'s "Add
+   * Member") typically wants `"md"` — `"sm"` is cramped once a step's body
+   * grows past a couple of plain form fields. */
+  size?: "sm" | "md" | "lg"
 }
 
 /**
@@ -36,7 +67,7 @@ export interface WizardModalProps {
  * wizard transitions from closed to open, so reopening it always starts
  * fresh.
  */
-function WizardModal({ open, steps, onClose, onComplete }: WizardModalProps) {
+function WizardModal({ open, steps, onClose, onComplete, size }: WizardModalProps) {
   const [step, setStep] = React.useState(0)
 
   React.useEffect(() => {
@@ -50,6 +81,7 @@ function WizardModal({ open, steps, onClose, onComplete }: WizardModalProps) {
   const current = steps[activeStep]
   const isFirstStep = activeStep === 0
   const isLastStep = activeStep >= stepCount - 1
+  const canContinue = current?.canContinue ?? true
 
   function handleBack() {
     setStep((prev) => Math.max(0, prev - 1))
@@ -72,13 +104,20 @@ function WizardModal({ open, steps, onClose, onComplete }: WizardModalProps) {
         }
       }}
       title={current?.title}
+      size={size}
       footer={
         <div className="flex w-full items-center justify-between gap-2.5">
           <Button type="button" variant="pill-outline" onClick={handleBack} disabled={isFirstStep}>
             Back
           </Button>
-          <Button type="button" variant="pill" onClick={handleContinue}>
-            {isLastStep ? "Finish" : "Continue"}
+          <Button
+            type="button"
+            variant="pill"
+            onClick={handleContinue}
+            disabled={!canContinue}
+            data-testid={current?.continueTestId}
+          >
+            {current?.continueLabel ?? (isLastStep ? "Finish" : "Continue")}
           </Button>
         </div>
       }

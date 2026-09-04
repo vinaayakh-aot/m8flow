@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import type { ProcessInstanceCompletedTasksResponse } from '@/lib/processInstancesApi';
@@ -57,10 +58,14 @@ describe('ProcessInstanceCompletedTasksTable', () => {
     expect(screen.queryByText('Task')).not.toBeInTheDocument();
   });
 
-  it('shows title, completer person, and UTC timestamp on All completed — not task_name as Task', () => {
+  it('shows title, completer person, and UTC timestamp on All completed — not task_name as Task', async () => {
+    // Radix's Tabs, like its DropdownMenu, doesn't switch under a plain
+    // fireEvent.click in jsdom — use @testing-library/user-event, per the
+    // map's Notes.
+    const user = userEvent.setup();
     render(<ProcessInstanceCompletedTasksTable instanceId={7} data={data} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'All completed' }));
+    await user.click(screen.getByRole('tab', { name: 'All completed' }));
 
     expect(screen.getByText('Task')).toBeInTheDocument();
     expect(screen.getByText('Submit Expense Claim')).toBeInTheDocument();
@@ -86,7 +91,8 @@ describe('ProcessInstanceCompletedTasksTable', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders headers with no rows on All completed when that list is empty', () => {
+  it('renders headers with no rows on All completed when that list is empty', async () => {
+    const user = userEvent.setup();
     render(
       <ProcessInstanceCompletedTasksTable
         instanceId={7}
@@ -94,7 +100,7 @@ describe('ProcessInstanceCompletedTasksTable', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'All completed' }));
+    await user.click(screen.getByRole('tab', { name: 'All completed' }));
 
     expect(screen.getByText('Task')).toBeInTheDocument();
     expect(screen.getByText('Completed by')).toBeInTheDocument();

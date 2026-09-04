@@ -183,10 +183,12 @@ describe('Configuration secrets UI', () => {
       pagination: { count: 1, total: 1, pages: 1 },
     });
     mockDeleteSecret.mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderAt('/configuration/secrets', MANAGE);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('heading', { name: 'Delete secret?' })).toBeInTheDocument();
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
     await waitFor(() => {
       expect(mockDeleteSecret).toHaveBeenCalledWith('SMTP_PASSWORD', 't1');
     });

@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/library/alert/Alert';
+import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -105,9 +106,9 @@ export default function AcceptInvitationPage() {
     if (isAccepted) {
       return (
         <div className="space-y-4">
-          <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+          <Alert tone="success">
             Your account has been activated. You can now sign in with your email and password.
-          </p>
+          </Alert>
           <Button asChild>
             <a href="/" data-testid="accept-invitation-go-login">
               Go to login
@@ -119,12 +120,9 @@ export default function AcceptInvitationPage() {
 
     if (validationError || !validation) {
       return (
-        <p
-          className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          data-testid="accept-invitation-error"
-        >
+        <Alert tone="error" data-testid="accept-invitation-error">
           {validationError || INVALID_TOKEN_MESSAGE}
-        </p>
+        </Alert>
       );
     }
 
@@ -142,17 +140,13 @@ export default function AcceptInvitationPage() {
           <p className="text-sm text-muted-foreground">Roles</p>
           <div className="flex flex-wrap gap-1.5">
             {validation.roles.map((role) => (
-              <Badge key={role} variant="outline">
+              <Pill key={role} tone="muted" dot={false}>
                 {role}
-              </Badge>
+              </Pill>
             ))}
           </div>
         </div>
-        {submitError ? (
-          <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {submitError}
-          </p>
-        ) : null}
+        {submitError ? <Alert tone="error">{submitError}</Alert> : null}
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Password</span>
           <Input

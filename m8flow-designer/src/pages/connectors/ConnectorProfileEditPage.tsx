@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { Alert } from '@/components/library/alert/Alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -194,11 +195,7 @@ function ConnectorProfileEditBody() {
         </p>
       </div>
 
-      {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="error" className="mb-4">{error}</Alert> : null}
 
       <Card variant="bordered" className="max-w-lg p-6">
         {loading ? (

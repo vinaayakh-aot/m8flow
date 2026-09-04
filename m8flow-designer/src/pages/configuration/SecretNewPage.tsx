@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { Alert } from '@/components/library/alert/Alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -102,9 +103,9 @@ function SecretNewBody() {
             />
           </label>
           {error ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
+            <Alert tone="error" className="mt-3">
               {error}
-            </p>
+            </Alert>
           ) : null}
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild type="button" variant="pill-cancel" size="pill">

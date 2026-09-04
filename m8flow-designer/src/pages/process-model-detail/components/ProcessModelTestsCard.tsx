@@ -5,16 +5,9 @@ import type {
   ScriptUnitTest,
   ScriptUnitTestRunResult,
 } from '@/lib/api';
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -239,131 +232,131 @@ export function ProcessModelTestsCard({
         )}
       </div>
 
-      <Dialog open={bpmnResult != null} onOpenChange={(next) => { if (!next) setBpmnResult(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>BPMN test results</DialogTitle>
-            <DialogDescription>
-              {bpmnResult?.all_passed
-                ? `All ${bpmnResult.passing.length} test${bpmnResult.passing.length === 1 ? '' : 's'} passed.`
-                : `${bpmnResult?.failing.length ?? 0} failed, ${bpmnResult?.passing.length ?? 0} passed.`}
-            </DialogDescription>
-          </DialogHeader>
-          {bpmnResult?.failing.length ? (
-            <ul className="list-disc pl-5 text-sm text-foreground">
-              {bpmnResult.failing.slice(0, 8).map((row) => (
-                <li key={`${row.bpmn_file}:${row.test_case_identifier}`}>
-                  {row.test_case_identifier}
-                  {row.test_case_error_details?.error_messages?.[0]
-                    ? ` — ${row.test_case_error_details.error_messages[0]}`
-                    : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" onClick={() => setBpmnResult(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={bpmnResult != null}
+        onOpenChange={(next) => { if (!next) setBpmnResult(null); }}
+        title="BPMN test results"
+        footer={
+          <Button type="button" onClick={() => setBpmnResult(null)}>
+            Close
+          </Button>
+        }
+      >
+        <p className="-mt-1 text-sm text-muted-foreground">
+          {bpmnResult?.all_passed
+            ? `All ${bpmnResult.passing.length} test${bpmnResult.passing.length === 1 ? '' : 's'} passed.`
+            : `${bpmnResult?.failing.length ?? 0} failed, ${bpmnResult?.passing.length ?? 0} passed.`}
+        </p>
+        {bpmnResult?.failing.length ? (
+          <ul className="list-disc pl-5 text-sm text-foreground">
+            {bpmnResult.failing.slice(0, 8).map((row) => (
+              <li key={`${row.bpmn_file}:${row.test_case_identifier}`}>
+                {row.test_case_identifier}
+                {row.test_case_error_details?.error_messages?.[0]
+                  ? ` — ${row.test_case_error_details.error_messages[0]}`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Modal>
 
-      <Dialog open={scriptRun != null} onOpenChange={(next) => { if (!next) setScriptRun(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Script unit test</DialogTitle>
-            <DialogDescription>
-              {scriptRun?.result.result ? 'Passed.' : scriptRun?.result.error || 'Failed.'}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" onClick={() => setScriptRun(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={scriptRun != null}
+        onOpenChange={(next) => { if (!next) setScriptRun(null); }}
+        title="Script unit test"
+        footer={
+          <Button type="button" onClick={() => setScriptRun(null)}>
+            Close
+          </Button>
+        }
+      >
+        <p className="-mt-1 text-sm text-muted-foreground">
+          {scriptRun?.result.result ? 'Passed.' : scriptRun?.result.error || 'Failed.'}
+        </p>
+      </Modal>
 
       {onCreateScriptUnitTest ? (
-        <Dialog open={createOpen} onOpenChange={(next) => { if (!next) setCreateOpen(false); }}>
-          <DialogContent className="sm:max-w-md">
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={async (event: FormEvent) => {
-                event.preventDefault();
-                if (!onCreateScriptUnitTest) return;
-                setCreating(true);
-                setCreateError(null);
-                try {
-                  const created = await onCreateScriptUnitTest({
-                    bpmn_task_identifier: taskId.trim(),
-                    input_json: parseJsonObject(inputJson, 'Input JSON'),
-                    expected_output_json: parseJsonObject(expectedJson, 'Expected output JSON'),
-                  });
-                  setScriptTests((prev) => [
-                    ...prev,
-                    { id: created.id, bpmn_task_identifier: taskId.trim() },
-                  ]);
-                  setCreateOpen(false);
-                } catch (err: unknown) {
-                  setCreateError(err instanceof Error ? err.message : 'Failed to create script unit test');
-                } finally {
-                  setCreating(false);
-                }
-              }}
-              noValidate
-            >
-              <DialogHeader>
-                <DialogTitle>Create script unit test</DialogTitle>
-                <DialogDescription>
-                  Stores the case on a script task in the primary BPMN file.
-                </DialogDescription>
-              </DialogHeader>
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                Script task ID
-                <Input
-                  value={taskId}
-                  onChange={(e) => setTaskId(e.target.value)}
-                  aria-label="Script task ID"
-                  placeholder="Script_1"
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                Input JSON
-                <Textarea
-                  value={inputJson}
-                  onChange={(e) => setInputJson(e.target.value)}
-                  aria-label="Input JSON"
-                  className="font-mono text-sm"
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                Expected output JSON
-                <Textarea
-                  value={expectedJson}
-                  onChange={(e) => setExpectedJson(e.target.value)}
-                  aria-label="Expected output JSON"
-                  className="font-mono text-sm"
-                />
-              </label>
-              {createError ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {createError}
-                </p>
-              ) : null}
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={creating || !taskId.trim()}>
-                  {creating ? 'Creating…' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Modal
+          open={createOpen}
+          onOpenChange={(next) => { if (!next) setCreateOpen(false); }}
+          title="Create script unit test"
+          footer={
+            <>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+                Cancel
+              </Button>
+              <Button type="submit" form="create-script-unit-test-form" disabled={creating || !taskId.trim()}>
+                {creating ? 'Creating…' : 'Create'}
+              </Button>
+            </>
+          }
+        >
+          <p className="-mt-1 text-sm text-muted-foreground">
+            Stores the case on a script task in the primary BPMN file.
+          </p>
+          <form
+            id="create-script-unit-test-form"
+            className="flex flex-col gap-4"
+            onSubmit={async (event: FormEvent) => {
+              event.preventDefault();
+              if (!onCreateScriptUnitTest) return;
+              setCreating(true);
+              setCreateError(null);
+              try {
+                const created = await onCreateScriptUnitTest({
+                  bpmn_task_identifier: taskId.trim(),
+                  input_json: parseJsonObject(inputJson, 'Input JSON'),
+                  expected_output_json: parseJsonObject(expectedJson, 'Expected output JSON'),
+                });
+                setScriptTests((prev) => [
+                  ...prev,
+                  { id: created.id, bpmn_task_identifier: taskId.trim() },
+                ]);
+                setCreateOpen(false);
+              } catch (err: unknown) {
+                setCreateError(err instanceof Error ? err.message : 'Failed to create script unit test');
+              } finally {
+                setCreating(false);
+              }
+            }}
+            noValidate
+          >
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+              Script task ID
+              <Input
+                value={taskId}
+                onChange={(e) => setTaskId(e.target.value)}
+                aria-label="Script task ID"
+                placeholder="Script_1"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+              Input JSON
+              <Textarea
+                value={inputJson}
+                onChange={(e) => setInputJson(e.target.value)}
+                aria-label="Input JSON"
+                className="font-mono text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+              Expected output JSON
+              <Textarea
+                value={expectedJson}
+                onChange={(e) => setExpectedJson(e.target.value)}
+                aria-label="Expected output JSON"
+                className="font-mono text-sm"
+              />
+            </label>
+            {createError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {createError}
+              </p>
+            ) : null}
+          </form>
+        </Modal>
       ) : null}
     </Card>
   );

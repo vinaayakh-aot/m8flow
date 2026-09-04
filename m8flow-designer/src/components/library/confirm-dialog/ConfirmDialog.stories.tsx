@@ -69,3 +69,47 @@ export const PublishProcess: Story = {
     />
   ),
 }
+
+// The `pending` state (component-adoption map, ticket 25): every real
+// "delete while showing Deleting…" consumer's own hand-rolled pattern —
+// disable both buttons, relabel Confirm, and (since passing `pending` at
+// all hands closing-control to the caller) stay open until the simulated
+// request finishes, closing only on success.
+function PendingConfirmDialogDemo() {
+  const [open, setOpen] = React.useState(false)
+  const [pending, setPending] = React.useState(false)
+
+  function handleConfirm() {
+    setPending(true)
+    setTimeout(() => {
+      setPending(false)
+      setOpen(false)
+    }, 1500)
+  }
+
+  return (
+    <>
+      <Button variant="pill" onClick={() => setOpen(true)}>
+        Delete process model
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && !pending) setOpen(false)
+        }}
+        title="Delete this process model?"
+        description="This removes the model, its files and run history. This can't be undone."
+        cancelLabel="Cancel"
+        confirmLabel={pending ? "Deleting…" : "Delete"}
+        tone="destructive"
+        pending={pending}
+        onConfirm={handleConfirm}
+      />
+    </>
+  )
+}
+
+export const Pending: Story = {
+  name: "Pending (busy confirm)",
+  render: () => <PendingConfirmDialogDemo />,
+}

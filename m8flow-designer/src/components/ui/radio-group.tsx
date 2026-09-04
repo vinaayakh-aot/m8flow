@@ -28,7 +28,7 @@ const RadioGroupItem = React.forwardRef<
       // center, not a filled dot — border width alone carries the
       // checked/unchecked distinction, so no `RadioGroupPrimitive.Indicator`
       // is rendered here (there's nothing for it to show).
-      "aspect-square size-[18px] shrink-0 rounded-full border-[1.5px] border-border bg-background shadow-xs outline-none transition-[border-width,border-color] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-[5px] data-[state=checked]:border-nav-active",
+      "aspect-square size-[18px] shrink-0 rounded-full border-[1.5px] border-border bg-card shadow-xs outline-none transition-[border-width,border-color] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-[5px] data-[state=checked]:border-nav-active",
       className
     )}
     {...props}

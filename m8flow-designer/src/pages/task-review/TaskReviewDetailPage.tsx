@@ -4,7 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/lib/api';
 import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
-import { Badge } from '@/components/ui/badge';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { Pill, type PillProps } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Timeline, TimelineItem, type TimelineStatus } from '@/components/ui/timeline';
@@ -30,13 +31,18 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelled',
 };
 
-const STATUS_VARIANTS: Record<string, 'info' | 'warning' | 'success' | 'destructive' | 'secondary'> =
-  {
-    READY: 'info',
-    CLAIMED: 'warning',
-    COMPLETED: 'success',
-    CANCELLED: 'destructive',
-  };
+// `error`/`muted` (not `destructive`/`secondary`) — Pill's own tone
+// vocabulary (component-adoption map, ticket 10). `error` is Pill's always-
+// tinted look, a deliberate softening from `ui/badge.tsx`'s solid
+// `destructive` variant, the same accepted trade-off ticket 15's
+// StatusBadge→Pill consolidation made for the analogous process-instance
+// status vocabulary.
+const STATUS_TONES: Record<string, NonNullable<PillProps['tone']>> = {
+  READY: 'info',
+  CLAIMED: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'error',
+};
 
 /** Raw ProcessInstanceEventModel `event_type` → sentence fragment. */
 const EVENT_LABELS: Record<string, string> = {
@@ -77,6 +83,16 @@ function statusLabel(status: string): string {
 
 function eventLabel(eventType: string): string {
   return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, ' ');
+}
+
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 10). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
 }
 
 function CardShell({ title, children }: { title: string; children: ReactNode }) {
@@ -165,7 +181,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
     [
       'Status',
       instance.status ? (
-        <Badge variant="info">{humanize(instance.status)}</Badge>
+        <Pill tone="info" dot={false}>{humanize(instance.status)}</Pill>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
@@ -332,26 +348,23 @@ export default function TaskReviewDetailPage() {
   return (
     <main className="flex-1 px-11 py-10">
       <header className="mb-7 space-y-3">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex items-center gap-1.5 text-[13px] text-muted-foreground"
-        >
-          <Link to="/task-review" className="text-info no-underline hover:underline">
-            Task Review
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span className="truncate font-medium text-foreground" aria-current="page">
-            {task.task_title || task.task_name}
-          </span>
-        </nav>
+        <Breadcrumbs
+          className="text-[13px] text-muted-foreground"
+          LinkComponent={RouterBreadcrumbLink}
+          linkClassName="text-info font-normal"
+          items={[
+            { label: 'Task Review', href: '/task-review' },
+            { label: task.task_title || task.task_name },
+          ]}
+        />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="font-display text-[28px] leading-tight font-semibold tracking-tight">
             {task.task_title || task.task_name}
           </h1>
           <span className="text-sm text-muted-foreground">{task.process_model_display_name}</span>
-          <Badge variant={STATUS_VARIANTS[task.status] ?? 'secondary'} className="ml-auto">
+          <Pill tone={STATUS_TONES[task.status] ?? 'muted'} dot={false} className="ml-auto">
             {statusLabel(task.status)}
-          </Badge>
+          </Pill>
         </div>
         <p className="text-sm text-muted-foreground">
           Submitted by{' '}

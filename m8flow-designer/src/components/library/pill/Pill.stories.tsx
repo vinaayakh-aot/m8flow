@@ -16,7 +16,7 @@ const meta: Meta<typeof Pill> = {
   argTypes: {
     tone: {
       control: "select",
-      options: ["success", "error", "warning", "muted"],
+      options: ["success", "error", "warning", "muted", "info"],
     },
   },
 }
@@ -42,6 +42,14 @@ export const Muted: Story = {
   args: { tone: "muted", children: "Draft" },
 }
 
+// Added alongside the other four when `Pill` gained an `info` tone —
+// matches `ui/badge.tsx`'s own `info` variant and `library/alert`'s `info`
+// tone (`bg-info/10 text-info`), for pages that today reach for
+// `Badge variant="info"` instead of `Pill`.
+export const Info: Story = {
+  args: { tone: "info", children: "In review" },
+}
+
 export const AllStatusTones: Story = {
   render: () => (
     <div className="flex flex-wrap gap-2.5">
@@ -49,6 +57,7 @@ export const AllStatusTones: Story = {
       <Pill tone="error">Needs attention</Pill>
       <Pill tone="warning">Paused</Pill>
       <Pill tone="muted">Draft</Pill>
+      <Pill tone="info">In review</Pill>
     </div>
   ),
 }

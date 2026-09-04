@@ -36,6 +36,23 @@ export interface DataTableProps<T>
    * squashed/wrapped layout. Defaults to `"640px"`, matching the mockup.
    */
   minWidth?: string
+  /**
+   * Makes every row clickable — the "click anywhere in the row to open it"
+   * pattern `process-instances`/`processes`/`task-review` each hand-rolled
+   * independently before this (component-adoption map, ticket 23). When
+   * provided, each row gets `role="button"`, `tabIndex={0}`, a pointer
+   * cursor, and Enter/Space activates it the same as a click — mirroring
+   * those hand-rolled implementations exactly. Omit entirely for a plain,
+   * non-interactive `role="row"` (today's unchanged default).
+   *
+   * A row's own interactive cells (buttons, links, an `ActionMenu`) are
+   * *not* handled here — same as every existing consumer, wrap that cell's
+   * content in its own `onClick`/`onKeyDown` that calls
+   * `event.stopPropagation()` so it doesn't also fire the row click. This
+   * stays the column's `render` function's job, not `DataTable`'s, so the
+   * common case (no nested interactive cells) doesn't pay for it.
+   */
+  onRowClick?: (row: T, index: number) => void
 }
 
 /**
@@ -55,6 +72,7 @@ function DataTable<T>({
   getRowKey,
   emptyState,
   minWidth = "640px",
+  onRowClick,
   className,
   ...props
 }: DataTableProps<T>) {
@@ -84,7 +102,7 @@ function DataTable<T>({
         {rows.length === 0 ? (
           <div
             data-slot="data-table-empty"
-            className="bg-background px-7 py-6 text-sm text-muted-foreground"
+            className="bg-card px-7 py-6 text-sm text-muted-foreground"
           >
             {emptyState ?? "No data"}
           </div>
@@ -93,8 +111,23 @@ function DataTable<T>({
             <div
               key={getRowKey ? getRowKey(row, index) : index}
               data-slot="data-table-row"
-              role="row"
-              className="grid items-center gap-4 border-b border-border bg-background px-7 py-3.5"
+              role={onRowClick ? "button" : "row"}
+              tabIndex={onRowClick ? 0 : undefined}
+              onClick={onRowClick ? () => onRowClick(row, index) : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        onRowClick(row, index)
+                      }
+                    }
+                  : undefined
+              }
+              className={cn(
+                "grid items-center gap-4 border-b border-border bg-card px-7 py-3.5",
+                onRowClick && "cursor-pointer"
+              )}
               style={{ gridTemplateColumns }}
             >
               {columns.map((column) => (

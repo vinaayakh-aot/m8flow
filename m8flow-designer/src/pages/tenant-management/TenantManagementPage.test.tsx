@@ -197,7 +197,7 @@ describe('TenantManagementPage', () => {
     });
     expect(screen.queryByTestId('tenant-invite-user-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pending-invitations-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('tenant-management-back-to-tenants')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(mockFetchTenantInvitations).not.toHaveBeenCalled();
     expect(screen.getByTestId('tenant-group-add-button')).toBeInTheDocument();
     expect(screen.getByTestId('tenant-group-name-cell-g1')).toBeInTheDocument();
@@ -222,10 +222,7 @@ describe('TenantManagementPage', () => {
     expect(screen.getByTestId('tenant-invite-user-button')).toBeInTheDocument();
     expect(screen.getByTestId('pending-invitations-panel')).toBeInTheDocument();
     expect(mockFetchTenantInvitations).toHaveBeenCalledWith('t9', { limit: 100 });
-    expect(screen.getByTestId('tenant-management-back-to-tenants')).toHaveAttribute(
-      'href',
-      '/tenants',
-    );
+    expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
     expect(screen.getAllByText('Tenant Nine').length).toBeGreaterThan(0);
   });
 
@@ -270,7 +267,10 @@ describe('TenantManagementPage', () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
-    fireEvent.click(screen.getByTestId('tenant-member-next-page-button'));
+    // Two "Next page" buttons exist on this page (members' pager and the
+    // nested TenantGroupsSection's own pager) — the members one renders
+    // first in DOM order.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Next page' })[0]);
     expect(await screen.findByText('viewer')).toBeInTheDocument();
     expect(mockFetchTenantMembers).toHaveBeenLastCalledWith(
       't1',
@@ -288,8 +288,7 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-member-add-button'));
-    expect(await screen.findByText('Rev')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('tenant-available-user-reviewer'));
+    fireEvent.click(await screen.findByText('Rev'));
     fireEvent.click(screen.getByTestId('tenant-member-add-next'));
     fireEvent.click(await screen.findByTestId('tenant-add-member-group-editors'));
     fireEvent.click(screen.getByTestId('tenant-member-add-submit'));
@@ -302,22 +301,19 @@ describe('TenantManagementPage', () => {
     });
   });
 
-  it('does not submit the member add API when the dialog form submits implicitly on step 1', async () => {
-    // Regression test: step 1 has no type="submit" button, so a form with
-    // exactly one text field (the user search box) submits implicitly on
-    // Enter per the HTML spec. That must advance to step 2, not call the
-    // add-member API with no groups selected.
+  it('keeps Next disabled on step 1 of the Add Member wizard until a user is picked', async () => {
+    // Regression coverage for the map's own "Not yet specified" gap this
+    // wizard closed: WizardModal's Continue button must stay disabled (not
+    // silently advance, and never reach the add-member API) until step 1's
+    // own selection state says otherwise.
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-member-add-button'));
-    expect(await screen.findByText('Rev')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('tenant-available-user-reviewer'));
+    expect(await screen.findByTestId('tenant-member-add-next')).toBeDisabled();
 
-    const searchInput = screen.getByPlaceholderText('Search available users…');
-    fireEvent.submit(searchInput.closest('form') as HTMLFormElement);
-
-    expect(await screen.findByTestId('tenant-add-member-group-editors')).toBeInTheDocument();
+    fireEvent.click(await screen.findByText('Rev'));
+    expect(screen.getByTestId('tenant-member-add-next')).toBeEnabled();
     expect(mockAddTenantMember).not.toHaveBeenCalled();
   });
 
@@ -327,7 +323,9 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-member-remove-button-editor'));
-    fireEvent.click(screen.getByTestId('tenant-member-remove-confirm-button'));
+    expect(await screen.findByRole('heading', { name: 'Remove member' })).toBeInTheDocument();
+    const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
+    fireEvent.click(removeButtons[removeButtons.length - 1]);
 
     await waitFor(() => {
       expect(mockRemoveTenantMember).toHaveBeenCalledWith('t1', 'editor');
@@ -402,7 +400,8 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-group-remove-button-reviewers'));
-    fireEvent.click(screen.getByTestId('tenant-group-remove-confirm-button'));
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
     await waitFor(() => {
       expect(mockDeleteTenantGroup).toHaveBeenCalledWith('t1', 'reviewers');
@@ -427,7 +426,7 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.click(screen.getByTestId('tenant-group-manage-roles-button-reviewers'));
-    expect(await screen.findByTestId('tenant-group-roles-dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Group roles' })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter'));
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer'));
 

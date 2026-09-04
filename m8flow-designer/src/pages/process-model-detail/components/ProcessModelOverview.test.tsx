@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,7 +108,11 @@ describe('ProcessModelOverview', () => {
     expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
-  it('keeps header and file-creation controls from navigating', () => {
+  it('keeps header and file-creation controls from navigating', async () => {
+    // Radix's DropdownMenu (ActionMenu, ticket 07) doesn't open under a
+    // plain fireEvent.click in jsdom — use @testing-library/user-event, per
+    // the map's Notes.
+    const user = userEvent.setup();
     renderOverview();
 
     expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
@@ -120,10 +125,19 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
     const more = screen.getByRole('button', { name: 'More actions' });
     expect(more).not.toBeDisabled();
-    fireEvent.click(more);
-    expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toBeDisabled();
+    await user.click(more);
+    expect(await screen.findByRole('menuitem', { name: 'Copy' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(screen.queryByRole('menuitem', { name: 'Edit identity' })).not.toBeInTheDocument();
+    // Radix hides the rest of the page from the accessibility tree while
+    // the menu is open — close it before asserting on other controls.
+    await user.keyboard('{Escape}');
     expect(screen.getByRole('button', { name: 'Add file' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Run BPMN tests' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create script unit test' })).toBeDisabled();
@@ -159,6 +173,7 @@ describe('ProcessModelOverview', () => {
   });
 
   it('packs supported files and creates a draft when onSaveAsTemplate is provided', async () => {
+    const user = userEvent.setup();
     const onSaveAsTemplate = vi.fn();
     vi.stubGlobal(
       'fetch',
@@ -180,10 +195,10 @@ describe('ProcessModelOverview', () => {
         <ProcessModelOverview detail={DETAIL} onSaveAsTemplate={onSaveAsTemplate} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    const saveAs = screen.getByRole('menuitem', { name: 'Save as template' });
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    const saveAs = await screen.findByRole('menuitem', { name: 'Save as template' });
     expect(saveAs).not.toBeDisabled();
-    fireEvent.click(saveAs);
+    await user.click(saveAs);
     fireEvent.click(screen.getByRole('button', { name: 'Create template' }));
     await waitFor(() => {
       expect(onSaveAsTemplate).toHaveBeenCalledWith(7);
@@ -201,16 +216,17 @@ describe('ProcessModelOverview', () => {
   });
 
   it('opens copy when onCopy is provided', async () => {
+    const user = userEvent.setup();
     const onCopy = vi.fn().mockResolvedValue({ id: 'finance/invoice-approval-copy' });
     render(
       <MemoryRouter>
         <ProcessModelOverview detail={DETAIL} canManage onCopy={onCopy} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    const copy = screen.getByRole('menuitem', { name: 'Copy' });
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    const copy = await screen.findByRole('menuitem', { name: 'Copy' });
     expect(copy).not.toBeDisabled();
-    fireEvent.click(copy);
+    await user.click(copy);
     fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
     await waitFor(() => {
       expect(onCopy).toHaveBeenCalledWith({
@@ -292,14 +308,15 @@ describe('ProcessModelOverview', () => {
   });
 
   it('lets an editor edit display name and description', async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn().mockResolvedValue(undefined);
     render(
       <MemoryRouter>
         <ProcessModelOverview detail={DETAIL} canManage onUpdateIdentity={onUpdate} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit identity' }));
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit identity' }));
     fireEvent.change(screen.getByLabelText('Process model display name'), {
       target: { value: 'Invoices' },
     });

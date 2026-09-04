@@ -181,7 +181,7 @@ describe('Connectors UI', () => {
     expect(screen.getByTestId('connector-card-http')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('connector-view-ops-http'));
-    expect(await screen.findByTestId('connector-operations-modal')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'HTTP operations' })).toBeInTheDocument();
     expect(screen.getByTestId('connector-operation-http/GetRequestV2')).toHaveTextContent('url');
   });
 

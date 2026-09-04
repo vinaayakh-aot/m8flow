@@ -1,14 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 export type CopyProcessModelDialogProps = {
@@ -59,57 +52,56 @@ export function CopyProcessModelDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Copy process model</DialogTitle>
-            <DialogDescription>
-              Creates a duplicate in the same process group. Files are copied; process instances are not.
-            </DialogDescription>
-          </DialogHeader>
+    <Modal
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="Copy process model"
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="copy-pm-form" disabled={submitting || !processModelId.trim()}>
+            {submitting ? 'Copying…' : 'Copy process model'}
+          </Button>
+        </>
+      }
+    >
+      <p className="-mt-1 text-sm text-muted-foreground">
+        Creates a duplicate in the same process group. Files are copied; process instances are not.
+      </p>
+      <form id="copy-pm-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="copy-pm-id" className="text-xs font-medium text-muted-foreground">
+            Process model ID
+          </label>
+          <Input
+            id="copy-pm-id"
+            value={processModelId}
+            onChange={(e) => setProcessModelId(e.target.value)}
+            placeholder="invoice-approval-copy"
+            required
+          />
+        </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="copy-pm-id" className="text-xs font-medium text-muted-foreground">
-              Process model ID
-            </label>
-            <Input
-              id="copy-pm-id"
-              value={processModelId}
-              onChange={(e) => setProcessModelId(e.target.value)}
-              placeholder="invoice-approval-copy"
-              required
-            />
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="copy-pm-name" className="text-xs font-medium text-muted-foreground">
+            Display name
+          </label>
+          <Input
+            id="copy-pm-name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Invoice Approval (copy)"
+          />
+        </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="copy-pm-name" className="text-xs font-medium text-muted-foreground">
-              Display name
-            </label>
-            <Input
-              id="copy-pm-name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Invoice Approval (copy)"
-            />
-          </div>
-
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting || !processModelId.trim()}>
-              {submitting ? 'Copying…' : 'Copy process model'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

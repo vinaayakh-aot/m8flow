@@ -34,6 +34,33 @@ export interface ConfirmDialogProps {
    * warning.
    */
   tone?: ConfirmDialogTone
+  /**
+   * Marks the confirmation as in flight (component-adoption map, ticket
+   * 25) — disables both Cancel and Confirm, and hands control of *when the
+   * dialog closes* to the caller: Confirm's default click-to-close (via
+   * Radix's own `AlertDialogAction` behavior, which normally fires
+   * `onOpenChange(false)` on every click) is suppressed for the whole
+   * lifetime of this prop being passed, not just while it's currently
+   * `true` — at the moment of the very click that starts an async action,
+   * `pending` is still `false` in this render (the caller flips it inside
+   * `onConfirm`, and React hasn't re-rendered yet), so gating the
+   * suppression on the *current* value would still let that first click
+   * slip through and auto-close before the async work even starts.
+   * Instead, once a caller passes `pending` at all (even starting at
+   * `false`), every Confirm click is caller-controlled: call
+   * `onConfirm`, keep the dialog open, and close it yourself (e.g. by
+   * clearing whatever state drives `open`) only once the action actually
+   * succeeds — the same "stay open, disable, relabel, close on success or
+   * show an inline error on failure" pattern every real `pending` consumer
+   * already hand-rolls. Omit this prop entirely (not just leave it
+   * `undefined` via a variable) to keep today's simple "always closes
+   * immediately on Confirm" behavior, byte-for-byte unchanged.
+   *
+   * There's no separate `pendingLabel` prop — every real consumer already
+   * recomputes `confirmLabel` itself per render (e.g. `confirmLabel={pending
+   * ? "Deleting…" : "Delete"}`), so a second prop would just duplicate that.
+   */
+  pending?: boolean
 }
 
 /**
@@ -62,8 +89,10 @@ function ConfirmDialog({
   confirmLabel = "Confirm",
   onConfirm,
   tone = "destructive",
+  pending,
 }: ConfirmDialogProps) {
   const isDestructive = tone === "destructive"
+  const callerControlsClose = pending !== undefined
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -89,9 +118,19 @@ function ConfirmDialog({
           </div>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
-            onClick={onConfirm}
+            disabled={pending}
+            onClick={(event) => {
+              if (callerControlsClose) {
+                // Suppress Radix's own click-to-close — the caller owns
+                // closing while it manages a `pending` state (see the prop's
+                // own doc comment for why this can't be gated on the
+                // *current* value of `pending`).
+                event.preventDefault()
+              }
+              onConfirm()
+            }}
             className={cn(
               isDestructive && "bg-destructive text-white hover:bg-destructive/90"
             )}

@@ -5,24 +5,27 @@ import {
   useState,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
 } from 'react';
-import { ExternalLink, Folder, MoreVertical, Plus, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, Folder, Plus, Trash2 } from 'lucide-react';
 
 import { ApiError, type ProcessModelListItem } from '@/lib/api';
+import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
+import { Chip } from '@/components/library/chip/Chip';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { EmptyState } from '@/components/library/empty-state/EmptyState';
+import { Pill } from '@/components/library/pill/Pill';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
+import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
+
+const SORT_OPTIONS = [
+  { value: 'desc', label: 'Newest first' },
+  { value: 'asc', label: 'Oldest first' },
+];
 
 export type ProcessesModelsListProps = {
   models: ProcessModelListItem[];
@@ -147,6 +150,111 @@ export function ProcessesModelsList({
     }
   }
 
+  const columns: DataTableColumn<ProcessModelListItem>[] = [
+    {
+      key: 'model',
+      header: 'Process model',
+      width: 'minmax(220px,2.4fr)',
+      render: (model) => (
+        <div className="min-w-0">
+          <div className="line-clamp-2 text-[14.5px] leading-snug font-semibold text-foreground">
+            {model.display_name}
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              stopRowNav(e);
+              onFilterByGroup?.(model.group_id);
+            }}
+            className="mt-1 flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-muted-foreground"
+          >
+            <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
+            <span className="truncate">{model.group_display_name || model.group_id}</span>
+          </button>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: 'minmax(0,140px)',
+      // Always "—" — process models have no status field yet (map fog);
+      // this is a placeholder pill, not a real status vocabulary.
+      render: () => <Pill tone="muted">—</Pill>,
+    },
+    {
+      key: 'runs30d',
+      header: 'Runs 30d',
+      width: 'minmax(0,90px)',
+      className: 'font-mono text-[13px] text-muted-foreground',
+      render: (model) => model.runs_30d,
+    },
+    {
+      key: 'lastRun',
+      header: 'Last run',
+      width: 'minmax(0,130px)',
+      className: 'whitespace-nowrap text-[13px] text-muted-foreground',
+      render: (model) => formatRelativeTime(model.last_run_in_seconds),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: 'minmax(0,190px)',
+      className: 'text-right',
+      render: (model) => (
+        <div
+          className="flex items-center justify-end gap-2"
+          onClick={stopRowNav}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {/* Start is only rendered for users who can manage processes
+              (parent passes onStartModel); others don't see it rather
+              than get a button that 403s. */}
+          {onStartModel ? (
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              onClick={() => onStartModel(model)}
+              className="px-3.5 py-1.5 text-[11.5px] shadow-none"
+            >
+              Start
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="pill-outline"
+            size="pill"
+            onClick={() => onOpenModel?.(model)}
+            className="border px-3.5 py-1.5 text-[11.5px]"
+          >
+            Open
+          </Button>
+          <ActionMenu
+            triggerLabel="More actions"
+            items={[
+              {
+                label: 'Open',
+                icon: <ExternalLink className="size-3.5" />,
+                onSelect: () => onOpenModel?.(model),
+              },
+              ...(onDeleteModel
+                ? [
+                    {
+                      label: 'Delete',
+                      icon: <Trash2 className="size-3.5" />,
+                      destructive: true,
+                      onSelect: () => setDeleteTarget(model),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
+      ),
+    },
+  ];
+
   return (
     <>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
@@ -157,14 +265,10 @@ export function ProcessesModelsList({
           {/* "Browse groups" removed — the "Showing [scope] ▾" pill below opens
               the same group picker, so a second entry point was redundant. */}
           {onCreateModel ? (
-            <button
-              type="button"
-              onClick={onCreateModel}
-              className="inline-flex items-center gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs"
-            >
+            <Button type="button" variant="pill" size="pill" onClick={onCreateModel} className="gap-2">
               <Plus className="size-[15px]" strokeWidth={2.2} />
               New process model
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -209,48 +313,26 @@ export function ProcessesModelsList({
 
       <div className="pb-14">
         <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
-          <label className="flex max-w-[420px] min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2.5">
-            <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-            <Input
-              ref={searchRef}
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={onSearchKeyDown}
-              placeholder="Search process models"
-              className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] text-foreground shadow-none outline-none focus-visible:ring-0"
-              aria-label="Search process models"
-            />
-            <kbd className="shrink-0 rounded-md border border-border px-1.5 py-px font-mono text-[11px] text-muted-foreground">
-              ⌘K
-            </kbd>
-          </label>
+          <SearchBar
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={setSearch}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Search process models"
+            aria-label="Search process models"
+            className="max-w-[420px] min-w-0 flex-1"
+          />
 
-          <button
-            type="button"
-            aria-disabled="true"
-            className="inline-flex cursor-default items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-[13px] font-medium text-muted-foreground select-none"
-          >
-            Any status
-            <ChevronDown />
-          </button>
-          <button
-            type="button"
-            aria-disabled="true"
-            className="inline-flex cursor-default items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-[13px] font-medium text-muted-foreground select-none"
-          >
-            All owners
-            <ChevronDown />
-          </button>
-          <button
-            type="button"
-            onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-[13px] font-medium text-foreground"
-            aria-label={`Sort by last run, currently ${sortDir === 'desc' ? 'newest first' : 'oldest first'}`}
-          >
-            Sort: last run {sortDir === 'desc' ? '↓' : '↑'}
-            <ChevronDown />
-          </button>
+          <Chip disabled>Any status</Chip>
+          <Chip disabled>All owners</Chip>
+
+          <SortDropdown
+            options={SORT_OPTIONS}
+            value={sortDir}
+            onChange={(value) => setSortDir(value as SortDir)}
+            className="min-w-0"
+          />
 
           <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
             {loading ? 'Loading…' : resultCount}
@@ -264,141 +346,48 @@ export function ProcessesModelsList({
         ) : null}
 
         <Card variant="bordered" className="overflow-x-auto">
-          <div
-            className={cn(
-              'grid min-w-[760px] gap-4 border-b border-border bg-muted/60 px-[22px] py-3',
-              'text-[11px] tracking-[0.05em] text-muted-foreground uppercase',
-              'grid-cols-[minmax(220px,2.4fr)_minmax(0,140px)_minmax(0,90px)_minmax(0,130px)_minmax(0,190px)]',
-            )}
-          >
-            <div>Process model</div>
-            <div>Status</div>
-            <div>Runs 30d</div>
-            <div>Last run</div>
-            <div className="text-right">Actions</div>
-          </div>
-
           {loading ? (
             <div className="px-[22px] py-8 text-sm text-muted-foreground">Loading process models…</div>
-          ) : null}
-
-          {isEmpty ? (
-            <div className="px-6 py-[52px] text-center">
-              <div className="text-[15.5px] font-semibold text-foreground">
-                {groupFilterOn ? 'No models in this group' : 'No process models'}
-              </div>
-              <p className="mt-2 mb-5 text-[13.5px] text-muted-foreground">
-                {groupFilterOn
+          ) : isEmpty ? (
+            <EmptyState
+              title={groupFilterOn ? 'No models in this group' : 'No process models'}
+              description={
+                groupFilterOn
                   ? `Create a model here, or clear the filter to see all ${totalForEmpty} models.`
                   : search.trim()
                     ? 'Try a different search, or clear the search box.'
-                    : 'No models are available for this tenant yet.'}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2.5">
-              {onCreateModel ? (
-                <button
-                  type="button"
-                  onClick={onCreateModel}
-                  className="rounded-full bg-nav-active px-5 py-2.5 text-xs font-semibold tracking-[0.04em] text-foreground uppercase"
-                >
-                  New process model
-                </button>
-              ) : null}
-                {groupFilterOn ? (
-                  <Button
-                    type="button"
-                    variant="pill-outline"
-                    size="pill"
-                    onClick={onClearGroupFilter}
-                    className="text-xs"
-                  >
-                    Clear filter
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          {!loading &&
-            filtered.map((model) => (
-              <div
-                key={model.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenModel?.(model)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenModel?.(model);
-                  }
-                }}
-                className={cn(
-                  'grid min-w-[760px] cursor-pointer items-center gap-4 border-b border-border px-[22px] py-[15px]',
-                  'grid-cols-[minmax(220px,2.4fr)_minmax(0,140px)_minmax(0,90px)_minmax(0,130px)_minmax(0,190px)]',
-                )}
-              >
-                <div className="min-w-0">
-                  <div className="line-clamp-2 text-[14.5px] leading-snug font-semibold text-foreground">
-                    {model.display_name}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      stopRowNav(e);
-                      onFilterByGroup?.(model.group_id);
-                    }}
-                    className="mt-1 flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-muted-foreground"
-                  >
-                    <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
-                    <span className="truncate">
-                      {model.group_display_name || model.group_id}
-                    </span>
-                  </button>
-                </div>
-                <div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-                    —
-                  </span>
-                </div>
-                <div className="font-mono text-[13px] text-muted-foreground">{model.runs_30d}</div>
-                <div className="whitespace-nowrap text-[13px] text-muted-foreground">
-                  {formatRelativeTime(model.last_run_in_seconds)}
-                </div>
-                <div
-                  className="flex items-center justify-end gap-2"
-                  onClick={stopRowNav}
-                  onKeyDown={(e) => e.stopPropagation()}
-                >
-                  {/* Start is only rendered for users who can manage processes
-                      (parent passes onStartModel); others don't see it rather
-                      than get a button that 403s. */}
-                  {onStartModel ? (
-                    <Button
-                      type="button"
-                      variant="pill"
-                      size="pill"
-                      onClick={() => onStartModel(model)}
-                      className="px-3.5 py-1.5 text-[11.5px] shadow-none"
-                    >
-                      Start
+                    : 'No models are available for this tenant yet.'
+              }
+              actions={
+                <>
+                  {onCreateModel ? (
+                    <Button type="button" variant="pill" size="pill" onClick={onCreateModel} className="text-xs">
+                      New process model
                     </Button>
                   ) : null}
-                  <Button
-                    type="button"
-                    variant="pill-outline"
-                    size="pill"
-                    onClick={() => onOpenModel?.(model)}
-                    className="border px-3.5 py-1.5 text-[11.5px]"
-                  >
-                    Open
-                  </Button>
-                  <RowActionsMenu
-                    onOpen={() => onOpenModel?.(model)}
-                    onDelete={onDeleteModel ? () => setDeleteTarget(model) : undefined}
-                  />
-                </div>
-              </div>
-            ))}
+                  {groupFilterOn ? (
+                    <Button
+                      type="button"
+                      variant="pill-outline"
+                      size="pill"
+                      onClick={onClearGroupFilter}
+                      className="text-xs"
+                    >
+                      Clear filter
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              rows={filtered}
+              getRowKey={(model) => model.id}
+              onRowClick={(model) => onOpenModel?.(model)}
+              minWidth="760px"
+            />
+          )}
 
           {!loading && !isEmpty ? (
             <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] py-3.5 text-[13px] text-muted-foreground">
@@ -414,7 +403,7 @@ export function ProcessesModelsList({
         </Card>
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
           if (!open && !deleting) {
@@ -422,166 +411,27 @@ export function ProcessesModelsList({
             setDeleteError(null);
           }
         }}
-      >
-        <DialogContent showCloseButton={!deleting}>
-          <DialogHeader>
-            <DialogTitle>Delete process model?</DialogTitle>
-            <DialogDescription>
-              {deleteTarget ? (
-                <>
-                  This permanently deletes{' '}
-                  <span className="font-semibold text-foreground">{deleteTarget.display_name}</span>{' '}
-                  and its files. This can’t be undone.
-                </>
+        title="Delete process model?"
+        description={
+          deleteTarget ? (
+            <>
+              This permanently deletes{' '}
+              <span className="font-semibold text-foreground">{deleteTarget.display_name}</span>{' '}
+              and its files. This can’t be undone.
+              {deleteError ? (
+                <span className="mt-2 block text-destructive" role="alert">
+                  {deleteError}
+                </span>
               ) : null}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {deleteError}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setDeleteTarget(null);
-                setDeleteError(null);
-              }}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={confirmDelete}
-              disabled={deleting}
-            >
-              {deleting ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </>
+          ) : null
+        }
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        tone="destructive"
+        pending={deleting}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }
 
-/** Working per-row overflow menu for the Processes list. Self-contained
- * open state + outside-click/Escape close (the app has no shared
- * DropdownMenu primitive). "Delete" is only offered when the parent wires
- * onDelete; it opens the list's confirmation dialog rather than deleting
- * directly. */
-function RowActionsMenu({
-  onOpen,
-  onDelete,
-}: {
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function onDocClick(event: globalThis.MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
-    }
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <button
-        type="button"
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex size-7 items-center justify-center rounded-full hover:bg-muted"
-      >
-        <MoreVertical className="size-[15px] text-muted-foreground" strokeWidth={2.4} />
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg"
-        >
-          <RowMenuItem
-            icon={<ExternalLink className="size-3.5" />}
-            label="Open"
-            onSelect={() => {
-              setOpen(false);
-              onOpen();
-            }}
-          />
-          {onDelete ? (
-            <RowMenuItem
-              icon={<Trash2 className="size-3.5" />}
-              label="Delete"
-              destructive
-              onSelect={() => {
-                setOpen(false);
-                onDelete();
-              }}
-            />
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function RowMenuItem({
-  icon,
-  label,
-  onSelect,
-  destructive = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  onSelect: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      className={cn(
-        'flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[13px] hover:bg-muted',
-        destructive ? 'text-destructive' : 'text-foreground',
-      )}
-    >
-      <span className={destructive ? 'text-destructive' : 'text-muted-foreground'}>{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-function ChevronDown() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden
-    >
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}

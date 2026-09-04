@@ -1,19 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
-import { ArrowDown, ArrowUp, Building2, Plus, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, Plus } from 'lucide-react';
 
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
-import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/library/alert/Alert';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Modal } from '@/components/library/modal/Modal';
+import { Pill, type PillProps } from '@/components/library/pill/Pill';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
+import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   createTenant,
@@ -33,14 +30,22 @@ type SortField = 'name' | 'slug';
 type SortDirection = 'asc' | 'desc';
 type StatusFilter = 'all' | 'ACTIVE' | 'INACTIVE';
 
-const STATUS_BADGE: Record<TenantStatus, 'success' | 'warning' | 'destructive'> = {
+const STATUS_TONE: Record<TenantStatus, NonNullable<PillProps['tone']>> = {
   ACTIVE: 'success',
   INACTIVE: 'warning',
-  DELETED: 'destructive',
+  DELETED: 'error',
 };
 
-const SELECT_CLASS =
-  'appearance-none rounded-full border border-border bg-card px-3.5 py-2 pr-8 text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40';
+const SEARCH_FIELD_OPTIONS = [
+  { label: 'Tenant name', value: 'name' },
+  { label: 'Tenant alias', value: 'slug' },
+];
+
+const STATUS_FILTER_OPTIONS = [
+  { label: 'Any status', value: 'all' },
+  { label: 'Active', value: 'ACTIVE' },
+  { label: 'Inactive', value: 'INACTIVE' },
+];
 
 /**
  * Super-admin tenant registry. List / search / sort / status filter / create.
@@ -193,6 +198,75 @@ export default function TenantsPage() {
     );
   }
 
+  const columns: DataTableColumn<Tenant>[] = [
+    {
+      key: 'name',
+      header: (
+        <SortHeader
+          label="Tenant name"
+          field="name"
+          active={sortField}
+          direction={sortDirection}
+          onToggle={toggleSort}
+        />
+      ),
+      width: 'minmax(160px,1.6fr)',
+      render: (tenant) => (
+        <Link
+          to={`/tenant-management/${encodeURIComponent(tenant.id)}`}
+          state={{ tenantName: tenant.name }}
+          className="text-left font-medium text-foreground no-underline hover:underline"
+          data-testid={`tenant-open-${tenant.id}`}
+        >
+          {tenant.name}
+        </Link>
+      ),
+    },
+    {
+      key: 'slug',
+      header: (
+        <SortHeader
+          label="Tenant alias"
+          field="slug"
+          active={sortField}
+          direction={sortDirection}
+          onToggle={toggleSort}
+        />
+      ),
+      width: 'minmax(120px,1fr)',
+      render: (tenant) => (
+        <span className="font-mono text-[13px] text-muted-foreground">{tenant.slug}</span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: 'minmax(90px,120px)',
+      render: (tenant) => (
+        <Pill tone={STATUS_TONE[tenant.status]} dot={false}>
+          {tenant.status}
+        </Pill>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      className: 'text-right whitespace-nowrap',
+      width: 'minmax(90px,110px)',
+      render: (tenant) => (
+        <Button variant="ghost" size="sm" asChild>
+          <Link
+            to={`/tenant-management/${encodeURIComponent(tenant.id)}`}
+            state={{ tenantName: tenant.name }}
+            data-testid={`tenant-manage-${tenant.id}`}
+          >
+            Manage
+          </Link>
+        </Button>
+      ),
+    },
+  ];
+
   const searchPlaceholder =
     searchField === 'name' ? 'Search by tenant name' : 'Search by tenant alias';
   const emptyCopy =
@@ -223,43 +297,28 @@ export default function TenantsPage() {
       </div>
 
       <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
-        <label className="relative">
-          <span className="sr-only">Search by</span>
-          <select
-            className={SELECT_CLASS}
-            value={searchField}
-            onChange={(event) => setSearchField(event.target.value as SearchField)}
-            data-testid="tenant-search-type-select"
-          >
-            <option value="name">Tenant name</option>
-            <option value="slug">Tenant alias</option>
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2.5">
-          <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-          <Input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={searchPlaceholder}
-            className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] text-foreground shadow-none outline-none focus-visible:ring-0"
-            data-testid="tenant-search-input"
-            aria-label={searchPlaceholder}
-          />
-        </label>
-        <label className="relative">
-          <span className="sr-only">Status</span>
-          <select
-            className={SELECT_CLASS}
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-            data-testid="tenant-status-filter"
-          >
-            <option value="all">Any status</option>
-            <option value="ACTIVE">Active</option>
-            <option value="INACTIVE">Inactive</option>
-          </select>
-        </label>
+        <SortDropdown
+          label="Search by"
+          options={SEARCH_FIELD_OPTIONS}
+          value={searchField}
+          onChange={(value) => setSearchField(value as SearchField)}
+          className="min-w-0"
+        />
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          data-testid="tenant-search-input"
+          className="min-w-0 flex-1"
+        />
+        <SortDropdown
+          label="Status"
+          options={STATUS_FILTER_OPTIONS}
+          value={statusFilter}
+          onChange={(value) => setStatusFilter(value as StatusFilter)}
+          className="min-w-0"
+        />
         <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
           {loading
             ? 'Loading…'
@@ -268,9 +327,9 @@ export default function TenantsPage() {
       </div>
 
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <Alert tone="error" className="mb-4">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       <Card variant="bordered" className="overflow-hidden">
@@ -279,126 +338,61 @@ export default function TenantsPage() {
         ) : visible.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">{emptyCopy}</p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">
-                  <SortHeader
-                    label="Tenant name"
-                    field="name"
-                    active={sortField}
-                    direction={sortDirection}
-                    onToggle={toggleSort}
-                  />
-                </th>
-                <th className="px-[22px] py-3 font-medium">
-                  <SortHeader
-                    label="Tenant alias"
-                    field="slug"
-                    active={sortField}
-                    direction={sortDirection}
-                    onToggle={toggleSort}
-                  />
-                </th>
-                <th className="px-[22px] py-3 font-medium">Status</th>
-                <th className="px-[22px] py-3 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((tenant) => {
-                const managementPath = `/tenant-management/${encodeURIComponent(tenant.id)}`;
-                return (
-                  <tr
-                    key={tenant.id}
-                    className="border-b border-border last:border-b-0"
-                    data-testid={`tenant-row-${tenant.id}`}
-                  >
-                    <td className="px-[22px] py-3 font-medium text-foreground">
-                      <Link
-                        to={managementPath}
-                        state={{ tenantName: tenant.name }}
-                        className="text-left font-medium text-foreground no-underline hover:underline"
-                        data-testid={`tenant-open-${tenant.id}`}
-                      >
-                        {tenant.name}
-                      </Link>
-                    </td>
-                    <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
-                      {tenant.slug}
-                    </td>
-                    <td className="px-[22px] py-3">
-                      <Badge variant={STATUS_BADGE[tenant.status]}>{tenant.status}</Badge>
-                    </td>
-                    <td className="px-[22px] py-3 text-right whitespace-nowrap">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link
-                          to={managementPath}
-                          state={{ tenantName: tenant.name }}
-                          data-testid={`tenant-manage-${tenant.id}`}
-                        >
-                          Manage
-                        </Link>
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable columns={columns} rows={visible} getRowKey={(tenant) => tenant.id} />
         )}
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={(open) => !open && closeDialog()}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={(event) => void handleSave(event)}>
-            <DialogHeader>
-              <DialogTitle>Add Tenant</DialogTitle>
-              <DialogDescription>
-                Give this organization a display name. The alias is generated from it.
-              </DialogDescription>
-            </DialogHeader>
-            <label className="mt-4 block text-sm font-medium text-foreground">
-              Tenant name
-              <Input
-                className="mt-1.5"
-                value={dialogName}
-                onChange={(event) => setDialogName(event.target.value)}
-                autoComplete="off"
-                maxLength={MAX_TENANT_NAME_LENGTH}
-                data-testid="tenant-name"
-                required
-              />
-            </label>
-            {dialogName.trim() ? (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Building2 className="size-3" aria-hidden />
-                Alias: {generateUniqueTenantAlias(dialogName, rows)}
-              </p>
-            ) : null}
-            {dialogError ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {dialogError}
-              </p>
-            ) : null}
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="pill-cancel" size="pill" onClick={closeDialog}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="pill-dark"
-                size="pill"
-                disabled={!dialogName.trim() || saving}
-                data-testid="tenant-save"
-              >
-                {saving ? 'Saving…' : 'Create'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={createOpen}
+        onOpenChange={(open) => !open && closeDialog()}
+        title="Add Tenant"
+        footer={
+          <>
+            <Button type="button" variant="pill-cancel" size="pill" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="tenant-create-form"
+              variant="pill-dark"
+              size="pill"
+              disabled={!dialogName.trim() || saving}
+              data-testid="tenant-save"
+            >
+              {saving ? 'Saving…' : 'Create'}
+            </Button>
+          </>
+        }
+      >
+        <form id="tenant-create-form" onSubmit={(event) => void handleSave(event)}>
+          <p className="text-[13.5px] text-muted-foreground">
+            Give this organization a display name. The alias is generated from it.
+          </p>
+          <label className="mt-4 block text-sm font-medium text-foreground">
+            Tenant name
+            <Input
+              className="mt-1.5"
+              value={dialogName}
+              onChange={(event) => setDialogName(event.target.value)}
+              autoComplete="off"
+              maxLength={MAX_TENANT_NAME_LENGTH}
+              data-testid="tenant-name"
+              required
+            />
+          </label>
+          {dialogName.trim() ? (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Building2 className="size-3" aria-hidden />
+              Alias: {generateUniqueTenantAlias(dialogName, rows)}
+            </p>
+          ) : null}
+          {dialogError ? (
+            <Alert tone="error" className="mt-3">
+              {dialogError}
+            </Alert>
+          ) : null}
+        </form>
+      </Modal>
     </main>
   );
 }

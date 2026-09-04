@@ -10,10 +10,15 @@ import {
   type ProcessInstanceLifecycleAction,
 } from '@/lib/processInstancesApi';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
-import { StatusBadge } from '@/components/StatusBadge';
+import { Alert } from '@/components/library/alert/Alert';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { EmptyState } from '@/components/library/empty-state/EmptyState';
+import { Pill } from '@/components/library/pill/Pill';
+import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { processInstanceLifecycleVisibility } from './lifecycleActions';
 import { ProcessInstanceCompletableTasksTable } from './components/ProcessInstanceCompletableTasksTable';
 import { ProcessInstanceCompletedTasksTable } from './components/ProcessInstanceCompletedTasksTable';
@@ -82,6 +87,16 @@ function MetaCell({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 06). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 /**
  * Process instance detail — mockup shell: breadcrumb, title + icon
  * actions, metadata grid, Tasks I can complete, tab bodies. Download is
@@ -102,6 +117,7 @@ export default function ProcessInstanceDetailPage() {
   const [notFound, setNotFound] = useState(!validId);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [confirmingTerminate, setConfirmingTerminate] = useState(false);
   const [tab, setTab] = useState<DetailTab>('diagram');
 
   useEffect(() => {
@@ -150,9 +166,6 @@ export default function ProcessInstanceDetailPage() {
 
   async function handleLifecycle(action: ProcessInstanceLifecycleAction) {
     if (!validId || actionBusy) return;
-    if (action === 'terminate' && !window.confirm('Terminate this process instance? This cannot be undone.')) {
-      return;
-    }
     setActionBusy(true);
     setError(null);
     try {
@@ -170,18 +183,16 @@ export default function ProcessInstanceDetailPage() {
 
   return (
     <div className="flex min-h-screen flex-1 flex-col px-11 py-7">
-      <nav
-        aria-label="Breadcrumb"
-        className="mb-[18px] flex min-w-0 flex-wrap items-center gap-1.5 text-[13.5px] text-muted-foreground"
-      >
-        <Link to="/process-instances" className="shrink-0 font-semibold text-info no-underline hover:underline">
-          Process Instances
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span className="min-w-0 truncate font-mono font-semibold text-foreground" aria-current="page">
-          {detail?.process_model_display_name ?? instanceIdParam} #{instanceIdParam}
-        </span>
-      </nav>
+      <Breadcrumbs
+        className="mb-[18px] min-w-0 text-[13.5px] text-muted-foreground"
+        LinkComponent={RouterBreadcrumbLink}
+        linkClassName="shrink-0 text-info font-semibold"
+        lastClassName="min-w-0 truncate font-mono"
+        items={[
+          { label: 'Process Instances', href: '/process-instances' },
+          { label: `${detail?.process_model_display_name ?? instanceIdParam} #${instanceIdParam}` },
+        ]}
+      />
 
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <h1 className="m-0 font-display text-[clamp(24px,2.4vw,32px)] font-semibold tracking-tight text-foreground">
@@ -194,7 +205,7 @@ export default function ProcessInstanceDetailPage() {
           {actions?.terminate ? (
             <IconAction
               label="Terminate"
-              onClick={() => handleLifecycle('terminate')}
+              onClick={() => setConfirmingTerminate(true)}
               disabled={actionBusy}
             >
               <Square className="size-3.5 fill-destructive text-destructive" strokeWidth={0} />
@@ -234,20 +245,18 @@ export default function ProcessInstanceDetailPage() {
           Process instance not found.
         </p>
       ) : error && !detail ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
+        <Alert tone="error">{error}</Alert>
       ) : detail ? (
         <>
           {error ? (
-            <p className="mb-4 text-sm text-destructive" role="alert">
+            <Alert tone="error" className="mb-4">
               {error}
-            </p>
+            </Alert>
           ) : null}
 
           <Card variant="bordered" className="mb-[26px] grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-x-7 gap-y-3.5 px-[22px] py-[18px]">
             <MetaCell label="Status">
-              <StatusBadge status={detail.status} />
+              <Pill {...processInstanceStatusToPillProps(detail.status)} />
             </MetaCell>
             <MetaCell label="Started by">{detail.started_by || '—'}</MetaCell>
             <MetaCell label="Started">
@@ -268,24 +277,19 @@ export default function ProcessInstanceDetailPage() {
             <ProcessInstanceCompletableTasksTable instanceId={parsedId} tenantId={scopedTenantId} />
           </div>
 
-          <div className="mb-5 flex items-center gap-[26px] border-b border-border">
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={tab === item.id}
-                onClick={() => setTab(item.id)}
-                className={cn(
-                  'cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent py-2.5 font-sans text-[14.5px]',
-                  tab === item.id
-                    ? 'border-info font-semibold text-info'
-                    : 'border-transparent font-medium text-muted-foreground',
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+          <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="mb-5">
+            <TabsList className="gap-[26px]">
+              {TABS.map((item) => (
+                <TabsTrigger
+                  key={item.id}
+                  value={item.id}
+                  className="text-[14.5px] data-[state=active]:border-info data-[state=active]:text-info"
+                >
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
           {tab === 'diagram' ? (
             detail.bpmn_xml ? (
@@ -295,10 +299,10 @@ export default function ProcessInstanceDetailPage() {
                 </Suspense>
               </Card>
             ) : (
-              <p className="text-sm text-muted-foreground" role="status">
-                No BPMN diagram is available for this instance (its process definition may have been
-                removed).
-              </p>
+              <EmptyState
+                role="status"
+                title="No BPMN diagram is available for this instance (its process definition may have been removed)."
+              />
             )
           ) : null}
 
@@ -311,11 +315,7 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
 
           {tab === 'messages' ? (
-            <Card variant="bordered">
-              <p className="px-[22px] py-11 text-center text-[13.5px] text-muted-foreground">
-                No messages recorded for this process instance.
-              </p>
-            </Card>
+            <EmptyState title="No messages recorded for this process instance." />
           ) : null}
 
           {tab === 'tasks' ? (
@@ -323,6 +323,18 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
         </>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmingTerminate}
+        onOpenChange={setConfirmingTerminate}
+        title="Terminate process instance?"
+        description="This cannot be undone."
+        confirmLabel="Terminate"
+        onConfirm={() => {
+          setConfirmingTerminate(false);
+          void handleLifecycle('terminate');
+        }}
+      />
     </div>
   );
 }

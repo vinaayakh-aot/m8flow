@@ -43,3 +43,21 @@ export const NameSelected: Story = {
     value: "name",
   },
 }
+
+// Reuses the same pill-dropdown shape for a plain single-select filter
+// (ticket 19) instead of the "Sort: " prefix — e.g. a Status filter.
+const statusOptions = [
+  { label: "All statuses", value: "all" },
+  { label: "Active", value: "active" },
+  { label: "Inactive", value: "inactive" },
+]
+
+export const NonSortLabel: Story = {
+  name: 'Non-"Sort:" label (e.g. a Status filter)',
+  render: (args) => <ControlledSortDropdown {...args} />,
+  args: {
+    options: statusOptions,
+    value: statusOptions[1].value,
+    label: "Status",
+  },
+}

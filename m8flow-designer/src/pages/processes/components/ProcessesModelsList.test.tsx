@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProcessesModelsList } from './ProcessesModelsList';
@@ -82,37 +83,44 @@ describe('ProcessesModelsList', () => {
   });
 
   it('opens the overflow menu and confirms delete', async () => {
+    // Radix's DropdownMenu (ActionMenu) doesn't open under a plain
+    // fireEvent.click in jsdom — use @testing-library/user-event, per the
+    // map's Notes.
+    const user = userEvent.setup();
     const onDelete = vi.fn().mockResolvedValue(undefined);
     render(<ProcessesModelsList models={MODELS} onDeleteModel={onDelete} />);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
 
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText('Delete process model?')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(MODELS[0]));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
   });
 
   it('surfaces the has-instances (409) reason in the delete dialog', async () => {
+    const user = userEvent.setup();
     const onDelete = vi.fn().mockRejectedValue(new ApiError('/x', 409, 'DELETE'));
     render(<ProcessesModelsList models={MODELS} onDeleteModel={onDelete} />);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
-    const dialog = await screen.findByRole('dialog');
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(await within(dialog).findByText(/still has process instances/i)).toBeInTheDocument();
     // Dialog stays open so the user can read the reason.
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 
-  it('does not offer Delete when onDeleteModel is not provided', () => {
+  it('does not offer Delete when onDeleteModel is not provided', async () => {
+    const user = userEvent.setup();
     render(<ProcessesModelsList models={MODELS} />);
-    fireEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    expect(await screen.findByRole('menuitem', { name: 'Open' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
   });
 });

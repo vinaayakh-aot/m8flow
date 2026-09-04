@@ -16,6 +16,12 @@ const pillVariants = cva(
         error: "bg-destructive/10 text-destructive",
         warning: "bg-warning/10 text-warning",
         muted: "bg-muted text-muted-foreground",
+        // Matches `ui/badge.tsx`'s own `info` variant and `library/alert`'s
+        // `info` tone exactly (`bg-info/10 text-info`) — not the
+        // page-local `bg-nav-active/15 text-info` "Primary" badge look,
+        // which uses a different token/opacity and isn't this app's actual
+        // "info" convention (confirmed against `Badge`'s `info` variant).
+        info: "bg-info/10 text-info",
       },
     },
     defaultVariants: {
@@ -36,6 +42,7 @@ const pillDotToneClassName: Record<
   error: "bg-destructive",
   warning: "bg-warning",
   muted: "bg-muted-foreground",
+  info: "bg-info",
 }
 
 export interface PillProps

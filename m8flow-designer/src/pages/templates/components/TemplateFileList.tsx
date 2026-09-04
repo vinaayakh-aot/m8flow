@@ -9,6 +9,7 @@ import {
   type Template,
   type TemplateFile,
 } from '@/lib/templatesApi';
+import { Pill } from '@/components/library/pill/Pill';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -113,9 +114,9 @@ function TemplateFileRow({
         <div className="mt-0.5 text-xs text-muted-foreground">{kind.label}</div>
       </div>
       {primary ? (
-        <span className="shrink-0 rounded-full bg-nav-active/15 px-2.5 py-0.5 text-[11.5px] font-semibold text-info">
+        <Pill tone="info" dot={false} className="shrink-0">
           Primary
-        </span>
+        </Pill>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Link

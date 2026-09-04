@@ -1,14 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 const TYPED = [
@@ -96,88 +89,87 @@ export function AddProcessModelFileDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Add file</DialogTitle>
-            <DialogDescription>
-              BPMN, DMN, JSON, and Markdown open in the modeler.
-            </DialogDescription>
-          </DialogHeader>
+    <Modal
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="Add file"
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="add-pm-file-form" disabled={submitting || !fileName.trim()}>
+            {submitting ? 'Adding…' : 'Add file'}
+          </Button>
+        </>
+      }
+    >
+      <p className="-mt-1 text-sm text-muted-foreground">
+        BPMN, DMN, JSON, and Markdown open in the modeler.
+      </p>
+      <form id="add-pm-file-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+          Type
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as FileKind);
+              setUploadText(null);
+              setError(null);
+            }}
+            aria-label="File type"
+            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {TYPED.map((row) => (
+              <option key={row.value} value={row.value}>
+                {row.label}
+              </option>
+            ))}
+            <option value="upload">Upload</option>
+          </select>
+        </label>
 
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+          File name
+          <Input
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            placeholder={typed ? `diagram${typed.suffix}` : 'notes.txt'}
+            aria-label="File name"
+            required
+          />
+        </label>
+
+        {kind === 'upload' ? (
           <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            Type
-            <select
-              value={kind}
+            File
+            <input
+              type="file"
+              aria-label="Upload file"
+              accept=".bpmn,.dmn,.json,.md,.txt,.xml,.svg,.html,.css"
               onChange={(e) => {
-                setKind(e.target.value as FileKind);
-                setUploadText(null);
-                setError(null);
+                const file = e.target.files?.[0];
+                if (!file) {
+                  setUploadText(null);
+                  return;
+                }
+                if (!fileName.trim()) setFileName(file.name);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  setUploadText(typeof reader.result === 'string' ? reader.result : '');
+                };
+                reader.readAsText(file);
               }}
-              aria-label="File type"
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {TYPED.map((row) => (
-                <option key={row.value} value={row.value}>
-                  {row.label}
-                </option>
-              ))}
-              <option value="upload">Upload</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            File name
-            <Input
-              value={fileName}
-              onChange={(e) => setFileName(e.target.value)}
-              placeholder={typed ? `diagram${typed.suffix}` : 'notes.txt'}
-              aria-label="File name"
-              required
             />
           </label>
+        ) : null}
 
-          {kind === 'upload' ? (
-            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              File
-              <input
-                type="file"
-                aria-label="Upload file"
-                accept=".bpmn,.dmn,.json,.md,.txt,.xml,.svg,.html,.css"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) {
-                    setUploadText(null);
-                    return;
-                  }
-                  if (!fileName.trim()) setFileName(file.name);
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    setUploadText(typeof reader.result === 'string' ? reader.result : '');
-                  };
-                  reader.readAsText(file);
-                }}
-              />
-            </label>
-          ) : null}
-
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting || !fileName.trim()}>
-              {submitting ? 'Adding…' : 'Add file'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

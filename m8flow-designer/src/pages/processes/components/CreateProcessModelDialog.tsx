@@ -2,15 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 export type CreateProcessModelDialogProps = {
@@ -109,100 +102,99 @@ export function CreateProcessModelDialog({
     !submitting && groups.length > 0 && Boolean(displayName.trim()) && Boolean(processModelId.trim());
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>New process model</DialogTitle>
-            <DialogDescription>
-              Creates a model under a process group and a default BPMN you can open in the modeler.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpm-group" className="text-xs font-medium text-muted-foreground">
-              Process group
-            </label>
-            {groupsLoading ? (
-              <p className="text-sm text-muted-foreground">Loading groups…</p>
-            ) : groups.length === 0 ? (
-              <p className="text-sm text-destructive">
-                No process groups exist yet — create one from Process groups first.
-              </p>
-            ) : (
-              <select
-                id="cpm-group"
-                value={processGroupId}
-                onChange={(e) => setProcessGroupId(e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.display_name || g.id}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpm-name" className="text-xs font-medium text-muted-foreground">
-              Display name
-            </label>
-            <Input
-              id="cpm-name"
-              value={displayName}
-              onChange={(e) => handleDisplayNameChange(e.target.value)}
-              placeholder="Invoice Approval"
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpm-id" className="text-xs font-medium text-muted-foreground">
-              Identifier
-            </label>
-            <Input
-              id="cpm-id"
-              value={processModelId}
-              onChange={(e) => {
-                setProcessModelId(e.target.value);
-                setIdEdited(true);
-              }}
-              placeholder="invoice-approval"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Generated from the display name. You can edit it before creating.
+    <Modal
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="New process model"
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="create-process-model-form" disabled={!canSubmit}>
+            {submitting ? 'Creating…' : 'Create process model'}
+          </Button>
+        </>
+      }
+    >
+      <p className="-mt-1 text-sm text-muted-foreground">
+        Creates a model under a process group and a default BPMN you can open in the modeler.
+      </p>
+      <form id="create-process-model-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cpm-group" className="text-xs font-medium text-muted-foreground">
+            Process group
+          </label>
+          {groupsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading groups…</p>
+          ) : groups.length === 0 ? (
+            <p className="text-sm text-destructive">
+              No process groups exist yet — create one from Process groups first.
             </p>
-          </div>
+          ) : (
+            <select
+              id="cpm-group"
+              value={processGroupId}
+              onChange={(e) => setProcessGroupId(e.target.value)}
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.display_name || g.id}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="cpm-description" className="text-xs font-medium text-muted-foreground">
-              Description (optional)
-            </label>
-            <Input
-              id="cpm-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cpm-name" className="text-xs font-medium text-muted-foreground">
+            Display name
+          </label>
+          <Input
+            id="cpm-name"
+            value={displayName}
+            onChange={(e) => handleDisplayNameChange(e.target.value)}
+            placeholder="Invoice Approval"
+            required
+          />
+        </div>
 
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cpm-id" className="text-xs font-medium text-muted-foreground">
+            Identifier
+          </label>
+          <Input
+            id="cpm-id"
+            value={processModelId}
+            onChange={(e) => {
+              setProcessModelId(e.target.value);
+              setIdEdited(true);
+            }}
+            placeholder="invoice-approval"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Generated from the display name. You can edit it before creating.
+          </p>
+        </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              {submitting ? 'Creating…' : 'Create process model'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cpm-description" className="text-xs font-medium text-muted-foreground">
+            Description (optional)
+          </label>
+          <Input
+            id="cpm-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

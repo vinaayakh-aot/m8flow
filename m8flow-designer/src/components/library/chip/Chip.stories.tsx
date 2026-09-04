@@ -64,3 +64,10 @@ export const RemovableChips: Story = {
     </div>
   ),
 }
+
+// Visually-present, non-interactive "inert" chip (`processes`/`templates`
+// page adoption, ticket 20) — a filter chip that exists as chrome but isn't
+// wired to a real dropdown yet.
+export const Disabled: Story = {
+  args: { children: 'Any status', disabled: true, onClick: () => {} },
+}

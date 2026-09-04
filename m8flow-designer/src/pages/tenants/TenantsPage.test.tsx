@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,6 +58,12 @@ describe('TenantsPage', () => {
   });
 
   it('lists tenants and filters by name, alias, and status', async () => {
+    // `SortDropdown` opens via Radix's pointer-based trigger handling, which
+    // `fireEvent.click` alone doesn't exercise in jsdom (confirmed against
+    // the raw `ui/dropdown-menu.tsx` primitive directly, independent of this
+    // page) — `userEvent` simulates the full pointer/mouse sequence Radix
+    // needs. Every other interaction below still uses plain `fireEvent`.
+    const user = userEvent.setup();
     mockFetchTenants.mockResolvedValue([ACME, BETA]);
     renderWithOutlet();
 
@@ -73,13 +80,15 @@ describe('TenantsPage', () => {
     expect(screen.getByText('Showing 1 of 2 tenants')).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('tenant-search-type-select'), { target: { value: 'slug' } });
+    await user.click(screen.getByRole('button', { name: /^Search by:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Tenant alias' }));
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: 'beta-labs' } });
     expect(screen.getByText('Beta Labs')).toBeInTheDocument();
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('tenant-status-filter'), { target: { value: 'INACTIVE' } });
+    await user.click(screen.getByRole('button', { name: /^Status:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Inactive' }));
     expect(screen.getByText('Beta Labs')).toBeInTheDocument();
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
   });

@@ -14,6 +14,7 @@ import {
   runScriptUnitTest,
   type ProcessModelDetailFile,
 } from '@/lib/api';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
@@ -35,6 +36,16 @@ import type { AppShellOutletContext } from '@/components/layout/AppShell';
 type SavePhase = ModelerSavePhase;
 
 const ERROR_FLASH_MS = 2500;
+
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 08). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
 
 /**
  * Process Modeler — one file inside a process model per URL.
@@ -415,25 +426,20 @@ export default function ProcessModelModelerPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[13.5px] text-muted-foreground"
-        >
-          <Link to="/processes" className="shrink-0 text-info no-underline hover:underline">
-            Process Groups
-          </Link>
-          <span aria-hidden="true">/</span>
-          <Link
-            to={groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes'}
-            className="min-w-0 truncate text-info no-underline hover:underline"
-          >
-            {groupLabel}
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span className="truncate font-mono font-semibold text-foreground" aria-current="page">
-            {file}
-          </span>
-        </nav>
+        <Breadcrumbs
+          className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
+          LinkComponent={RouterBreadcrumbLink}
+          linkClassName="text-info font-normal"
+          lastClassName="min-w-0 truncate font-mono"
+          items={[
+            { label: 'Process Groups', href: '/processes' },
+            {
+              label: groupLabel,
+              href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
+            },
+            { label: file },
+          ]}
+        />
         <ModelerFileToolbar
           savePhase={savePhase}
           fileLoaded={xml != null}

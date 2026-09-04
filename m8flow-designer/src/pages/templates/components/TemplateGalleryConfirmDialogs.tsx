@@ -1,12 +1,4 @@
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 
 export function TemplateDeleteConfirmDialog({
   open,
@@ -28,22 +20,15 @@ export function TemplateDeleteConfirmDialog({
     : `"${templateName}" will be permanently deleted.`;
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete template?</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button type="button" variant="destructive" onClick={onConfirm} disabled={submitting}>
-            {submitting ? 'Deleting…' : 'Delete'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}
+      title="Delete template?"
+      description={description}
+      confirmLabel={submitting ? 'Deleting…' : 'Delete'}
+      pending={submitting}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -61,23 +46,15 @@ export function TemplateRestoreConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Restore template?</DialogTitle>
-          <DialogDescription>
-            {`"${templateName}" will be restored and become active again.`}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={onConfirm} disabled={submitting}>
-            {submitting ? 'Restoring…' : 'Restore'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}
+      title="Restore template?"
+      description={`"${templateName}" will be restored and become active again.`}
+      confirmLabel={submitting ? 'Restoring…' : 'Restore'}
+      tone="default"
+      pending={submitting}
+      onConfirm={onConfirm}
+    />
   );
 }

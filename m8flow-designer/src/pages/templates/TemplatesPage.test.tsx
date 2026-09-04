@@ -72,7 +72,6 @@ describe('TemplatesPage', () => {
     expect(url).toContain('/v1.0/m8flow/templates');
     expect(url).toContain('tenantId=t1');
     expect(screen.getByText('Published')).toBeInTheDocument();
-    // Appears twice: the results-count strip and the pagination footer.
     expect(screen.getAllByText('1 template').length).toBeGreaterThan(0);
   });
 
@@ -143,7 +142,7 @@ describe('TemplatesPage', () => {
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
 
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       '"Invoice Approval" will be soft-deleted and can be restored from the Deleted tab.',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -366,7 +365,7 @@ describe('TemplatesPage', () => {
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('"Invoice Approval" will be permanently deleted.');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('"Invoice Approval" will be permanently deleted.');
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
@@ -417,7 +416,7 @@ describe('TemplatesPage', () => {
     expect(screen.queryByRole('button', { name: 'Delete template' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore template' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent(
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
       '"Invoice Approval_deleted_20260101120000" will be restored and become active again.',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Restore' }));

@@ -1,11 +1,14 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { ChevronLeft, ChevronRight, Download, FileText, Plus, RotateCcw, Search, Trash2, Upload } from 'lucide-react';
+import { Download, FileText, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
 
 import type { Template, TemplateVisibility } from '@/lib/templatesApi';
-import { Badge } from '@/components/ui/badge';
+import { EmptyState } from '@/components/library/empty-state/EmptyState';
+import { Pagination } from '@/components/library/pagination/Pagination';
+import { Pill } from '@/components/library/pill/Pill';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
+import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 import {
@@ -30,7 +33,7 @@ export type TemplatesGalleryListProps = {
   order: 'asc' | 'desc';
   onToggleOrder: () => void;
   page: number;
-  pageCount: number;
+  pageSize: number;
   totalCount: number;
   onPageChange: (page: number) => void;
   onOpenTemplate?: (template: Template) => void;
@@ -78,7 +81,7 @@ export function TemplatesGalleryList({
   order,
   onToggleOrder,
   page,
-  pageCount,
+  pageSize,
   totalCount,
   onPageChange,
   onOpenTemplate,
@@ -169,52 +172,41 @@ export function TemplatesGalleryList({
           {/* Blank-template creation deliberately out of scope for this
               ticket (no starter-BPMN precedent exists elsewhere in this
               app — "New process model" is the same kind of still-inert
-              chrome on ProcessesModelsList). Not converted to Button. */}
-          <button
+              chrome on ProcessesModelsList). */}
+          <Button
             type="button"
-            aria-disabled="true"
+            variant="pill"
+            size="pill"
+            disabled
             title="Not yet available — use Import or create a template from an existing process model"
-            className="inline-flex cursor-default items-center gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs select-none"
+            className="gap-2"
           >
             <Plus className="size-[15px]" strokeWidth={2.2} />
             New template
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="pb-14">
         <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
-          <label className="flex max-w-[420px] min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2.5">
-            <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-            <Input
-              ref={searchRef}
-              type="search"
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              onKeyDown={onSearchKeyDown}
-              placeholder="Search templates"
-              className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] text-foreground shadow-none outline-none focus-visible:ring-0"
-              aria-label="Search templates"
-            />
-            <kbd className="shrink-0 rounded-md border border-border px-1.5 py-px font-mono text-[11px] text-muted-foreground">
-              ⌘K
-            </kbd>
-          </label>
+          <SearchBar
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={onSearchChange}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Search templates"
+            aria-label="Search templates"
+            className="max-w-[420px] min-w-0 flex-1"
+          />
 
-          <label className="relative">
-            <span className="sr-only">Visibility</span>
-            <select
-              value={visibility}
-              onChange={(e) => onVisibilityChange(e.target.value as VisibilityFilter)}
-              className="appearance-none rounded-full border border-border bg-card py-2 pr-8 pl-3.5 text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40"
-            >
-              {VISIBILITY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SortDropdown
+            label="Visibility"
+            options={VISIBILITY_OPTIONS}
+            value={visibility}
+            onChange={(value) => onVisibilityChange(value as VisibilityFilter)}
+            className="min-w-0"
+          />
 
           <button
             type="button"
@@ -243,18 +235,16 @@ export function TemplatesGalleryList({
         ) : null}
 
         {isEmpty ? (
-          <Card variant="bordered" className="px-6 py-[52px] text-center">
-            <div className="text-[15.5px] font-semibold text-foreground">
-              {galleryMode === 'deleted' ? 'No deleted templates' : 'No templates found'}
-            </div>
-            <p className="mt-2 text-[13.5px] text-muted-foreground">
-              {search.trim() || visibility !== 'ALL'
+          <EmptyState
+            title={galleryMode === 'deleted' ? 'No deleted templates' : 'No templates found'}
+            description={
+              search.trim() || visibility !== 'ALL'
                 ? 'Try a different search or clear the filters.'
                 : galleryMode === 'deleted'
                   ? 'No soft-deleted templates for this tenant.'
-                  : 'No templates are available for this tenant yet.'}
-            </p>
-          </Card>
+                  : 'No templates are available for this tenant yet.'
+            }
+          />
         ) : null}
 
         {!loading && templates.length > 0 ? (
@@ -277,31 +267,8 @@ export function TemplatesGalleryList({
         ) : null}
 
         {!loading && !isEmpty ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-muted-foreground">
-            <span>{resultCount}</span>
-            <span className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onPageChange(page - 1)}
-                disabled={page <= 1}
-                aria-label="Previous page"
-                className="flex size-7 items-center justify-center rounded-full border border-border disabled:opacity-40"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <span className="font-mono">
-                Page {page} of {Math.max(pageCount, 1)}
-              </span>
-              <button
-                type="button"
-                onClick={() => onPageChange(page + 1)}
-                disabled={page >= pageCount}
-                aria-label="Next page"
-                className="flex size-7 items-center justify-center rounded-full border border-border disabled:opacity-40"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-            </span>
+          <div className="mt-4">
+            <Pagination page={page} onPageChange={onPageChange} totalItems={totalCount} pageSize={pageSize} />
           </div>
         ) : null}
       </div>
@@ -373,9 +340,9 @@ function TemplateCard({
             {template.templateKey} · v{template.version}
           </div>
         </div>
-        <Badge variant={template.isPublished ? 'success' : 'outline'} className="shrink-0">
+        <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
           {template.isPublished ? 'Published' : 'Draft'}
-        </Badge>
+        </Pill>
       </div>
 
       {template.description ? (
@@ -385,12 +352,12 @@ function TemplateCard({
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="secondary">{template.visibility}</Badge>
-        {template.category ? <Badge variant="outline">{template.category}</Badge> : null}
+        <Pill dot={false}>{template.visibility}</Pill>
+        {template.category ? <Pill dot={false}>{template.category}</Pill> : null}
         {(template.tags ?? []).slice(0, 2).map((tag) => (
-          <Badge key={tag} variant="ghost">
+          <Pill key={tag} dot={false}>
             {tag}
-          </Badge>
+          </Pill>
         ))}
       </div>
 

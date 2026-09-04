@@ -2,16 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 
+import { Alert } from '@/components/library/alert/Alert';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import {
   connectorsErrorMessage,
   deactivateConnectorProfile,
@@ -96,6 +92,120 @@ function ConnectorProfilesBody() {
 
   const heading = template?.name ? `${template.name} profiles` : TITLE;
 
+  const columns: DataTableColumn<ConnectorProfile>[] = [
+    {
+      key: 'profile',
+      header: 'Profile',
+      width: 'minmax(200px,2fr)',
+      render: (profile) => (
+        <div>
+          <div className={cn('font-medium text-foreground', !profile.is_active && 'opacity-55')}>
+            {profile.display_name}
+          </div>
+          {!profile.is_active ? (
+            <span className="mt-1 inline-block text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
+              Inactive
+            </span>
+          ) : null}
+          {profile.description ? (
+            <div
+              className={cn(
+                'mt-1 text-[13px] text-muted-foreground',
+                !profile.is_active && 'opacity-55',
+              )}
+            >
+              {profile.description}
+            </div>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'identifier',
+      header: 'Identifier',
+      width: 'minmax(140px,1fr)',
+      render: (profile) => (
+        <span
+          className={cn(
+            'font-mono text-[13px] text-muted-foreground',
+            !profile.is_active && 'opacity-55',
+          )}
+        >
+          {profile.profile_name}
+        </span>
+      ),
+    },
+    {
+      key: 'credentials',
+      header: 'Credentials',
+      width: 'minmax(160px,1.4fr)',
+      render: (profile) => (
+        <span className={cn('text-muted-foreground', !profile.is_active && 'opacity-55')}>
+          {profile.configured_secrets.length ? profile.configured_secrets.join(', ') : 'None stored'}
+        </span>
+      ),
+    },
+    ...(canManageConnectorProfiles
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Actions</span>,
+            className: 'text-right',
+            width: 'minmax(180px,1fr)',
+            render: (profile) => (
+              <div className="flex flex-wrap justify-end gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    navigate(
+                      `/connectors/${encodeURIComponent(connectorId)}/profiles/${profile.id}/edit`,
+                    )
+                  }
+                >
+                  Edit
+                </Button>
+                {profile.is_active ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      void runAction(() => deactivateConnectorProfile(profile.id, scopedTenantId))
+                    }
+                  >
+                    Deactivate
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      void runAction(() =>
+                        updateConnectorProfile(profile.id, { is_active: true }, scopedTenantId),
+                      )
+                    }
+                  >
+                    Reactivate
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPendingDelete(profile)}
+                >
+                  Delete
+                </Button>
+              </div>
+            ),
+          } satisfies DataTableColumn<ConnectorProfile>,
+        ]
+      : []),
+  ];
+
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -120,16 +230,8 @@ function ConnectorProfilesBody() {
         ) : null}
       </div>
 
-      {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {actionError ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
-          {actionError}
-        </p>
-      ) : null}
+      {error ? <Alert tone="error" className="mb-4">{error}</Alert> : null}
+      {actionError ? <Alert tone="error" className="mb-4">{actionError}</Alert> : null}
 
       <Card variant="bordered" className="overflow-hidden">
         {loading ? (
@@ -139,131 +241,30 @@ function ConnectorProfilesBody() {
             No profiles yet. Add one to select it from a Service Task.
           </p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">Profile</th>
-                <th className="px-[22px] py-3 font-medium">Identifier</th>
-                <th className="px-[22px] py-3 font-medium">Credentials</th>
-                {canManageConnectorProfiles ? (
-                  <th className="px-[22px] py-3 font-medium">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {ordered.map((profile) => (
-                <tr
-                  key={profile.id}
-                  className={`border-b border-border last:border-b-0 ${profile.is_active ? '' : 'opacity-55'}`}
-                  data-testid={`connector-profile-row-${profile.profile_name}`}
-                >
-                  <td className="px-[22px] py-3">
-                    <div className="font-medium text-foreground">{profile.display_name}</div>
-                    {!profile.is_active ? (
-                      <span className="mt-1 inline-block text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                        Inactive
-                      </span>
-                    ) : null}
-                    {profile.description ? (
-                      <div className="mt-1 text-[13px] text-muted-foreground">{profile.description}</div>
-                    ) : null}
-                  </td>
-                  <td className="px-[22px] py-3 font-mono text-[13px] text-muted-foreground">
-                    {profile.profile_name}
-                  </td>
-                  <td className="px-[22px] py-3 text-muted-foreground">
-                    {profile.configured_secrets.length
-                      ? profile.configured_secrets.join(', ')
-                      : 'None stored'}
-                  </td>
-                  {canManageConnectorProfiles ? (
-                    <td className="px-[22px] py-3 text-right">
-                      <div className="flex flex-wrap justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            navigate(
-                              `/connectors/${encodeURIComponent(connectorId)}/profiles/${profile.id}/edit`,
-                            )
-                          }
-                        >
-                          Edit
-                        </Button>
-                        {profile.is_active ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void runAction(() => deactivateConnectorProfile(profile.id, scopedTenantId))}
-                          >
-                            Deactivate
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              void runAction(() =>
-                                updateConnectorProfile(profile.id, { is_active: true }, scopedTenantId),
-                              )
-                            }
-                          >
-                            Reactivate
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setPendingDelete(profile)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable columns={columns} rows={ordered} getRowKey={(profile) => profile.id} />
         )}
       </Card>
 
-      <Dialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete this profile permanently?</DialogTitle>
-            <DialogDescription>
-              This removes “{pendingDelete?.display_name ?? ''}” and its stored credentials. Any
-              process model that still selects this profile will fail when it runs. Deactivate
-              instead if you may need it again.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="pill-cancel" size="pill" onClick={() => setPendingDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                const target = pendingDelete;
-                setPendingDelete(null);
-                if (target) {
-                  void runAction(() => deleteConnectorProfile(target.id, scopedTenantId));
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this profile permanently?"
+        description={
+          <>
+            This removes "{pendingDelete?.display_name ?? ''}" and its stored credentials. Any
+            process model that still selects this profile will fail when it runs. Deactivate
+            instead if you may need it again.
+          </>
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) {
+            void runAction(() => deleteConnectorProfile(target.id, scopedTenantId));
+          }
+        }}
+      />
     </main>
   );
 }

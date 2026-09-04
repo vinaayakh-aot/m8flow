@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 
 import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
+import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Card } from '@/components/ui/card';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 
@@ -215,13 +216,26 @@ export default function ProcessModelDetailPage() {
 function ShellHeader() {
   return (
     <div className="mb-7">
-      <Link
-        to="/processes"
-        className="mb-1.5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground no-underline"
-      >
-        ← All processes
-      </Link>
+      <BackLink href="/processes" LinkComponent={RouterBackLink} className="mb-1.5">
+        All processes
+      </BackLink>
       <h1 className="font-display text-[32px] font-semibold tracking-tight">Process model</h1>
     </div>
+  );
+}
+
+function RouterBackLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
   );
 }

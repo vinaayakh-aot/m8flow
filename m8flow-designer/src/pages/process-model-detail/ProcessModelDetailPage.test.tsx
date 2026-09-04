@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -229,6 +230,7 @@ describe('ProcessModelDetailPage', () => {
   });
 
   it('saves as a draft template and opens the template modeler for a catalog manager', async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url: string, init?: RequestInit) => {
@@ -278,8 +280,8 @@ describe('ProcessModelDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Save as template' }));
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Save as template' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create template' }));
     await waitFor(() => {
       expect(screen.getByText('Template modeler')).toBeInTheDocument();
@@ -298,6 +300,7 @@ describe('ProcessModelDetailPage', () => {
   });
 
   it('keeps Save as template disabled for super-admin even when they can start', async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -326,11 +329,15 @@ describe('ProcessModelDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Save as template' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('copies a process model and navigates to the copy overview', async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url: string) => {
@@ -376,8 +383,8 @@ describe('ProcessModelDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }));
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy' }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy process model' }));
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval (copy)' })).toBeInTheDocument();

@@ -1,17 +1,16 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { FolderPlus, Pencil, Search, Shield, Trash2 } from 'lucide-react';
+import { FolderPlus, Pencil, Shield, Trash2 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/library/alert/Alert';
+import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Modal } from '@/components/library/modal/Modal';
+import { Pagination } from '@/components/library/pagination/Pagination';
+import { Pill } from '@/components/library/pill/Pill';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   createTenantGroup,
@@ -260,12 +259,88 @@ export default function TenantGroupsSection({
     }
   }
 
+  const columns: DataTableColumn<TenantGroup>[] = [
+    {
+      key: 'name',
+      header: 'Group',
+      width: 'minmax(140px,1.4fr)',
+      render: (group) => (
+        <span className="font-medium text-foreground" data-testid={`tenant-group-name-cell-${group.id}`}>
+          {group.name}
+        </span>
+      ),
+    },
+    {
+      key: 'roles',
+      header: 'Roles',
+      width: 'minmax(160px,1.6fr)',
+      render: (group) => (
+        <div className="flex flex-wrap gap-1">
+          {group.mapped_roles.length === 0 ? (
+            <span className="text-muted-foreground">None</span>
+          ) : (
+            group.mapped_roles.map((role) => (
+              <Pill
+                key={role}
+                tone="info"
+                dot={false}
+                data-testid={`tenant-group-role-chip-${group.id}-${role}`}
+              >
+                {role}
+              </Pill>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      className: 'text-right whitespace-nowrap',
+      width: 'minmax(220px,1fr)',
+      render: (group) => (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => openRename(group)}
+            data-testid={`tenant-group-rename-button-${group.name}`}
+          >
+            <Pencil className="size-3.5" aria-hidden />
+            Rename
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => openRoles(group)}
+            data-testid={`tenant-group-manage-roles-button-${group.name}`}
+          >
+            <Shield className="size-3.5" aria-hidden />
+            Roles
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setGroupToDelete(group)}
+            data-testid={`tenant-group-remove-button-${group.name}`}
+          >
+            <Trash2 className="size-3.5" aria-hidden />
+            Delete
+          </Button>
+        </>
+      ),
+    },
+  ];
+
   return (
     <>
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <Alert tone="error" className="mb-4">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       <Card variant="bordered" className="mt-6 overflow-hidden">
@@ -279,18 +354,14 @@ export default function TenantGroupsSection({
           className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
           data-testid="tenant-groups-toolbar"
         >
-          <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2">
-            <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-            <Input
-              type="search"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search groups…"
-              className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] shadow-none outline-none focus-visible:ring-0"
-              data-testid="tenant-group-search-input"
-              aria-label="Search groups"
-            />
-          </label>
+          <SearchBar
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Search groups…"
+            aria-label="Search groups"
+            data-testid="tenant-group-search-input"
+            className="min-w-0 flex-1"
+          />
           <Button
             type="button"
             variant="pill-dark"
@@ -310,290 +381,176 @@ export default function TenantGroupsSection({
             {search ? 'No groups match this search.' : 'No groups in this tenant yet.'}
           </p>
         ) : (
-          <table className="w-full text-left text-sm" data-testid="tenant-group-table-container">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">Group</th>
-                <th className="px-[22px] py-3 font-medium">Roles</th>
-                <th className="px-[22px] py-3 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => (
-                <tr key={group.id || group.name} className="border-b border-border last:border-b-0">
-                  <td
-                    className="px-[22px] py-3 font-medium text-foreground"
-                    data-testid={`tenant-group-name-cell-${group.id}`}
-                  >
-                    {group.name}
-                  </td>
-                  <td className="px-[22px] py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {group.mapped_roles.length === 0 ? (
-                        <span className="text-muted-foreground">None</span>
-                      ) : (
-                        group.mapped_roles.map((role) => (
-                          <Badge
-                            key={role}
-                            variant="info"
-                            data-testid={`tenant-group-role-chip-${group.id}-${role}`}
-                          >
-                            {role}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-[22px] py-3 text-right whitespace-nowrap">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openRename(group)}
-                      data-testid={`tenant-group-rename-button-${group.name}`}
-                    >
-                      <Pencil className="size-3.5" aria-hidden />
-                      Rename
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openRoles(group)}
-                      data-testid={`tenant-group-manage-roles-button-${group.name}`}
-                    >
-                      <Shield className="size-3.5" aria-hidden />
-                      Roles
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setGroupToDelete(group)}
-                      data-testid={`tenant-group-remove-button-${group.name}`}
-                    >
-                      <Trash2 className="size-3.5" aria-hidden />
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={columns}
+            rows={groups}
+            getRowKey={(group) => group.id || group.name}
+            data-testid="tenant-group-table-container"
+          />
         )}
 
-        <div className="flex items-center justify-between gap-3 px-[22px] py-3 text-sm">
-          <span data-testid="tenant-group-page-indicator" className="text-muted-foreground">
-            Page {page + 1}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              disabled={page === 0}
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-              data-testid="tenant-group-previous-page-button"
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              variant="pill-outline"
-              size="pill"
-              disabled={!hasMore}
-              onClick={() => setPage((current) => current + 1)}
-              data-testid="tenant-group-next-page-button"
-            >
-              Next
-            </Button>
-          </div>
+        <div className="px-[22px] py-3">
+          <Pagination
+            page={page + 1}
+            onPageChange={(nextPage) => setPage(nextPage - 1)}
+            hasMore={hasMore}
+          />
         </div>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={(event) => void handleCreate(event)}>
-            <DialogHeader>
-              <DialogTitle>Add group</DialogTitle>
-              <DialogDescription>
-                People stay in the tenant if you later delete the group. Roles come from
-                the group, not from a separate member-role editor.
-              </DialogDescription>
-            </DialogHeader>
-            <label className="mt-4 block text-sm font-medium text-foreground">
-              Group name
-              <Input
-                className="mt-1.5"
-                value={createName}
-                onChange={(event) => {
-                  setCreateName(event.target.value);
-                  setCreateError(null);
-                }}
-                autoComplete="off"
-                maxLength={TENANT_GROUP_NAME_MAX_LENGTH}
-                data-testid="tenant-group-name-input"
-                required
-              />
-            </label>
-            {createError || (createName && createValidation) ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {createError || createValidation}
-              </p>
-            ) : null}
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="pill-cancel" size="pill" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="pill-dark"
-                size="pill"
-                disabled={creating || Boolean(createValidation)}
-                data-testid="tenant-group-submit-button"
-              >
-                {creating ? 'Creating…' : 'Create'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="Add group"
+        footer={
+          <>
+            <Button type="button" variant="pill-cancel" size="pill" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="tenant-group-create-form"
+              variant="pill-dark"
+              size="pill"
+              disabled={creating || Boolean(createValidation)}
+              data-testid="tenant-group-submit-button"
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </Button>
+          </>
+        }
+      >
+        <form id="tenant-group-create-form" onSubmit={(event) => void handleCreate(event)}>
+          <p className="text-[13.5px] text-muted-foreground">
+            People stay in the tenant if you later delete the group. Roles come from
+            the group, not from a separate member-role editor.
+          </p>
+          <label className="mt-4 block text-sm font-medium text-foreground">
+            Group name
+            <Input
+              className="mt-1.5"
+              value={createName}
+              onChange={(event) => {
+                setCreateName(event.target.value);
+                setCreateError(null);
+              }}
+              autoComplete="off"
+              maxLength={TENANT_GROUP_NAME_MAX_LENGTH}
+              data-testid="tenant-group-name-input"
+              required
+            />
+          </label>
+          {createError || (createName && createValidation) ? (
+            <Alert tone="error" className="mt-3">
+              {createError || createValidation}
+            </Alert>
+          ) : null}
+        </form>
+      </Modal>
 
-      <Dialog
+      <Modal
         open={Boolean(groupToRename)}
         onOpenChange={(open) => !open && setGroupToRename(null)}
-      >
-        <DialogContent className="sm:max-w-md" data-testid="tenant-group-rename-dialog">
-          <form onSubmit={(event) => void handleRename(event)}>
-            <DialogHeader>
-              <DialogTitle>Rename group</DialogTitle>
-              <DialogDescription>
-                Members stay in the group. The name must match the API rules.
-              </DialogDescription>
-            </DialogHeader>
-            <label className="mt-4 block text-sm font-medium text-foreground">
-              Group name
-              <Input
-                className="mt-1.5"
-                value={renameName}
-                onChange={(event) => {
-                  setRenameName(event.target.value);
-                  setRenameError(null);
-                }}
-                autoComplete="off"
-                maxLength={TENANT_GROUP_NAME_MAX_LENGTH}
-                data-testid="tenant-group-rename-input"
-                required
-              />
-            </label>
-            {renameError || (renameName && renameValidation) ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {renameError || renameValidation}
-              </p>
-            ) : null}
-            <DialogFooter className="mt-4">
-              <Button
-                type="button"
-                variant="pill-cancel"
-                size="pill"
-                onClick={() => setGroupToRename(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="pill-dark"
-                size="pill"
-                disabled={renaming || Boolean(renameValidation)}
-                data-testid="tenant-group-rename-submit-button"
-              >
-                {renaming ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(groupToDelete)}
-        onOpenChange={(open) => !open && setGroupToDelete(null)}
-      >
-        <DialogContent className="sm:max-w-md" data-testid="tenant-group-remove-dialog">
-          <DialogHeader>
-            <DialogTitle>Delete group</DialogTitle>
-            <DialogDescription>
-              {groupToDelete
-                ? `Delete ${groupToDelete.name}? People stay in the tenant. Roles that came only from this group go away.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+        title="Rename group"
+        footer={
+          <>
             <Button
               type="button"
               variant="pill-cancel"
               size="pill"
-              onClick={() => setGroupToDelete(null)}
+              onClick={() => setGroupToRename(null)}
             >
               Cancel
             </Button>
             <Button
-              type="button"
+              type="submit"
+              form="tenant-group-rename-form"
               variant="pill-dark"
               size="pill"
-              disabled={deleting}
-              onClick={() => void handleDelete()}
-              data-testid="tenant-group-remove-confirm-button"
+              disabled={renaming || Boolean(renameValidation)}
+              data-testid="tenant-group-rename-submit-button"
             >
-              {deleting ? 'Deleting…' : 'Delete'}
+              {renaming ? 'Saving…' : 'Save'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <form id="tenant-group-rename-form" onSubmit={(event) => void handleRename(event)}>
+          <p className="text-[13.5px] text-muted-foreground">
+            Members stay in the group. The name must match the API rules.
+          </p>
+          <label className="mt-4 block text-sm font-medium text-foreground">
+            Group name
+            <Input
+              className="mt-1.5"
+              value={renameName}
+              onChange={(event) => {
+                setRenameName(event.target.value);
+                setRenameError(null);
+              }}
+              autoComplete="off"
+              maxLength={TENANT_GROUP_NAME_MAX_LENGTH}
+              data-testid="tenant-group-rename-input"
+              required
+            />
+          </label>
+          {renameError || (renameName && renameValidation) ? (
+            <Alert tone="error" className="mt-3">
+              {renameError || renameValidation}
+            </Alert>
+          ) : null}
+        </form>
+      </Modal>
 
-      <Dialog
+      <ConfirmDialog
+        open={Boolean(groupToDelete)}
+        onOpenChange={(open) => !open && setGroupToDelete(null)}
+        title="Delete group"
+        description={
+          groupToDelete
+            ? `Delete ${groupToDelete.name}? People stay in the tenant. Roles that came only from this group go away.`
+            : undefined
+        }
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        onConfirm={() => void handleDelete()}
+      />
+
+      <Modal
         open={Boolean(groupForRoles)}
         onOpenChange={(open) => !open && setGroupForRoles(null)}
+        title="Group roles"
+        footer={
+          <Button
+            type="button"
+            variant="pill-cancel"
+            size="pill"
+            onClick={() => setGroupForRoles(null)}
+          >
+            Close
+          </Button>
+        }
       >
-        <DialogContent className="sm:max-w-md" data-testid="tenant-group-roles-dialog">
-          <DialogHeader>
-            <DialogTitle>Group roles</DialogTitle>
-            <DialogDescription>
-              Members of {groupForRoles?.name} get these as effective roles. A group may
-              map more than one role.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-3 flex flex-col gap-1">
-            {TENANT_ROLES.map((role) => (
-              <label key={role} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={groupForRoles?.mapped_roles.includes(role) ?? false}
-                  onChange={() => void toggleRole(role)}
-                  data-testid={`tenant-group-role-checkbox-${groupForRoles?.name ?? 'unknown'}-${role}`}
-                />
-                {role}
-              </label>
-            ))}
-          </div>
-          {rolesError ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
-              {rolesError}
-            </p>
-          ) : null}
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="pill-cancel"
-              size="pill"
-              onClick={() => setGroupForRoles(null)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <p className="text-[13.5px] text-muted-foreground">
+          Members of {groupForRoles?.name} get these as effective roles. A group may
+          map more than one role.
+        </p>
+        <div className="mt-3 flex flex-col gap-1">
+          {TENANT_ROLES.map((role) => (
+            <CheckboxField
+              key={role}
+              label={role}
+              checked={groupForRoles?.mapped_roles.includes(role) ?? false}
+              onCheckedChange={() => void toggleRole(role)}
+              data-testid={`tenant-group-role-checkbox-${groupForRoles?.name ?? 'unknown'}-${role}`}
+            />
+          ))}
+        </div>
+        {rolesError ? (
+          <Alert tone="error" className="mt-3">
+            {rolesError}
+          </Alert>
+        ) : null}
+      </Modal>
     </>
   );
 }

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Folder, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { Folder, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 
 import { ApiError, type ProcessGroupListItem } from '@/lib/api';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -217,17 +219,14 @@ export function ProcessGroupsPicker({
           {mode === 'list' ? (
             <>
               <div className="shrink-0 px-6 pt-4 pb-3">
-                <label className="flex items-center gap-2.5 rounded-full border border-border bg-muted px-4 py-2.5">
-                  <Search className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-                  <Input
-                    type="search"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder={`Search ${groups.length} groups`}
-                    className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-[13.5px] text-foreground shadow-none outline-none focus-visible:ring-0"
-                    aria-label="Search groups"
-                  />
-                </label>
+                <SearchBar
+                  variant="sunken"
+                  type="search"
+                  value={search}
+                  onChange={setSearch}
+                  placeholder={`Search ${groups.length} groups`}
+                  aria-label="Search groups"
+                />
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
@@ -327,14 +326,16 @@ export function ProcessGroupsPicker({
                   {groups.length} group{groups.length === 1 ? '' : 's'} in this tenant
                 </span>
                 {canManage ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="pill-outline"
+                    size="pill"
                     onClick={openCreate}
-                    className="inline-flex items-center gap-1.5 rounded-full border-2 border-border px-4 py-1.5 text-xs font-semibold tracking-[0.04em] text-foreground uppercase"
+                    className="gap-1.5 bg-transparent px-4 py-1.5 text-xs"
                   >
                     <Plus className="size-3.5" strokeWidth={2.2} />
                     New group
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </>
@@ -356,20 +357,24 @@ export function ProcessGroupsPicker({
                 and its process models from the catalog.
               </p>
               <div className="mt-auto flex justify-end gap-2 pt-6">
-                <button
+                <Button
                   type="button"
+                  variant="pill-outline"
+                  size="pill"
                   onClick={backToList}
-                  className="rounded-full border-2 border-border px-4 py-1.5 text-xs font-semibold tracking-[0.04em] uppercase"
+                  className="bg-transparent px-4 py-1.5 text-xs"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="pill-outline"
+                  size="pill"
                   disabled={submitting}
-                  className="rounded-full bg-destructive/10 px-4 py-1.5 text-xs font-semibold tracking-[0.04em] text-destructive uppercase"
+                  className="border-0 bg-destructive/10 px-4 py-1.5 text-xs text-destructive"
                 >
                   {submitting ? 'Deleting…' : 'Delete group'}
-                </button>
+                </Button>
               </div>
             </form>
           ) : (
@@ -417,20 +422,24 @@ export function ProcessGroupsPicker({
                 />
               </label>
               <div className="mt-auto flex justify-end gap-2 pt-6">
-                <button
+                <Button
                   type="button"
+                  variant="pill-outline"
+                  size="pill"
                   onClick={backToList}
-                  className="rounded-full border-2 border-border px-4 py-1.5 text-xs font-semibold tracking-[0.04em] uppercase"
+                  className="bg-transparent px-4 py-1.5 text-xs"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="pill"
+                  size="pill"
                   disabled={submitting}
-                  className="rounded-full bg-nav-active px-4 py-1.5 text-xs font-semibold tracking-[0.04em] uppercase"
+                  className="px-4 py-1.5 text-xs shadow-none"
                 >
                   {submitting ? 'Saving…' : mode === 'create' ? 'Create group' : 'Save group'}
-                </button>
+                </Button>
               </div>
             </form>
           )}

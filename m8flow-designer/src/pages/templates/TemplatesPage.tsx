@@ -203,8 +203,6 @@ export default function TemplatesPage() {
     );
   }
 
-  const pageCount = pagination ? Math.max(pagination.pages, 1) : 1;
-
   return (
     <main className="flex-1 px-11 py-10">
       {actionError ? (
@@ -223,9 +221,9 @@ export default function TemplatesPage() {
         order={order}
         onToggleOrder={() => setOrder((o) => (o === 'desc' ? 'asc' : 'desc'))}
         page={page}
-        pageCount={pageCount}
+        pageSize={PER_PAGE}
         totalCount={pagination?.total ?? templates.length}
-        onPageChange={(next) => setPage(Math.min(Math.max(next, 1), pageCount))}
+        onPageChange={setPage}
         onOpenTemplate={(template) => navigate(`/templates/${template.id}`)}
         onUseTemplate={setUseTemplateTarget}
         onExportTemplate={handleExport}

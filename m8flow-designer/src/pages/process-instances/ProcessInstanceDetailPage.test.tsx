@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -134,11 +135,11 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
     expect(screen.getByText('Revision')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Tasks I can complete' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Diagram' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Milestones' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Events' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Messages' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Diagram' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Milestones' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Messages' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Tasks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download/ })).not.toBeInTheDocument();
     expect(
@@ -199,17 +200,21 @@ describe('ProcessInstanceDetailPage', () => {
   });
 
   it('shows Messages empty copy and Tasks completed-by-me empty copy', async () => {
+    // Radix's Tabs, like its DropdownMenu, doesn't switch under a plain
+    // fireEvent.click in jsdom — use @testing-library/user-event, per the
+    // map's Notes.
+    const user = userEvent.setup();
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Messages' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Messages' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    await user.click(screen.getByRole('tab', { name: 'Messages' }));
     expect(screen.getByText('No messages recorded for this process instance.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await user.click(screen.getByRole('tab', { name: 'Tasks' }));
     await waitFor(() => {
       expect(
         screen.getByText('You have not completed any tasks for this process instance.'),
@@ -266,10 +271,9 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
   });
 
-  it('confirms terminate then posts and refreshes', async () => {
+  it('confirms terminate via the dialog then posts and refreshes', async () => {
     const fetchMock = stubFetches(mockDetail());
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     renderWithOutlet(editorCtx);
 
@@ -278,11 +282,10 @@ describe('ProcessInstanceDetailPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Terminate' }));
 
-    await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(
-        'Terminate this process instance? This cannot be undone.',
-      );
-    });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Terminate process instance?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Terminate' }));
+
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining('/process-instances/7/terminate'),
@@ -291,10 +294,9 @@ describe('ProcessInstanceDetailPage', () => {
     });
   });
 
-  it('does not post terminate when confirm is cancelled', async () => {
+  it('does not post terminate when the confirmation dialog is cancelled', async () => {
     const fetchMock = stubFetches(mockDetail());
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     renderWithOutlet(editorCtx);
 
@@ -303,17 +305,19 @@ describe('ProcessInstanceDetailPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Terminate' }));
 
-    expect(window.confirm).toHaveBeenCalled();
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: 'POST' }),
     );
   });
 
-  it('posts suspend immediately without confirm', async () => {
+  it('posts suspend immediately without a confirmation dialog', async () => {
     const fetchMock = stubFetches(mockDetail());
     vi.stubGlobal('fetch', fetchMock);
-    const confirm = vi.spyOn(window, 'confirm');
 
     renderWithOutlet(editorCtx);
 
@@ -328,6 +332,6 @@ describe('ProcessInstanceDetailPage', () => {
         expect.objectContaining({ method: 'POST' }),
       );
     });
-    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });

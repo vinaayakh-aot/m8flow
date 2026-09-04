@@ -6,12 +6,23 @@ import { ApiError } from '@/lib/api';
 import { downloadBlob } from '@/lib/download';
 import type { AppShellOutletContext } from '@/components/layout/AppShell';
 import { exportTemplate, fetchTemplate, fetchTemplateVersions, type Template } from '@/lib/templatesApi';
-import { Badge } from '@/components/ui/badge';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { CreateProcessModelFromTemplateDialog } from './components/CreateProcessModelFromTemplateDialog';
 import { TemplateDetailsPanel } from './components/TemplateDetailsPanel';
 import { TemplateFileList } from './components/TemplateFileList';
 import { TemplateVersionSelector } from './components/TemplateVersionSelector';
+
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 11). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
 
 /**
  * Template detail — identity, publish/visibility, and the file list.
@@ -104,23 +115,23 @@ export default function TemplateModelerPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[13.5px] text-muted-foreground"
-        >
-          <Link to="/templates" className="shrink-0 text-info no-underline hover:underline">
-            Templates
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span className="min-w-0 truncate font-mono font-semibold text-foreground" aria-current="page">
-            {template?.name ?? templateIdParam}
-          </span>
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          <Breadcrumbs
+            items={[
+              { label: 'Templates', href: '/templates' },
+              { label: template?.name ?? templateIdParam ?? '' },
+            ]}
+            LinkComponent={RouterBreadcrumbLink}
+            linkClassName="text-info font-normal"
+            lastClassName="min-w-0 truncate font-mono"
+            className="min-w-0 text-muted-foreground"
+          />
           {template ? (
-            <Badge variant={template.isPublished ? 'success' : 'outline'} className="shrink-0">
+            <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
               {template.isPublished ? 'Published' : 'Draft'} · v{template.version}
-            </Badge>
+            </Pill>
           ) : null}
-        </nav>
+        </div>
         <Button
           type="button"
           variant="pill-outline"

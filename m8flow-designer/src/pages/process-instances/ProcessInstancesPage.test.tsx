@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,42 +77,47 @@ describe('ProcessInstancesPage', () => {
     const url = lastListUrl(fetchMock);
     expect(url).toContain('/v1.0/m8flow/process-instances');
     expect(url).toContain('tenantId=t1');
-    // "Complete" also appears as a <option> in the status filter select.
+    // "Complete" is the instance row's own status Pill — the Status filter
+    // (a SortDropdown, ticket 06) doesn't render its option list into the
+    // DOM until opened, unlike a native <select>'s always-present <option>s.
     expect(screen.getAllByText('Complete').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1 instance').length).toBeGreaterThan(0);
   });
 
   it('requests the owner options and renders them in the filter', async () => {
+    const user = userEvent.setup();
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: ['amir', 'zoe'] });
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'amir' })).toBeInTheDocument();
-    });
-    expect(screen.getByRole('option', { name: 'zoe' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Started by/ }));
+    expect(await screen.findByRole('menuitem', { name: 'amir' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'zoe' })).toBeInTheDocument();
   });
 
   it('applies the started_by filter as a server-side param', async () => {
+    const user = userEvent.setup();
     const fetchMock = stubFetch({ owners: ['amir', 'zoe'] });
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
-    await waitFor(() => expect(screen.getByRole('option', { name: 'amir' })).toBeInTheDocument());
+    await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
-    fireEvent.change(screen.getByLabelText('Filter by who started the instance'), {
-      target: { value: 'amir' },
-    });
+    await user.click(screen.getByRole('button', { name: /Started by/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'amir' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('started_by=amir'));
   });
 
   it('applies the sort control as a server-side param', async () => {
+    const user = userEvent.setup();
     const fetchMock = stubFetch();
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
     await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
-    fireEvent.change(screen.getByLabelText('Sort instances'), { target: { value: 'oldest' } });
+    await user.click(screen.getByRole('button', { name: /^Sort:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Oldest' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('sort=oldest'));
   });
@@ -150,12 +156,14 @@ describe('ProcessInstancesPage', () => {
   });
 
   it('applies the status filter as a server-side param and resets to page 1', async () => {
+    const user = userEvent.setup();
     const fetchMock = stubFetch();
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
     await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
-    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'error' } });
+    await user.click(screen.getByRole('button', { name: /^Status:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Error' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=error'));
   });
@@ -182,6 +190,7 @@ describe('ProcessInstancesPage', () => {
   });
 
   it('exposes a read-only actions menu that copies the instance id', async () => {
+    const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'test' });
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 } });
@@ -189,8 +198,8 @@ describe('ProcessInstancesPage', () => {
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Instance actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy instance ID' }));
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy instance ID' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('42'));
   });

@@ -151,8 +151,6 @@ export default function ProcessInstancesPage() {
     );
   }
 
-  const pageCount = pagination ? Math.max(pagination.pages, 1) : 1;
-
   return (
     <main className="flex-1 px-11 py-10">
       <ProcessInstancesList
@@ -169,11 +167,10 @@ export default function ProcessInstancesPage() {
         sort={sort}
         onSortChange={setSort}
         page={page}
-        pageCount={pageCount}
         perPage={perPage}
         onPerPageChange={setPerPage}
         totalCount={pagination?.total ?? instances.length}
-        onPageChange={(next) => setPage(Math.min(Math.max(next, 1), pageCount))}
+        onPageChange={setPage}
         onOpenInstance={(instance) => navigate(`/process-instances/${instance.id}`)}
       />
     </main>

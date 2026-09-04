@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
+import { Alert } from '@/components/library/alert/Alert';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Pagination } from '@/components/library/pagination/Pagination';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -33,6 +37,7 @@ function SecretListBody() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [pendingDelete, setPendingDelete] = useState<Secret | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,20 +67,69 @@ function SecretListBody() {
     };
   }, [page, scopedTenantId, reloadKey]);
 
-  async function handleDelete(row: Secret) {
-    if (!window.confirm(`Delete secret “${row.key}”? This cannot be undone.`)) {
-      return;
-    }
+  async function performDelete() {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
     setError(null);
     try {
-      await deleteSecret(row.key, scopedTenantId);
+      await deleteSecret(target.key, scopedTenantId);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
       setError(secretsErrorMessage(err, 'Could not delete secret.'));
     }
   }
 
-  const pageCount = pagination ? Math.max(pagination.pages, 1) : 1;
+  const columns: DataTableColumn<Secret>[] = [
+    {
+      key: 'key',
+      header: 'Key',
+      width: 'minmax(160px,1.6fr)',
+      render: (row) => (
+        <Link
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+          to={`/configuration/secrets/${encodeURIComponent(row.key)}`}
+        >
+          {row.key}
+        </Link>
+      ),
+    },
+    {
+      key: 'createdBy',
+      header: 'Created by',
+      width: 'minmax(120px,1fr)',
+      render: (row) => <span className="text-muted-foreground">{row.username || '—'}</span>,
+    },
+    ...(isSuperAdmin
+      ? [
+          {
+            key: 'tenant',
+            header: 'Tenant',
+            width: 'minmax(120px,1fr)',
+            render: (row) => (
+              <span className="text-muted-foreground" data-testid="secret-list-tenant-cell">
+                {row.tenantName || row.tenantId || '—'}
+              </span>
+            ),
+          } satisfies DataTableColumn<Secret>,
+        ]
+      : []),
+    ...(canManageSecrets
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Actions</span>,
+            className: 'text-right',
+            width: 'minmax(80px,100px)',
+            render: (row) => (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPendingDelete(row)}>
+                Delete
+              </Button>
+            ),
+          } satisfies DataTableColumn<Secret>,
+        ]
+      : []),
+  ];
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -97,9 +151,9 @@ function SecretListBody() {
       </div>
 
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert" data-testid="secret-list-error">
+        <Alert tone="error" className="mb-4" data-testid="secret-list-error">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       <Card variant="bordered" className="overflow-hidden">
@@ -110,84 +164,28 @@ function SecretListBody() {
             No secrets in this tenant yet.
           </p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                <th className="px-[22px] py-3 font-medium">Key</th>
-                <th className="px-[22px] py-3 font-medium">Created by</th>
-                {isSuperAdmin ? (
-                  <th className="px-[22px] py-3 font-medium">Tenant</th>
-                ) : null}
-                {canManageSecrets ? (
-                  <th className="px-[22px] py-3 font-medium">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key} className="border-b border-border last:border-b-0">
-                  <td className="px-[22px] py-3 font-medium text-foreground">
-                    <Link
-                      className="text-foreground underline-offset-4 hover:underline"
-                      to={`/configuration/secrets/${encodeURIComponent(row.key)}`}
-                    >
-                      {row.key}
-                    </Link>
-                  </td>
-                  <td className="px-[22px] py-3 text-muted-foreground">{row.username || '—'}</td>
-                  {isSuperAdmin ? (
-                    <td
-                      className="px-[22px] py-3 text-muted-foreground"
-                      data-testid="secret-list-tenant-cell"
-                    >
-                      {row.tenantName || row.tenantId || '—'}
-                    </td>
-                  ) : null}
-                  {canManageSecrets ? (
-                    <td className="px-[22px] py-3 text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void handleDelete(row)}
-                      >
-                        Delete
-                      </Button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable columns={columns} rows={rows} getRowKey={(row) => row.key} />
         )}
         {pagination && pagination.pages > 1 ? (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-[22px] py-3 text-sm text-muted-foreground">
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(current - 1, 1))}
-              disabled={page <= 1}
-              aria-label="Previous page"
-              className="flex size-7 items-center justify-center rounded-full border border-border disabled:opacity-40"
-            >
-              <ChevronLeft className="size-3.5" />
-            </button>
-            <span className="font-mono">
-              Page {page} of {pageCount}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(current + 1, pageCount))}
-              disabled={page >= pageCount}
-              aria-label="Next page"
-              className="flex size-7 items-center justify-center rounded-full border border-border disabled:opacity-40"
-            >
-              <ChevronRight className="size-3.5" />
-            </button>
+          <div className="border-t border-border px-[22px] py-3">
+            <Pagination
+              page={page}
+              onPageChange={setPage}
+              totalItems={pagination.total}
+              pageSize={PER_PAGE}
+            />
           </div>
         ) : null}
       </Card>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete secret?"
+        description={`Delete secret "${pendingDelete?.key ?? ''}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => void performDelete()}
+      />
     </main>
   );
 }

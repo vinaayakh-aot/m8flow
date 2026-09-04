@@ -79,6 +79,46 @@ describe('WizardModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('disables Continue while the active step reports canContinue: false', () => {
+    const gatedSteps: WizardModalStep[] = [
+      { title: 'Pick a user', body: 'Search and select.', canContinue: false },
+      { title: 'Confirm', body: 'Review your pick.' },
+    ];
+    render(<WizardModal open steps={gatedSteps} onClose={() => {}} onComplete={() => {}} />);
+
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  });
+
+  it('renders a per-step continueLabel and continueTestId override', () => {
+    const customSteps: WizardModalStep[] = [
+      { title: 'Pick a user', body: 'Search and select.' },
+      {
+        title: 'Confirm',
+        body: 'Review your pick.',
+        continueLabel: 'Adding…',
+        continueTestId: 'add-member-submit',
+      },
+    ];
+    render(<WizardModal open steps={customSteps} onClose={() => {}} onComplete={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const finishButton = screen.getByTestId('add-member-submit');
+    expect(finishButton).toHaveTextContent('Adding…');
+  });
+
+  it('defaults to the small modal size and forwards an explicit size to Modal', () => {
+    const { rerender } = render(
+      <WizardModal open steps={steps} onClose={() => {}} onComplete={() => {}} />,
+    );
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-size', 'sm');
+
+    rerender(
+      <WizardModal open steps={steps} onClose={() => {}} onComplete={() => {}} size="md" />,
+    );
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-size', 'md');
+  });
+
   it('resets to step 1 the next time it is reopened', () => {
     const { rerender } = render(
       <WizardModal open steps={steps} onClose={() => {}} onComplete={() => {}} />,

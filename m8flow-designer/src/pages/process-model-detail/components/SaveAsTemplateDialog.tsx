@@ -3,15 +3,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
 import { createTemplateWithFiles, type TemplateVisibility } from '@/lib/templatesApi';
+import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 export type SaveAsTemplateFile = {
@@ -137,105 +130,104 @@ export function SaveAsTemplateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Save as template</DialogTitle>
-            <DialogDescription>
-              Creates a draft template from this process model&apos;s BPMN, DMN, form-schema, and markdown files.
-            </DialogDescription>
-          </DialogHeader>
+    <Modal
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="Save as template"
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="save-as-template-form" disabled={submitting || !name.trim()}>
+            {submitting ? 'Creating…' : 'Create template'}
+          </Button>
+        </>
+      }
+    >
+      <p className="-mt-1 text-sm text-muted-foreground">
+        Creates a draft template from this process model&apos;s BPMN, DMN, form-schema, and markdown files.
+      </p>
+      <form id="save-as-template-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="save-as-template-name" className="text-xs font-medium text-muted-foreground">
+            Name
+          </label>
+          <Input
+            id="save-as-template-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={NAME_MAX}
+            required
+            disabled={submitting}
+          />
+        </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="save-as-template-description" className="text-xs font-medium text-muted-foreground">
+            Description (optional)
+          </label>
+          <textarea
+            id="save-as-template-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            disabled={submitting}
+            className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="save-as-template-name" className="text-xs font-medium text-muted-foreground">
-              Name
+            <label htmlFor="save-as-template-category" className="text-xs font-medium text-muted-foreground">
+              Category (optional)
             </label>
             <Input
-              id="save-as-template-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={NAME_MAX}
-              required
+              id="save-as-template-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               disabled={submitting}
             />
           </div>
-
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="save-as-template-description" className="text-xs font-medium text-muted-foreground">
-              Description (optional)
+            <label htmlFor="save-as-template-visibility" className="text-xs font-medium text-muted-foreground">
+              Visibility
             </label>
-            <textarea
-              id="save-as-template-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
+            <select
+              id="save-as-template-visibility"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
               disabled={submitting}
-              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {VISIBILITY_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="save-as-template-category" className="text-xs font-medium text-muted-foreground">
-                Category (optional)
-              </label>
-              <Input
-                id="save-as-template-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="save-as-template-visibility" className="text-xs font-medium text-muted-foreground">
-                Visibility
-              </label>
-              <select
-                id="save-as-template-visibility"
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
-                disabled={submitting}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                {VISIBILITY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="save-as-template-tags" className="text-xs font-medium text-muted-foreground">
+            Tags (comma-separated, optional)
+          </label>
+          <Input
+            id="save-as-template-tags"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="finance, approval"
+            disabled={submitting}
+          />
+        </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="save-as-template-tags" className="text-xs font-medium text-muted-foreground">
-              Tags (comma-separated, optional)
-            </label>
-            <Input
-              id="save-as-template-tags"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="finance, approval"
-              disabled={submitting}
-            />
-          </div>
-
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
-              {submitting ? 'Creating…' : 'Create template'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
   );
 }

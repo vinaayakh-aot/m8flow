@@ -1,20 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
 
 import { fetchConnectorsGrouped, type ConnectorGroup } from '@/lib/api';
 import { connectorsErrorMessage } from '@/lib/connectorsApi';
+import { Alert } from '@/components/library/alert/Alert';
+import { EmptyState } from '@/components/library/empty-state/EmptyState';
+import { Modal } from '@/components/library/modal/Modal';
+import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 
 import { ConnectorsGate } from './ConnectorsGate';
 
@@ -101,48 +96,37 @@ function ConnectorsBody() {
       </div>
 
       {error ? (
-        <p className="mb-4 text-sm text-destructive" role="alert">
+        <Alert tone="error" className="mb-4">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       {!loading && groups.length > 0 ? (
-        <label className="relative mb-6 block max-w-md">
-          <span className="sr-only">Search connectors</span>
-          <Search
-            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            className="pl-8"
+        <div className="mb-6 max-w-md">
+          <SearchBar
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={setSearch}
             placeholder="Search connectors and operations"
+            aria-label="Search connectors"
             data-testid="connectors-search"
           />
-        </label>
+        </div>
       ) : null}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading connectors…</p>
       ) : groups.length === 0 ? (
-        <Card variant="bordered" className="px-6 py-[52px] text-center" data-testid="connectors-empty">
-          <div className="text-[15.5px] font-semibold text-foreground">No connectors available</div>
-          <p className="mt-2 text-[13.5px] text-muted-foreground">
-            The default proxy currently lists the HTTP family.
-          </p>
-        </Card>
+        <EmptyState
+          title="No connectors available"
+          description="The default proxy currently lists the HTTP family."
+          data-testid="connectors-empty"
+        />
       ) : filtered.length === 0 ? (
-        <Card
-          variant="bordered"
-          className="px-6 py-[52px] text-center"
+        <EmptyState
+          title="No matching connectors"
+          description="Try a different search."
           data-testid="connectors-no-match"
-        >
-          <div className="text-[15.5px] font-semibold text-foreground">No matching connectors</div>
-          <p className="mt-2 text-[13.5px] text-muted-foreground">
-            Try a different search.
-          </p>
-        </Card>
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((group) => (
@@ -221,48 +205,43 @@ function ConnectorOperationsDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={connector !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        className="sm:max-w-lg"
-        data-testid="connector-operations-modal"
-        aria-describedby={undefined}
-      >
-        <DialogHeader>
-          <DialogTitle>{connector ? `${connector.name} operations` : 'Operations'}</DialogTitle>
-          <DialogDescription>
-            Operator ids and parameters a Service Task can bind.
-          </DialogDescription>
-        </DialogHeader>
-        {connector && connector.operations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No operations listed.</p>
-        ) : (
-          <ul className="max-h-[60vh] space-y-3 overflow-y-auto">
-            {connector?.operations.map((operation) => (
-              <li
-                key={operation.id}
-                className="rounded-lg border border-border px-3 py-2.5"
-                data-testid={`connector-operation-${operation.id}`}
-              >
-                <div className="font-medium text-foreground">{operation.name || operation.id}</div>
-                <div className="mt-0.5 font-mono text-[12px] text-muted-foreground">{operation.id}</div>
-                {operation.description ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{operation.description}</p>
-                ) : null}
-                {operation.parameters.length > 0 ? (
-                  <ul className="mt-2 space-y-0.5 text-[12.5px] text-muted-foreground">
-                    {operation.parameters.map((parameter) => (
-                      <li key={parameter.id}>
-                        <span className="font-mono">{parameter.id}</span>
-                        {parameter.type ? ` · ${parameter.type}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open={connector !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={connector ? `${connector.name} operations` : 'Operations'}
+    >
+      <p className="-mt-1 text-sm text-muted-foreground">
+        Operator ids and parameters a Service Task can bind.
+      </p>
+      {connector && connector.operations.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No operations listed.</p>
+      ) : (
+        <ul className="max-h-[60vh] space-y-3 overflow-y-auto">
+          {connector?.operations.map((operation) => (
+            <li
+              key={operation.id}
+              className="rounded-lg border border-border px-3 py-2.5"
+              data-testid={`connector-operation-${operation.id}`}
+            >
+              <div className="font-medium text-foreground">{operation.name || operation.id}</div>
+              <div className="mt-0.5 font-mono text-[12px] text-muted-foreground">{operation.id}</div>
+              {operation.description ? (
+                <p className="mt-1 text-sm text-muted-foreground">{operation.description}</p>
+              ) : null}
+              {operation.parameters.length > 0 ? (
+                <ul className="mt-2 space-y-0.5 text-[12.5px] text-muted-foreground">
+                  {operation.parameters.map((parameter) => (
+                    <li key={parameter.id}>
+                      <span className="font-mono">{parameter.id}</span>
+                      {parameter.type ? ` · ${parameter.type}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }

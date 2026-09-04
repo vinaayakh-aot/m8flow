@@ -13,7 +13,8 @@ import {
   templateModelerFilePath,
   type Template,
 } from '@/lib/templatesApi';
-import { Badge } from '@/components/ui/badge';
+import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { Pill } from '@/components/library/pill/Pill';
 import { DiagramCanvas } from '@/pages/process-model-modeler/components/DiagramCanvas';
 import type { DiagramCanvasHandle } from '@/pages/process-model-modeler/components/DiagramCanvasHandle';
 import type { BpmnCanvasServiceTaskOperator } from '@/pages/process-model-modeler/components/BpmnCanvas';
@@ -22,6 +23,16 @@ import { ModelerFileToolbar, type ModelerSavePhase } from '@/pages/process-model
 type SavePhase = ModelerSavePhase;
 
 const ERROR_FLASH_MS = 2500;
+
+/** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
+ * navigation (component-adoption map, ticket 11). */
+function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
 
 /**
  * One template file in DiagramCanvas — `/templates/:id/modeler/:fileName`
@@ -207,30 +218,27 @@ export default function TemplateFileModelerPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[13.5px] text-muted-foreground"
-        >
-          <Link to="/templates" className="shrink-0 text-info no-underline hover:underline">
-            Templates
-          </Link>
-          <span aria-hidden="true">/</span>
-          <Link
-            to={validId ? `/templates/${parsedId}` : '/templates'}
-            className="min-w-0 truncate text-info no-underline hover:underline"
-          >
-            {template?.name ?? templateIdParam}
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span className="truncate font-mono font-semibold text-foreground" aria-current="page">
-            {file}
-          </span>
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          <Breadcrumbs
+            items={[
+              { label: 'Templates', href: '/templates' },
+              {
+                label: template?.name ?? templateIdParam ?? '',
+                href: validId ? `/templates/${parsedId}` : '/templates',
+              },
+              { label: file },
+            ]}
+            LinkComponent={RouterBreadcrumbLink}
+            linkClassName="text-info font-normal"
+            lastClassName="min-w-0 truncate font-mono"
+            className="min-w-0 text-muted-foreground"
+          />
           {template ? (
-            <Badge variant={template.isPublished ? 'success' : 'outline'} className="shrink-0">
+            <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
               {template.isPublished ? 'Published' : 'Draft'} · v{template.version}
-            </Badge>
+            </Pill>
           ) : null}
-        </nav>
+        </div>
         <ModelerFileToolbar
           savePhase={savePhase}
           fileLoaded={xml != null}

@@ -6,6 +6,7 @@ import {
   fetchProcessModelFileContent,
   type ProcessModelDetail,
   type ProcessModelDetailFile,
+  type ProcessModelDetailInstance,
   type ProcessModelTestRunResult,
   type ScriptUnitTest,
   type ScriptUnitTestRunResult,
@@ -21,17 +22,14 @@ import {
   sortFilesPrimaryFirst,
 } from './SaveAsTemplateDialog';
 import { ProcessModelTestsCard } from './ProcessModelTestsCard';
-import { StatusBadge } from '@/components/StatusBadge';
+import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Modal } from '@/components/library/modal/Modal';
+import { Pill } from '@/components/library/pill/Pill';
+import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
@@ -44,6 +42,24 @@ import { cn } from '@/lib/utils';
 // renders every other disabled Button in the app. This override is the one
 // deliberate exception to that rule.
 const inertBtn = 'cursor-default select-none disabled:cursor-default disabled:opacity-100';
+
+/** Adapter passed to `BackLink`'s `LinkComponent` for client-side navigation
+ * (component-adoption map, ticket 07). */
+function RouterBackLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link to={href} className={className}>
+      {children}
+    </Link>
+  );
+}
 
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) {
@@ -64,6 +80,49 @@ export function formatBytes(size: number): string {
   }
   return `${Math.round(size / 1024)} KB`;
 }
+
+const recentInstanceColumns: DataTableColumn<ProcessModelDetailInstance>[] = [
+  {
+    key: 'id',
+    header: 'ID',
+    width: 'minmax(70px,90px)',
+    render: (row) => (
+      <Link
+        to={`/process-instances/${row.id}`}
+        className="font-mono text-[13px] text-info no-underline hover:underline"
+      >
+        {row.id}
+      </Link>
+    ),
+  },
+  {
+    key: 'started_by',
+    header: 'Started by',
+    width: 'minmax(120px,1fr)',
+    className: 'truncate text-[13.5px] text-foreground',
+    render: (row) => row.started_by || '—',
+  },
+  {
+    key: 'start',
+    header: 'Start',
+    width: 'minmax(0,120px)',
+    className: 'whitespace-nowrap text-[13px] text-muted-foreground',
+    render: (row) => formatRelativeTime(row.start_in_seconds),
+  },
+  {
+    key: 'duration',
+    header: 'Duration',
+    width: 'minmax(0,100px)',
+    className: 'font-mono text-[13px] text-muted-foreground',
+    render: (row) => formatDuration(row.duration_seconds),
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    width: 'minmax(0,140px)',
+    render: (row) => <Pill {...processInstanceStatusToPillProps(row.status)} />,
+  },
+];
 
 export function fileKind(name: string): { ext: string; label: string } {
   const lower = name.toLowerCase();
@@ -142,9 +201,9 @@ function FileRow({
         <div className="mt-0.5 text-xs text-muted-foreground">{meta}</div>
       </div>
       {file.primary ? (
-        <span className="shrink-0 rounded-full bg-nav-active/15 px-2.5 py-0.5 text-[11.5px] font-semibold text-info">
+        <Pill tone="info" dot={false} className="shrink-0">
           Primary
-        </span>
+        </Pill>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Link
@@ -252,6 +311,21 @@ export function ProcessModelOverview({
   const [startError, setStartError] = useState<string | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+
+  async function handleDeleteFile() {
+    if (!pendingDelete || !onDeleteFile) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteFile(pendingDelete);
+      setPendingDelete(null);
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete file');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
   const viewAllLabel = `View all ${detail.runs_30d}`;
   // "View all" pre-filters the shared Process Instances list to this
@@ -271,12 +345,9 @@ export function ProcessModelOverview({
     <div data-testid="process-model-detail">
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <Link
-            to="/processes"
-            className="mb-1.5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground no-underline"
-          >
-            ← All processes
-          </Link>
+          <BackLink href="/processes" LinkComponent={RouterBackLink} className="mb-1.5">
+            All processes
+          </BackLink>
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
@@ -412,51 +483,13 @@ export function ProcessModelOverview({
             {viewAllLabel}
           </Link>
         </div>
-        <div
-          className={cn(
-            'grid min-w-[620px] gap-3 bg-muted/60 px-[22px] py-2.5',
-            'text-[11px] tracking-[0.05em] text-muted-foreground uppercase',
-            'grid-cols-[minmax(70px,90px)_minmax(120px,1fr)_minmax(0,120px)_minmax(0,100px)_minmax(0,140px)]',
-          )}
-        >
-          <div>ID</div>
-          <div>Started by</div>
-          <div>Start</div>
-          <div>Duration</div>
-          <div>Status</div>
-        </div>
-        {detail.recent_instances.length === 0 ? (
-          <p className="border-t border-border px-[22px] py-8 text-center text-[13.5px] text-muted-foreground">
-            No instances yet.
-          </p>
-        ) : (
-          detail.recent_instances.map((row) => (
-            <div
-              key={row.id}
-              className={cn(
-                'grid min-w-[620px] items-center gap-3 border-t border-border px-[22px] py-3',
-                'grid-cols-[minmax(70px,90px)_minmax(120px,1fr)_minmax(0,120px)_minmax(0,100px)_minmax(0,140px)]',
-              )}
-            >
-              <Link
-                to={`/process-instances/${row.id}`}
-                className="font-mono text-[13px] text-info no-underline hover:underline"
-              >
-                {row.id}
-              </Link>
-              <div className="truncate text-[13.5px] text-foreground">{row.started_by || '—'}</div>
-              <div className="whitespace-nowrap text-[13px] text-muted-foreground">
-                {formatRelativeTime(row.start_in_seconds)}
-              </div>
-              <div className="font-mono text-[13px] text-muted-foreground">
-                {formatDuration(row.duration_seconds)}
-              </div>
-              <div>
-                <StatusBadge status={row.status} />
-              </div>
-            </div>
-          ))
-        )}
+        <DataTable
+          columns={recentInstanceColumns}
+          rows={detail.recent_instances}
+          getRowKey={(row) => row.id}
+          emptyState="No instances yet."
+          minWidth="620px"
+        />
       </Card>
 
       <Card id="files" variant="bordered" className="mb-[22px]">
@@ -517,64 +550,68 @@ export function ProcessModelOverview({
         onCreateScriptUnitTest={onCreateScriptUnitTest}
         onRunScriptUnitTest={onRunScriptUnitTest}
       />
-      <Dialog open={editOpen} onOpenChange={(next) => { if (!next) setEditOpen(false); }}>
-        <DialogContent className="sm:max-w-md">
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={async (event: FormEvent) => {
-              event.preventDefault();
-              if (!onUpdateIdentity) return;
-              setSaving(true);
-              setEditError(null);
-              try {
-                await onUpdateIdentity({
-                  display_name: editName.trim(),
-                  description: editDescription.trim(),
-                });
-                setEditOpen(false);
-              } catch (err: unknown) {
-                setEditError(err instanceof Error ? err.message : 'Failed to update process model');
-              } finally {
-                setSaving(false);
-              }
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Edit process model</DialogTitle>
-              <DialogDescription>Display name and description only. The identifier does not change.</DialogDescription>
-            </DialogHeader>
-            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              Display name
-              <Input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                aria-label="Process model display name"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              Description
-              <Input
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                aria-label="Process model description"
-              />
-            </label>
-            {editError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {editError}
-              </p>
-            ) : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={editOpen}
+        onOpenChange={(next) => { if (!next) setEditOpen(false); }}
+        title="Edit process model"
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="edit-pm-identity-form" disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <p className="-mt-1 text-sm text-muted-foreground">
+          Display name and description only. The identifier does not change.
+        </p>
+        <form
+          id="edit-pm-identity-form"
+          className="flex flex-col gap-4"
+          onSubmit={async (event: FormEvent) => {
+            event.preventDefault();
+            if (!onUpdateIdentity) return;
+            setSaving(true);
+            setEditError(null);
+            try {
+              await onUpdateIdentity({
+                display_name: editName.trim(),
+                description: editDescription.trim(),
+              });
+              setEditOpen(false);
+            } catch (err: unknown) {
+              setEditError(err instanceof Error ? err.message : 'Failed to update process model');
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+            Display name
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              aria-label="Process model display name"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+            Description
+            <Input
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              aria-label="Process model description"
+            />
+          </label>
+          {editError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {editError}
+            </p>
+          ) : null}
+        </form>
+      </Modal>
       {onCopy ? (
         <CopyProcessModelDialog
           open={copyOpen}
@@ -630,61 +667,29 @@ export function ProcessModelOverview({
           }}
         />
       ) : null}
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete != null}
         onOpenChange={(next) => {
-          if (!next) {
+          if (!next && !deleting) {
             setPendingDelete(null);
             setDeleteError(null);
           }
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete file</DialogTitle>
-            <DialogDescription>
-              {pendingDelete
-                ? `Delete ${pendingDelete}? This cannot be undone.`
-                : 'Delete this file?'}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {deleteError}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPendingDelete(null)}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={deleting || !pendingDelete || !onDeleteFile}
-              onClick={async () => {
-                if (!pendingDelete || !onDeleteFile) return;
-                setDeleting(true);
-                setDeleteError(null);
-                try {
-                  await onDeleteFile(pendingDelete);
-                  setPendingDelete(null);
-                } catch (err: unknown) {
-                  setDeleteError(err instanceof Error ? err.message : 'Failed to delete file');
-                } finally {
-                  setDeleting(false);
-                }
-              }}
-            >
-              {deleting ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete file"
+        description={
+          <>
+            {pendingDelete ? `Delete ${pendingDelete}? This cannot be undone.` : 'Delete this file?'}
+            {deleteError ? (
+              <span className="mt-2 block text-destructive" role="alert">
+                {deleteError}
+              </span>
+            ) : null}
+          </>
+        }
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        pending={deleting}
+        onConfirm={() => void handleDeleteFile()}
+      />
     </div>
   );
 }
