@@ -3,13 +3,29 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import ProcessInstanceDetailPage from './ProcessInstanceDetailPage';
 
 // bpmn-js's raw ESM doesn't resolve under Vitest's Node-based SSR runner.
 // These tests stay on states that never mount <InstanceDiagramViewer>
 // (invalid id, tenant gate, 404, fetch error, no-bpmn_xml).
-function renderWithOutlet(context: AppShellOutletContext, initial = '/process-instances/7') {
+function renderWithOutlet(context: SessionFixtureContext, initial = '/process-instances/7') {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
@@ -74,7 +90,7 @@ function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) 
   });
 }
 
-const editorCtx: AppShellOutletContext = {
+const editorCtx: SessionFixtureContext = {
   scopedTenantId: 't1',
   selectedTenantId: 't1',
   isSuperAdmin: false,

@@ -2,10 +2,26 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import ProcessesPage from './ProcessesPage';
 
-function renderWithOutlet(context: AppShellOutletContext, initial = '/processes') {
+function renderWithOutlet(context: SessionFixtureContext, initial = '/processes') {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>

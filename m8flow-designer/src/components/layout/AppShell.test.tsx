@@ -3,6 +3,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GLOBAL_TENANT_STORAGE_KEY } from '@/lib/selectedTenant';
+import { SessionProvider } from '@/components/session/SessionProvider';
 import { AppShell } from './AppShell';
 
 const mockGetCurrentUser = vi.fn();
@@ -18,6 +19,7 @@ const mockIsSuperAdmin = vi.fn();
 // (rather than importing that type) keeps the fixtures below free to pass
 // loosely-shaped test data.
 const mockGetActiveTenantDisplayLabel = vi.fn<(extra?: unknown) => string | null>(() => null);
+const mockGetSelectedTenantId = vi.fn<() => string | null>(() => null);
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
 
@@ -26,6 +28,7 @@ vi.mock('@/lib/auth', () => ({
   isSuperAdmin: () => mockIsSuperAdmin(),
   logout: () => mockLogout(),
   getActiveTenantDisplayLabel: (extra?: unknown) => mockGetActiveTenantDisplayLabel(extra),
+  getSelectedTenantId: () => mockGetSelectedTenantId(),
 }));
 
 const mockFetchCapabilities = vi.fn().mockResolvedValue({
@@ -44,7 +47,11 @@ function renderShell(initialPath = '/') {
     [
       {
         path: '/',
-        element: <AppShell />,
+        element: (
+          <SessionProvider>
+            <AppShell />
+          </SessionProvider>
+        ),
         children: [
           { index: true, element: <div>home-outlet</div> },
           { path: 'processes', element: <div>processes-outlet</div> },
@@ -65,6 +72,7 @@ describe('AppShell', () => {
     vi.clearAllMocks();
     mockIsSuperAdmin.mockReturnValue(false);
     mockGetActiveTenantDisplayLabel.mockReturnValue(null);
+    mockGetSelectedTenantId.mockReturnValue(null);
     mockFetchOrganizationMemberships.mockResolvedValue([]);
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: false,

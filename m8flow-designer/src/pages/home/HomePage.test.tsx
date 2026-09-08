@@ -2,7 +2,21 @@ import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import HomePage from './HomePage';
 
 vi.mock('./components/HomeStatsGrid', () => ({
@@ -29,7 +43,9 @@ vi.mock('./components/MyTasksList', () => ({
   MyTasksList: () => <div data-testid="my-tasks-list" />,
 }));
 
-function renderHome(context: AppShellOutletContext) {
+function renderHome(context: SessionFixtureContext) {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   function Shell() {
     return <Outlet context={context} />;
   }

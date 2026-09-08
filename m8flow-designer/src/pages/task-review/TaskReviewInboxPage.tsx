@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant } from '@/components/session/hooks';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pagination } from '@/components/library/pagination/Pagination';
 import { Pill } from '@/components/library/pill/Pill';
@@ -25,7 +25,7 @@ const PER_PAGE = 20;
  * concrete tenant here (the backend returns all-tenant pending tasks).
  */
 export default function TaskReviewInboxPage() {
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
   const navigate = useNavigate();
 
   const [tasks, setTasks] = useState<TaskReviewListItem[]>([]);

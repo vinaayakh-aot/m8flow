@@ -1,8 +1,8 @@
-import { Navigate, useLocation, useOutletContext, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
-import { getActiveTenantDisplayLabel, getSelectedTenantId } from '@/lib/auth';
+import { getActiveTenantDisplayLabel } from '@/lib/auth';
 import TenantAdminPanel from './TenantAdminPanel';
 
 type TenantManagementLocationState = {
@@ -20,18 +20,15 @@ type TenantManagementLocationState = {
 export default function TenantManagementPage() {
   const { tenantId: routeTenantId } = useParams<{ tenantId: string }>();
   const location = useLocation();
-  const {
-    isSuperAdmin,
-    canManageTenant = false,
-    refreshTenants,
-    tenants = [],
-  } = useOutletContext<AppShellOutletContext>();
+  const { isSuperAdmin, activeTenantId } = useActiveTenant();
+  const { canManageTenant } = useCapabilities();
+  const { refreshTenants, tenants } = useTenantRegistry();
 
   if (isSuperAdmin && !routeTenantId) {
     return <Navigate to="/tenants" replace />;
   }
 
-  const tenantId = isSuperAdmin ? routeTenantId : getSelectedTenantId();
+  const tenantId = isSuperAdmin ? routeTenantId : activeTenantId;
   const locationState = location.state as TenantManagementLocationState | null;
   const tenantName = isSuperAdmin
     ? locationState?.tenantName

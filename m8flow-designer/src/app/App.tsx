@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 
 import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
+import { SessionProvider } from '@/components/session/SessionProvider';
 import HomePage from '@/pages/home/HomePage';
 import TenantSelectPage from '@/pages/tenant-select/TenantSelectPage';
 import AcceptInvitationPage from '@/pages/accept-invitation/AcceptInvitationPage';
@@ -53,7 +54,13 @@ function LoadingFallback({ label }: { label: string }) {
 function AppShellRoutes() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
+      <Route
+        element={
+          <SessionProvider>
+            <AppShell />
+          </SessionProvider>
+        }
+      >
         <Route index element={<HomePage />} />
         <Route
           path="processes"

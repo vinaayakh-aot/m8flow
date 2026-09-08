@@ -2,8 +2,22 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import {
+  activeTenantFromContext,
+  capabilitiesFromContext,
+  tenantRegistryFromContext,
+} from '@/components/session/testSupport';
 import TenantManagementPage from './TenantManagementPage';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+const mockUseTenantRegistry = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => mockUseTenantRegistry(),
+}));
 
 const mockFetchTenantMembers = vi.fn();
 const mockFetchAvailableTenantUsers = vi.fn();
@@ -74,10 +88,10 @@ vi.mock('@/lib/invitationManagementApi', async () => {
 });
 
 function renderWithOutlet(
-  context: Partial<AppShellOutletContext> = {},
+  context: Partial<SessionFixtureContext> = {},
   path = '/tenant-management',
 ) {
-  const full: AppShellOutletContext = {
+  const full: SessionFixtureContext = {
     scopedTenantId: null,
     selectedTenantId: null,
     isSuperAdmin: false,
@@ -85,6 +99,14 @@ function renderWithOutlet(
     refreshTenants: mockRefreshTenants,
     ...context,
   };
+  mockUseActiveTenant.mockReturnValue({
+    ...activeTenantFromContext(full),
+    // TenantManagement reads the cookie-authoritative active tenant, which the
+    // suite supplies via the getSelectedTenantId mock — not scopedTenantId.
+    activeTenantId: mockGetSelectedTenantId(),
+  });
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(full));
+  mockUseTenantRegistry.mockReturnValue(tenantRegistryFromContext(full));
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   fetchProcessInstanceOwners,
@@ -8,7 +8,7 @@ import {
   type ProcessInstancePagination,
   type ProcessInstanceSort,
 } from '@/lib/processInstancesApi';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 import { ProcessInstancesList } from './components/ProcessInstancesList';
 
@@ -33,10 +33,9 @@ const SEARCH_DEBOUNCE_MS = 300;
  * anything about process models specifically.
  */
 export default function ProcessInstancesPage() {
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, needsTenant } = useActiveTenant();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const needsTenant = isSuperAdmin && !scopedTenantId;
 
   const initialSearch = searchParams.get('search') ?? '';
   const [searchInput, setSearchInput] = useState(initialSearch);

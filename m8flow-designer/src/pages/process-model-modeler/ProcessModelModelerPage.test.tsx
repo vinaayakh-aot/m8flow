@@ -3,7 +3,21 @@ import { forwardRef, useImperativeHandle, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import type { BpmnCanvasConnectorProfilePicker } from './components/BpmnCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 
@@ -144,9 +158,11 @@ function stubFetch(detail = DETAIL) {
 }
 
 function renderModeler(
-  context: AppShellOutletContext,
+  context: SessionFixtureContext,
   path = '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
 ) {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -162,7 +178,7 @@ function renderModeler(
   );
 }
 
-const EDITOR_CONTEXT: AppShellOutletContext = {
+const EDITOR_CONTEXT: SessionFixtureContext = {
   scopedTenantId: null,
   selectedTenantId: null,
   isSuperAdmin: false,

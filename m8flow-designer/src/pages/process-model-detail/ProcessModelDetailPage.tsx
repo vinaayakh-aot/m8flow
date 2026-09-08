@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
 import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Card } from '@/components/ui/card';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 
 /**
  * Process-model overview. Fetches GET /v1.0/m8flow/process-models/{id}
@@ -13,12 +13,11 @@ import type { AppShellOutletContext } from '@/components/layout/AppShell';
  */
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
-  const { scopedTenantId, isSuperAdmin, canManageProcesses } =
-    useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
   const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
   const canStart = Boolean(canManageProcesses);
   const navigate = useNavigate();
-  const needsTenant = isSuperAdmin && !scopedTenantId;
   const modifiedId = processModelId ?? '';
 
   const [detail, setDetail] = useState<ProcessModelDetail | null>(null);

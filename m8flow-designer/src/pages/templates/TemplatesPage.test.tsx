@@ -2,11 +2,27 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import * as auth from '@/lib/auth';
 import TemplatesPage from './TemplatesPage';
 
-function renderWithOutlet(context: AppShellOutletContext, initial = '/templates') {
+function renderWithOutlet(context: SessionFixtureContext, initial = '/templates') {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
@@ -251,7 +267,7 @@ describe('TemplatesPage', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    // Not super-admin: matches AppShellOutletContext's regular-user
+    // Not super-admin: matches SessionFixtureContext's regular-user
     // convention (scopedTenantId always null) and is required for "Use
     // template" to be enabled at all (super-admin is unconditionally
     // forbidden server-side — see TemplatesGalleryList's own doc comment).

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { downloadTextFile } from '@/lib/download';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant } from '@/components/session/hooks';
 import {
   contentTypeForTemplateFileName,
   fetchTemplate,
@@ -45,7 +45,7 @@ export default function TemplateFileModelerPage() {
     templateId: string;
     fileName: string;
   }>();
-  const { scopedTenantId } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId } = useActiveTenant();
   const navigate = useNavigate();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
 

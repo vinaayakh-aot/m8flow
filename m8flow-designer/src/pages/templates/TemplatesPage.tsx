@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import {
   deleteTemplate,
@@ -11,7 +11,7 @@ import {
 } from '@/lib/templatesApi';
 import { downloadBlob } from '@/lib/download';
 import { getCurrentUser } from '@/lib/auth';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 import { CreateProcessModelFromTemplateDialog } from './components/CreateProcessModelFromTemplateDialog';
 import { ImportTemplateDialog } from './components/ImportTemplateDialog';
@@ -39,9 +39,9 @@ const SEARCH_DEBOUNCE_MS = 300;
  * rather than relying on that backend leniency.
  */
 export default function TemplatesPage() {
-  const { scopedTenantId, isSuperAdmin, canManageTenant } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canManageTenant } = useCapabilities();
   const navigate = useNavigate();
-  const needsTenant = isSuperAdmin && !scopedTenantId;
   const actor = {
     isSuperAdmin,
     canManageTenant: Boolean(canManageTenant) && !isSuperAdmin,

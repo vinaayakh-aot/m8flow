@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   createProcessGroup,
@@ -13,7 +13,7 @@ import {
   type ProcessGroupListItem,
   type ProcessModelListItem,
 } from '@/lib/api';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
 import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
 import { ProcessesModelsList } from './components/ProcessesModelsList';
@@ -26,14 +26,13 @@ import { startErrorMessage } from '@/lib/startProcessError';
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
  */
 export default function ProcessesPage() {
-  const { scopedTenantId, isSuperAdmin, canManageProcesses } =
-    useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
   const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const groupFilter = searchParams.get('group');
-  const needsTenant = isSuperAdmin && !scopedTenantId;
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
   const [loading, setLoading] = useState(!needsTenant);

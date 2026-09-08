@@ -5,12 +5,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/tasksApi', () => ({ fetchTaskReviewList: vi.fn() }));
 
 import { fetchTaskReviewList, type TaskReviewListResponse } from '@/lib/tasksApi';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import TaskReviewInboxPage from './TaskReviewInboxPage';
 
 const mockFetch = fetchTaskReviewList as unknown as ReturnType<typeof vi.fn>;
 
-const CTX: AppShellOutletContext = {
+const CTX: SessionFixtureContext = {
   scopedTenantId: null,
   selectedTenantId: null,
   isSuperAdmin: false,
@@ -39,7 +53,9 @@ function DetailMarker() {
   return <div>DETAIL {taskId}</div>;
 }
 
-function renderInbox(ctx: AppShellOutletContext = CTX) {
+function renderInbox(ctx: SessionFixtureContext = CTX) {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(ctx));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(ctx));
   return render(
     <MemoryRouter initialEntries={['/task-review']}>
       <Routes>

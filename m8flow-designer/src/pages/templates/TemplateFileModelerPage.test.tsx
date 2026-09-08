@@ -3,7 +3,21 @@ import { forwardRef, useImperativeHandle, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import type { DiagramCanvasHandle } from '@/pages/process-model-modeler/components/DiagramCanvasHandle';
 
 vi.mock('@/pages/process-model-modeler/components/DiagramCanvas', () => ({
@@ -61,13 +75,15 @@ const TEMPLATE = {
 
 function renderAt(
   path: string,
-  context: AppShellOutletContext = {
+  context: SessionFixtureContext = {
     scopedTenantId: null,
     selectedTenantId: null,
     isSuperAdmin: false,
     canManageProcesses: true,
   },
 ) {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>

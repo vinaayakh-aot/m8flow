@@ -2,7 +2,21 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({
+    tenants: [],
+    refreshTenants: () => {},
+    organizationMemberships: [],
+    activeTenantLabel: null,
+  }),
+}));
 import SecretListPage from './SecretListPage';
 import SecretNewPage from './SecretNewPage';
 import SecretShowPage from './SecretShowPage';
@@ -36,7 +50,9 @@ const ROW = {
   tenantName: 'Acme',
 };
 
-function renderAt(path: string, context: AppShellOutletContext) {
+function renderAt(path: string, context: SessionFixtureContext) {
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -50,7 +66,7 @@ function renderAt(path: string, context: AppShellOutletContext) {
   );
 }
 
-const MANAGE: AppShellOutletContext = {
+const MANAGE: SessionFixtureContext = {
   scopedTenantId: 't1',
   selectedTenantId: 't1',
   isSuperAdmin: true,
@@ -58,7 +74,7 @@ const MANAGE: AppShellOutletContext = {
   canManageSecrets: true,
 };
 
-const VIEW: AppShellOutletContext = {
+const VIEW: SessionFixtureContext = {
   scopedTenantId: null,
   selectedTenantId: null,
   isSuperAdmin: false,

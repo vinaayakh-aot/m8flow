@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useBeforeUnload, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 
 import {
   ApiError,
@@ -25,7 +25,7 @@ import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerF
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 
 /** Save/dirty state machine (decided on the manual-save ticket, HITL): the
  * Save button and the SavedStatusPill are never shown together — 'dirty'
@@ -63,9 +63,9 @@ export default function ProcessModelModelerPage() {
     fileName: string;
   }>();
   const navigate = useNavigate();
-  const { scopedTenantId, isSuperAdmin, canManageProcesses } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
   const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
-  const needsTenant = isSuperAdmin && !scopedTenantId;
   const modifiedId = processModelId ?? '';
   const file = fileName ?? '';
   const canvasRef = useRef<DiagramCanvasHandle>(null);

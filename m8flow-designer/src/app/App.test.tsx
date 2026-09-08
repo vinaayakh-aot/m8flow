@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +20,13 @@ vi.mock('@/pages/tenant-select/TenantSelectPage', () => ({
 
 vi.mock('@/pages/accept-invitation/AcceptInvitationPage', () => ({
   default: () => <div>accept-invitation</div>,
+}));
+
+// This suite tests routing + the tenant-selection gate, not session state.
+// Stub the provider to a passthrough (like the AppShell stub below) so its
+// bootstrap fetches don't run here — SessionProvider has its own unit tests.
+vi.mock('@/components/session/SessionProvider', () => ({
+  SessionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('@/components/layout/AppShell', async () => {

@@ -3,7 +3,21 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import type { SessionFixtureContext } from '@/components/session/testSupport';
+import {
+  activeTenantFromContext,
+  capabilitiesFromContext,
+  tenantRegistryFromContext,
+} from '@/components/session/testSupport';
+
+const mockUseActiveTenant = vi.fn();
+const mockUseCapabilities = vi.fn();
+const mockUseTenantRegistry = vi.fn();
+vi.mock('@/components/session/hooks', () => ({
+  useActiveTenant: () => mockUseActiveTenant(),
+  useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => mockUseTenantRegistry(),
+}));
 import TenantsPage from './TenantsPage';
 
 const mockFetchTenants = vi.fn();
@@ -19,14 +33,17 @@ vi.mock('@/lib/tenantsApi', async () => {
   };
 });
 
-function renderWithOutlet(context: Partial<AppShellOutletContext> = {}) {
-  const full: AppShellOutletContext = {
+function renderWithOutlet(context: Partial<SessionFixtureContext> = {}) {
+  const full: SessionFixtureContext = {
     scopedTenantId: null,
     selectedTenantId: null,
     isSuperAdmin: true,
     refreshTenants: mockRefreshTenants,
     ...context,
   };
+  mockUseActiveTenant.mockReturnValue(activeTenantFromContext(full));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(full));
+  mockUseTenantRegistry.mockReturnValue(tenantRegistryFromContext(full));
   return render(
     <MemoryRouter initialEntries={['/tenants']}>
       <Routes>

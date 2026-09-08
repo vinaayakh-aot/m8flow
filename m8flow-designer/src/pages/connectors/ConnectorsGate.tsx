@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 
 export function useConnectorsContext() {
-  const context = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canReadConnectors, canManageConnectorProfiles } = useCapabilities();
   return {
-    scopedTenantId: context.scopedTenantId,
-    isSuperAdmin: context.isSuperAdmin,
-    canReadConnectors: Boolean(context.canReadConnectors),
-    canManageConnectorProfiles: Boolean(context.canManageConnectorProfiles),
-    needsTenant: context.isSuperAdmin && !context.scopedTenantId,
+    scopedTenantId,
+    isSuperAdmin,
+    canReadConnectors,
+    canManageConnectorProfiles,
+    needsTenant,
   };
 }
 

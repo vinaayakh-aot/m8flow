@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 
 export function useConfigurationContext() {
-  const context = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { canReadSecrets, canManageSecrets } = useCapabilities();
   return {
-    scopedTenantId: context.scopedTenantId,
-    isSuperAdmin: context.isSuperAdmin,
-    canReadSecrets: Boolean(context.canReadSecrets),
-    canManageSecrets: Boolean(context.canManageSecrets),
-    needsTenant: context.isSuperAdmin && !context.scopedTenantId,
+    scopedTenantId,
+    isSuperAdmin,
+    canReadSecrets,
+    canManageSecrets,
+    needsTenant,
   };
 }
 

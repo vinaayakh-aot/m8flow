@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Building2, Plus } from 'lucide-react';
 
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useTenantRegistry } from '@/components/session/hooks';
 import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Modal } from '@/components/library/modal/Modal';
@@ -53,7 +53,8 @@ const STATUS_FILTER_OPTIONS = [
  * Does not set `m8flow_selected_tenant`, mutate status, or delete.
  */
 export default function TenantsPage() {
-  const { isSuperAdmin, refreshTenants } = useOutletContext<AppShellOutletContext>();
+  const { isSuperAdmin } = useActiveTenant();
+  const { refreshTenants } = useTenantRegistry();
 
   const [rows, setRows] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(isSuperAdmin);
@@ -173,7 +174,7 @@ export default function TenantsPage() {
       setCreateOpen(false);
       setDialogName('');
       setReloadKey((key) => key + 1);
-      refreshTenants?.();
+      refreshTenants();
     } catch (err: unknown) {
       setDialogError(tenantsErrorMessage(err, 'Failed to create tenant'));
     } finally {

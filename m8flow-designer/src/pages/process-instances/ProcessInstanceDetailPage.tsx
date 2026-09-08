@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode, useEffect, useState } from 'react';
 import { Link2, Pause, Play, Square } from 'lucide-react';
-import { Link, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/lib/api';
 import {
@@ -9,7 +9,7 @@ import {
   type ProcessInstanceDetail,
   type ProcessInstanceLifecycleAction,
 } from '@/lib/processInstancesApi';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Alert } from '@/components/library/alert/Alert';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -105,8 +105,8 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  */
 export default function ProcessInstanceDetailPage() {
   const { instanceId: instanceIdParam } = useParams<{ instanceId: string }>();
-  const { scopedTenantId, isSuperAdmin, canManageProcesses } = useOutletContext<AppShellOutletContext>();
-  const needsTenant = isSuperAdmin && !scopedTenantId;
+  const { scopedTenantId, needsTenant } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
   const canLifecycle = Boolean(canManageProcesses);
 
   const parsedId = Number.isFinite(Number(instanceIdParam)) ? Number(instanceIdParam) : NaN;

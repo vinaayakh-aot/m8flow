@@ -1,12 +1,10 @@
-import { useOutletContext } from 'react-router-dom';
-
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant } from '@/components/session/hooks';
 import { HomeStatsGrid } from './components/HomeStatsGrid';
 import { MyTasksList } from './components/MyTasksList';
 import { RecentInstancesTable } from './components/RecentInstancesTable';
 
 export default function HomePage() {
-  const { scopedTenantId, isSuperAdmin } = useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
 
   return (
     <main className="flex-1 px-11 py-10">

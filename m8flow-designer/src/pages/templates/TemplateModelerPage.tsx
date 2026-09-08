@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { FolderArchive } from 'lucide-react';
-import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/lib/api';
 import { downloadBlob } from '@/lib/download';
-import type { AppShellOutletContext } from '@/components/layout/AppShell';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { exportTemplate, fetchTemplate, fetchTemplateVersions, type Template } from '@/lib/templatesApi';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Pill } from '@/components/library/pill/Pill';
@@ -31,8 +31,8 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  */
 export default function TemplateModelerPage() {
   const { templateId: templateIdParam } = useParams<{ templateId: string }>();
-  const { scopedTenantId, isSuperAdmin, canManageProcesses } =
-    useOutletContext<AppShellOutletContext>();
+  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
   const canManage = Boolean(canManageProcesses) && !isSuperAdmin;
   const navigate = useNavigate();
 
