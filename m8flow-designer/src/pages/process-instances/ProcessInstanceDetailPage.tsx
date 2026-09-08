@@ -100,7 +100,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 /**
  * Process instance detail — mockup shell: breadcrumb, title + icon
  * actions, metadata grid, Tasks I can complete, tab bodies. Download is
- * gone. Copy link is the current URL. Updated / Last milestone come from
+ * gone. Copy URL is the current URL. Updated / Last milestone come from
  * the designer GET; Revision stays `—` (no git, no hash, no GET key).
  */
 export default function ProcessInstanceDetailPage() {
@@ -199,7 +199,7 @@ export default function ProcessInstanceDetailPage() {
           Process Instance ID: {instanceIdParam}
         </h1>
         <div className="flex items-center gap-2">
-          <IconAction label="Copy link" onClick={handleCopyLink}>
+          <IconAction label="Copy URL" onClick={handleCopyLink}>
             <Link2 className="size-4 text-muted-foreground" strokeWidth={1.8} />
           </IconAction>
           {actions?.terminate ? (

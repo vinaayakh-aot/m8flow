@@ -63,16 +63,19 @@ def _issuer_is_allowed(issuer: str) -> bool:
 
 
 def _audience_is_allowed(payload: dict[str, Any]) -> bool:
+    # Bind the token to our spoke client. The authorized-party (azp) claim is the
+    # primary signal Keycloak sets on access tokens for a single client; aud is
+    # accepted as a fallback. We deliberately do NOT accept a missing aud+azp
+    # (an unbound token) nor the generic "account" audience, both of which
+    # previously let tokens not issued for this client through.
     client_id = spoke_client_id()
     azp = payload.get("azp")
     aud = payload.get("aud")
     if azp == client_id:
         return True
-    if isinstance(aud, str) and aud in {client_id, "account"}:
+    if isinstance(aud, str) and aud == client_id:
         return True
-    if isinstance(aud, list) and (client_id in aud or "account" in aud):
-        return True
-    if aud is None and azp is None:
+    if isinstance(aud, list) and client_id in aud:
         return True
     return False
 

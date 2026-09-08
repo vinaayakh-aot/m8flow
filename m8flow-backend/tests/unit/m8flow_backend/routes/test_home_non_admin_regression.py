@@ -9,6 +9,7 @@ Covers AGENTS.md's bar for this map's Home work:
 
 from __future__ import annotations
 
+from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -26,6 +27,11 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     )
     ensure_membership(db_session, user, tenant)
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    # Mirror a real login: sync_groups_from_token materializes m8flow.yml grants
+    # into the DB (identity.import_yaml). Home instance data relies on the real
+    # /process-instances grant, not the narrowed onboarding/tasks bootstrap
+    # fallback (F-05).
+    identity.import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="user", user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
@@ -94,6 +100,7 @@ def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     tenant_b = ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     ensure_membership(db_session, user, tenant_b)
     sync_groups(db_session, user=user, group_identifiers=["org-b:editor"], tenant_id="org-b")
+    identity.import_yaml(db_session, tenant_id="org-b")
     ensure_v1_role(db_session, tenant_id="org-b", role_name="user", user_ids=(user.id,))
     db_session.commit()
 

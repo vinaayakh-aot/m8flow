@@ -159,7 +159,7 @@ export interface BackLinkProps extends React.ComponentProps<"a"> {
 const BackLink = React.forwardRef<HTMLAnchorElement, BackLinkProps>(
   ({ className, children, LinkComponent, href, ...props }, ref) => {
     const mergedClassName = cn(
-      "inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground no-underline hover:underline",
+      "inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-[13px] font-semibold text-foreground no-underline shadow-xs transition-colors hover:bg-muted hover:no-underline",
       className
     )
     const content = (

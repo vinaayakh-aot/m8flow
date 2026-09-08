@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.identity import (
+    ensure_membership,
+    ensure_tenant,
+    ensure_user,
+    import_yaml,
+    sync_groups,
+)
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
@@ -14,6 +20,10 @@ def _login_user(client, db_session, *, username, groups, tenant_id="t1"):
     )
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    # Mirror a real login: materialize m8flow.yml grants into the DB so
+    # authorization uses real per-role grants, not the narrowed onboarding/tasks
+    # bootstrap fallback (F-05).
+    import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="user", user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)

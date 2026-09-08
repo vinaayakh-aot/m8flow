@@ -52,6 +52,16 @@ logger = logging.getLogger(__name__)
 
 TENANT_GROUP_NAME_MAX_LENGTH = 64
 TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
+# Platform / reserved role identifiers must not be creatable as tenant groups —
+# JWT group claims map these leaf names to elevated privileges.
+RESERVED_TENANT_GROUP_NAMES = frozenset(
+    {
+        "super-admin",
+        "superadmin",
+        "tenant-admin",
+        "tenantadmin",
+    }
+)
 MAX_PARALLEL_KEYCLOAK_LOOKUPS = 8
 
 
@@ -553,6 +563,15 @@ def _validated_new_group_name(group_name: str | None) -> str:
                 "Group name can only contain letters, numbers, spaces, hyphens, "
                 "and underscores, and must start and end with a letter or number."
             ),
+            status_code=400,
+        )
+
+    compact = re.sub(r"[^a-z0-9]", "", normalized_group_name.casefold())
+    reserved_compact = {re.sub(r"[^a-z0-9]", "", name) for name in RESERVED_TENANT_GROUP_NAMES}
+    if compact in reserved_compact:
+        raise ApiError(
+            error_code="invalid_group",
+            message="This group name is reserved and cannot be created.",
             status_code=400,
         )
 

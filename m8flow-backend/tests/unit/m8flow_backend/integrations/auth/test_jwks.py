@@ -9,7 +9,12 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from m8flow_backend.auth import JWT_ALGORITHM, decode_auth_token, jwt_secret
+from m8flow_backend.auth import (
+    JWT_ALGORITHM,
+    LOCAL_TOKEN_AUDIENCE,
+    decode_auth_token,
+    jwt_secret,
+)
 from m8flow_backend.integrations.auth.base.errors import TokenInvalid
 from m8flow_backend.integrations.auth.keycloak.config import (
     keycloak_public_issuer_base,
@@ -148,20 +153,61 @@ def test_provider_verify_token_rejects_expired_token(monkeypatch):
         KeycloakAuthProvider().verify_token(token)
 
 
+def _host_token(secret: str | None = None, **overrides) -> str:
+    now = int(time.time())
+    payload = {
+        "sub": "service:local::service_id:u1",
+        "iat": now,
+        "exp": now + 60,
+        "iss": "local-service",
+        "aud": LOCAL_TOKEN_AUDIENCE,
+    }
+    payload.update(overrides)
+    return jwt.encode(payload, secret or jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
 def test_decode_auth_token_still_accepts_hs256_host_tokens():
-    token = jwt.encode(
-        {"sub": "service:local::service_id:u1", "exp": int(time.time()) + 60},
-        jwt_secret(),
-        algorithm=JWT_ALGORITHM,
-    )
+    token = _host_token()
     assert decode_auth_token(token)["sub"] == "service:local::service_id:u1"
 
 
 def test_decode_auth_token_rejects_forged_unsigned_payload():
+    token = _host_token(secret="wrong-secret-must-be-32-bytes-min!!")
+    with pytest.raises(jwt.InvalidTokenError):
+        decode_auth_token(token)
+
+
+def test_decode_auth_token_rejects_host_token_without_audience():
+    # A host HS256 token missing its audience binding must be rejected.
     token = jwt.encode(
-        {"sub": "attacker", "exp": int(time.time()) + 60, "iss": "http://evil"},
-        "wrong-secret-must-be-32-bytes-min!!",
-        algorithm="HS256",
+        {"sub": "service:local::service_id:u1", "iat": int(time.time()), "exp": int(time.time()) + 60, "iss": "local-service"},
+        jwt_secret(),
+        algorithm=JWT_ALGORITHM,
     )
     with pytest.raises(jwt.InvalidTokenError):
         decode_auth_token(token)
+
+
+def test_decode_auth_token_rejects_host_token_with_wrong_audience():
+    token = _host_token(aud="some-other-service")
+    with pytest.raises(jwt.InvalidTokenError):
+        decode_auth_token(token)
+
+
+def test_jwt_secret_fails_hard_when_unset(monkeypatch):
+    monkeypatch.delenv("FLASK_SESSION_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="FLASK_SESSION_SECRET_KEY"):
+        jwt_secret()
+
+
+def test_audience_rejects_unbound_and_account_only(monkeypatch):
+    private_key, jwk = _rsa_pair()
+    _patch_jwks(monkeypatch, jwk)
+    # No azp and no aud -> previously allowed (unbound token), now rejected.
+    unbound = _issue(private_key=private_key, azp=None, aud=None)
+    with pytest.raises(TokenInvalid, match="audience"):
+        verify_access_token(unbound)
+    # Only the generic "account" audience, azp for a different client -> rejected.
+    account_only = _issue(private_key=private_key, azp="some-other-client", aud=["account"])
+    with pytest.raises(TokenInvalid, match="audience"):
+        verify_access_token(account_only)

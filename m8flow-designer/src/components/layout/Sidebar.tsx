@@ -14,10 +14,8 @@ import {
   Flag,
   GitBranch,
   Home,
-  Link2,
   ListFilter,
   LogOut,
-  Mail,
   Server,
   Sun,
   User,
@@ -72,6 +70,10 @@ export type SidebarProps = {
   showTenantsNav?: boolean;
   /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
   showTenantManagement?: boolean;
+  /** Super-admin only: System section (Celery / NATS placeholders until wired). */
+  showSystem?: boolean;
+  /** When false, hide Task Review (e.g. super-admin is not a task assignee). Default true. */
+  showTaskReview?: boolean;
   className?: string;
 };
 
@@ -105,8 +107,6 @@ const TOP_NAV: NavItem[] = [
     live: true,
   },
   { id: 'task-review', label: 'Task Review', icon: ClipboardCheck, to: '/task-review', live: true },
-  { id: 'messages', label: 'Messages', icon: Mail },
-  { id: 'mcp', label: 'MCP Connection', icon: Link2 },
 ];
 
 type SidebarChild = {
@@ -156,12 +156,12 @@ function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavI
 /**
  * App sidebar matching `m8flow Home copy.html`. Home, Processes, and (for
  * super-admin) Tenants are live routes when a React Router context is
- * present. Tenants is omitted unless `showTenantsNav` is set. Other items
- * stay visually present at full opacity but inert — no route, no click
- * handler — rather than `disabled`/greyed, which would read as a permission
- * denial. Collapsible Setup/System groups still expand/collapse (chrome, not
- * navigation). Profile opens a small popout for Log out when `onLogout` is
- * provided.
+ * present. Tenants is omitted unless `showTenantsNav` is set. Inert
+ * placeholders (Messages / MCP / Celery / NATS without routes) are omitted
+ * so they do not look like broken links. System is super-admin-only chrome
+ * and stays hidden until those pages are wired. Collapsible Setup still
+ * expands/collapses. Profile opens a small popout for Log out when
+ * `onLogout` is provided.
  */
 export function Sidebar(props: SidebarProps) {
   const inRouter = useInRouterContext();
@@ -195,6 +195,8 @@ function SidebarView({
   showConnectors = false,
   showTenantsNav = false,
   showTenantManagement = false,
+  showSystem = false,
+  showTaskReview = true,
   activeTenantLabel = null,
   organizations = [],
   className,
@@ -205,7 +207,7 @@ function SidebarView({
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     SETUP_CHILDREN[2],
-  ];
+  ].filter((child) => child.to);
 
   const topNav = TOP_NAV.filter((item) => {
     if (item.id === 'tenants') {
@@ -213,6 +215,9 @@ function SidebarView({
     }
     if (item.id === 'tenant-management') {
       return showTenantManagement;
+    }
+    if (item.id === 'task-review') {
+      return showTaskReview;
     }
     return true;
   });
@@ -317,16 +322,18 @@ function SidebarView({
           )}
         </CollapsibleGroup>
 
-        <CollapsibleGroup
-          label="System"
-          icon={Server}
-          open={systemOpen}
-          onToggle={() => setSystemOpen((open) => !open)}
-        >
-          {SYSTEM_CHILDREN.map((child) => (
-            <InertChild key={child.label} label={child.label} />
-          ))}
-        </CollapsibleGroup>
+        {showSystem ? (
+          <CollapsibleGroup
+            label="System"
+            icon={Server}
+            open={systemOpen}
+            onToggle={() => setSystemOpen((open) => !open)}
+          >
+            {SYSTEM_CHILDREN.map((child) => (
+              <InertChild key={child.label} label={child.label} />
+            ))}
+          </CollapsibleGroup>
+        ) : null}
       </nav>
 
       <div className="flex items-center gap-4 border-t border-border px-6 py-4 text-muted-foreground">

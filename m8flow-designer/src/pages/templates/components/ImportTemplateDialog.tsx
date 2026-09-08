@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
+import { slugifyProcessModelId } from '@/lib/processModelId';
 import { importTemplateZip, type TemplateVisibility } from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
@@ -17,9 +18,8 @@ const VISIBILITY_OPTIONS: TemplateVisibility[] = ['PRIVATE', 'TENANT', 'PUBLIC']
 /**
  * "Import" (Template modeler map, ticket 04) — `POST
  * /v1.0/m8flow/templates/import`, a zip previously produced by Export.
- * No auto-slug from a file name: `template_key`/`name` are typed
- * explicitly, same as `createTemplate`'s own required fields — the
- * backend has no "infer metadata from the zip" path to defer to.
+ * Template key auto-slugs from Name (same as Save as template) unless the
+ * user edits the key field explicitly.
  */
 export function ImportTemplateDialog({ open, onClose, onImported }: ImportTemplateDialogProps) {
   // `file` is tracked as real state, not read from `fileRef.current.files`
@@ -34,6 +34,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [templateKey, setTemplateKey] = useState('');
+  const [keyEdited, setKeyEdited] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -46,6 +47,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
     if (!open) return;
     setFile(null);
     setTemplateKey('');
+    setKeyEdited(false);
     setName('');
     setDescription('');
     setCategory('');
@@ -54,6 +56,13 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
     setError(null);
     if (fileRef.current) fileRef.current.value = '';
   }, [open]);
+
+  function handleNameChange(value: string) {
+    setName(value);
+    if (!keyEdited) {
+      setTemplateKey(slugifyProcessModelId(value));
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -118,23 +127,26 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label htmlFor="import-name" className="text-xs font-medium text-muted-foreground">
+            Name
+          </label>
+          <Input id="import-name" value={name} onChange={(e) => handleNameChange(e.target.value)} required />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="import-key" className="text-xs font-medium text-muted-foreground">
             Template key
           </label>
           <Input
             id="import-key"
             value={templateKey}
-            onChange={(e) => setTemplateKey(e.target.value)}
-            placeholder="invoice-approval-v2"
+            onChange={(e) => {
+              setKeyEdited(true);
+              setTemplateKey(e.target.value);
+            }}
+            placeholder="auto-generated from name"
             required
           />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="import-name" className="text-xs font-medium text-muted-foreground">
-            Name
-          </label>
-          <Input id="import-name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -178,16 +190,12 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-tags" className="text-xs font-medium text-muted-foreground">
-            Tags (comma-separated, optional)
+            Tags (optional, comma-separated)
           </label>
-          <Input id="import-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="finance, approval" />
+          <Input id="import-tags" value={tags} onChange={(e) => setTags(e.target.value)} />
         </div>
 
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
       </form>
     </Modal>
   );

@@ -5,11 +5,11 @@ never checked permission (architecture review follow-up to the
 Each of these routes now has an m8flow.yml-backed grant boundary: a role the
 YAML explicitly lists should pass, and a role it omits should still be
 denied. Assertions against `_uri_permitted` directly (the
-`test_multi_org_db_grants.py` pattern) prove the real DB-grant boundary,
-since editor/tenant-admin are covered unconditionally by
-`_group_identifier_fallback` and can't tell a real grant from that escape
-hatch. Route-level `client` calls on top of that prove `@require_permission`
+`test_multi_org_db_grants.py` pattern) prove the real DB-grant boundary.
+Route-level `client` calls on top of that prove `@require_permission`
 is actually wired into the route, not just that the underlying grant exists.
+(Since F-05, `_group_identifier_fallback` is narrowed to onboarding/tasks-read
+scoped to the active tenant, so it no longer masks these grant boundaries.)
 
 `start_process` (POST /v1.0/process-instances) and `submit_external_form`
 (POST /v1.0/m8flow/external-forms/*) are deliberately not covered here --
@@ -19,15 +19,11 @@ left ungated.
 claim_task/complete_task have no route-level HTTP deny test, unlike the
 other routes below: `_provision_tenant_role` calls `ensure_v1_role(...,
 role_name="user")` so the command layer (`ClaimTaskCommand`/
-`CompleteTaskCommand`) doesn't also 403 for an unrelated reason, but that
-puts every provisioned test user in a "t1:user" group --
-`_group_identifier_fallback`'s loose `"/tasks" in path` substring match then
-lets *any* such user claim/complete via the fallback regardless of their
-real YAML role, an artifact of this test harness (real logins never sync a
-"user" YAML role, only the six in VALID_TENANT_ROLE_NAMES). The
-`_uri_permitted` assertions below aren't affected -- they check the DB-grant
-layer directly, before the fallback ever runs -- so they remain the
-authoritative proof for those two routes' deny boundary.
+`CompleteTaskCommand`) doesn't also 403 for an unrelated reason. The narrowed
+`_group_identifier_fallback` (F-05) only grants *read* on onboarding/tasks, so
+it does not let a user claim (update) or complete (create) a task; the
+`_uri_permitted` assertions below check the DB-grant layer directly and remain
+the authoritative proof for those two routes' deny boundary.
 """
 
 from __future__ import annotations
@@ -168,10 +164,13 @@ def test_put_secret_route_denies_viewer_with_403(client, db_session):
 
 
 def test_editor_still_reaches_all_eight_routes(client, db_session):
-    """editor is covered unconditionally by _group_identifier_fallback, so
-    this is a smoke test that the new gates didn't regress the one role
-    every route already worked for -- not proof of a real per-route grant.
-    Secrets writes are YAML-only (group_fallback=False), so editor PUT is 403.
+    """Smoke test that editor reaches these routes via its real m8flow.yml
+    grants (not the narrowed bootstrap fallback, which is onboarding/tasks-read
+    only since F-05): process-model/instance reads, manage-tasks (all+execute
+    on /tasks/*), and the explicit create-process-model grant on the bare
+    /process-models collection. GET /secrets has no grant but the route hides
+    denial as an empty list; secrets writes are YAML-only (group_fallback=False),
+    so editor PUT is 403.
     """
     user = _provision_tenant_role(db_session, username="editor-smoke", group_name="editor")
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)

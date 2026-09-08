@@ -67,7 +67,7 @@ normalize_bpmn_spec_dir() {
 }
 
 mode="${1:-worker}"
-if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
+if [[ "$mode" == "worker" || "$mode" == "flower" || "$mode" == "beat" ]]; then
   shift
 fi
 
@@ -221,5 +221,20 @@ if [[ "$mode" == "flower" ]]; then
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${flower_args[@]}" "$@"
 fi
 
-echo "Unknown mode '$mode'. Expected 'worker' or 'flower'." >&2
+if [[ "$mode" == "beat" ]]; then
+  # Celery beat enqueues m8flow_backend.scheduler.poll_due_task on the interval
+  # in celery_app.conf.beat_schedule (M8FLOW_SCHEDULER_POLL_SECONDS, default 10),
+  # so BPMN timer events and retries actually fire. Run EXACTLY ONE beat process
+  # across the deployment -- multiple beats would double-enqueue.
+  beat_schedule_file="${M8FLOW_BACKEND_CELERY_BEAT_SCHEDULE_FILE:-/tmp/m8flow-celerybeat-schedule}"
+  beat_args=(beat --loglevel "$log_level" --schedule "$beat_schedule_file")
+
+  if [[ "$use_uv_runner" == "true" ]]; then
+    cd "$repo_root/m8flow-backend"
+    exec_uv_python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${beat_args[@]}" "$@"
+  fi
+  exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${beat_args[@]}" "$@"
+fi
+
+echo "Unknown mode '$mode'. Expected 'worker', 'flower', or 'beat'." >&2
 exit 1

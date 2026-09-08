@@ -16,7 +16,8 @@ export default function ProcessModelDetailPage() {
   const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
   const canManageCatalog = Boolean(canManageProcesses) && !isSuperAdmin;
-  const canStart = Boolean(canManageProcesses);
+  // Super-admin is view-only on tenant catalogs — no start / mutate actions.
+  const canStart = Boolean(canManageProcesses) && !isSuperAdmin;
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
 
