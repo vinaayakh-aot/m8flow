@@ -7,6 +7,7 @@ import {
   getCurrentUser,
   isSuperAdmin,
   logout,
+  type OrganizationMembership,
 } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { persistTenantId, readPersistedTenantId } from '@/lib/selectedTenant';
@@ -61,6 +62,10 @@ export function AppShell() {
   const [activeTenantLabel, setActiveTenantLabel] = useState<string | null>(() =>
     superAdmin ? null : getActiveTenantDisplayLabel(),
   );
+  // TenantSwitcher (ticket 06) needs the full membership list, not just the
+  // resolved label -- reuses the same fetchOrganizationMemberships() call
+  // below, no extra network round trip.
+  const [organizationMemberships, setOrganizationMemberships] = useState<OrganizationMembership[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +124,7 @@ export function AppShell() {
   useEffect(() => {
     if (superAdmin) {
       setActiveTenantLabel(null);
+      setOrganizationMemberships([]);
       return;
     }
     setActiveTenantLabel(getActiveTenantDisplayLabel());
@@ -127,6 +133,7 @@ export function AppShell() {
       .then((rows) => {
         if (!cancelled) {
           setActiveTenantLabel(getActiveTenantDisplayLabel(rows));
+          setOrganizationMemberships(rows);
         }
       })
       .catch(() => {
@@ -167,6 +174,7 @@ export function AppShell() {
         onTenantChange={setSelectedTenantId}
         tenants={tenantOptions}
         activeTenantLabel={activeTenantLabel}
+        organizations={organizationMemberships}
         onLogout={logout}
         userLabel={userLabel}
         showConfiguration={canReadSecrets}

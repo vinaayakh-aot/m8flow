@@ -4,7 +4,7 @@ from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 MINIMAL_BPMN = b"""<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">

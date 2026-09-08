@@ -130,9 +130,10 @@ def actor_is_super_admin(user: UserModel | None) -> bool:
     """The one super-admin check every caller should use: a live "super-admin"
     group membership, or (before local group sync has persisted it) a verified
     JWT role claim bound to this specific user. Formerly reimplemented ad hoc
-    in home_controller, template_authorization_service, tenant_management_authorization,
-    and via a `g` flag (`tenancy.is_super_admin_request`) that nothing ever set --
-    see architecture review finding C1."""
+    in home_controller, template_authorization_service, and
+    tenant_management_authorization -- see architecture review finding C1.
+    The zero-arg request-context wrapper is `auth.is_super_admin_request`
+    (`auth/bind.py`), which delegates here."""
     if user is None:
         return False
     if any(getattr(group, "identifier", None) == SUPER_ADMIN_ROLE for group in user.groups):

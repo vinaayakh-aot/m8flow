@@ -65,6 +65,56 @@ def fetch_user_representation(
     return exact[0]
 
 
+def set_user_attribute(
+    realm: str,
+    username: str,
+    *,
+    name: str,
+    value: str | None,
+    admin_token: str | None = None,
+) -> None:
+    """Set (or clear, when ``value`` is None/blank) a single user attribute.
+
+    Fetches the user representation, merges just the one attribute, and PUTs it
+    back -- the shape Keycloak's Admin API expects. Used by the tenant switch to
+    write ``m8flow_active_tenant`` so a subsequent refresh_token grant re-mints a
+    token carrying the target org's claims (RealmInfoMapper reads this attribute;
+    active-tenant deep-module map, ticket 09/10).
+    """
+    if not realm or not str(realm).strip():
+        raise ValueError("realm is required")
+    if not username or not str(username).strip():
+        raise ValueError("username is required")
+    if not name or not str(name).strip():
+        raise ValueError("attribute name is required")
+    normalized_realm = str(realm).strip()
+    normalized_name = str(name).strip()
+    representation = fetch_user_representation(normalized_realm, username, admin_token=admin_token)
+    if representation is None:
+        raise UserNotFound(username)
+    user_id = representation.get("id")
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise UserNotFound(username)
+
+    attributes = representation.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    normalized_value = str(value).strip() if value is not None else ""
+    if normalized_value:
+        attributes[normalized_name] = [normalized_value]
+    else:
+        attributes.pop(normalized_name, None)
+    representation["attributes"] = attributes
+
+    KeycloakAdminClient(admin_token=admin_token).put(
+        normalized_realm,
+        "users",
+        user_id.strip(),
+        json=representation,
+        context=f"set attribute {normalized_name!r} on directory user {username!r}",
+    )
+
+
 def search_user_representations(
     realm: str,
     search: str,

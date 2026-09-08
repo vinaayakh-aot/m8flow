@@ -16,13 +16,12 @@ from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
-from m8flow_backend.tenancy import (
+from m8flow_backend.auth import (
     SELECTED_TENANT_COOKIE_NAME,
-    get_healthy_response,
-    get_ready_response,
     is_super_admin_request,
     require_tenant_id,
 )
+from m8flow_backend.observability.health import get_healthy_response, get_ready_response
 
 
 def register_v1_routes(app: Flask) -> None:
@@ -317,6 +316,13 @@ def register_v1_routes(app: Flask) -> None:
         view_func=login_controller.refresh,
         methods=["POST"],
     )
+
+    # Non-super-admin in-session tenant switch is served by the finalization
+    # path (GET /v1.0/login?...&tenant=<slug>&tenant_finalization=1 ->
+    # auth.try_finalize_shared_realm_session), which writes the active-org
+    # attribute + refresh-remints the token (map ticket 08/10). The former
+    # /v1.0/switch-tenant prompt=none/iframe routes were retired: Keycloak 26
+    # cannot silently re-mint an org-scoped token.
 
     # Deliberately still ungated (see start_process above for the same caveat):
     # m8flow.yml has no permission entry at all for /m8flow/external-forms*, so

@@ -21,7 +21,7 @@ from m8flow_backend import catalog as SpecFileService
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_authorization_service import TemplateAuthorizationService
-from m8flow_backend.tenancy import is_super_admin_request
+from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     TemplateStorageService,

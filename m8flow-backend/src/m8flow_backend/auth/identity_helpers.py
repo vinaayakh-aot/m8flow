@@ -1,12 +1,6 @@
 """Shared-realm user provisioning (materializing/refreshing local user rows
 from Keycloak organization members, including the admin-API calls that
 requires) and tenant-qualified group-identifier string normalization.
-
-Payload/claim parsing moved to identity_claims.py, and DB-backed
-tenant-identifier canonicalization moved to tenant_canonicalization.py --
-see architecture review finding S4 (this file was 963 lines, 8 callers,
-4-6 unrelated concerns). Both are imported here for the pieces this file's
-own logic still needs (tenant resolution, realm derivation).
 """
 
 from __future__ import annotations
@@ -18,8 +12,8 @@ from typing import Any
 
 from m8flow_backend.db import db
 
-from m8flow_backend.services.identity_claims import realm_from_service
-from m8flow_backend.services.tenant_canonicalization import (
+from m8flow_backend.auth.claims import realm_from_service
+from m8flow_backend.auth.canonicalize import (
     _tenant_slug_for_identifier,
     current_tenant_id_or_none,
     current_tenant_identifiers,

@@ -19,7 +19,7 @@ from m8flow_backend.secrets import install_registry_at_boot
 from m8flow_backend.workflow.service_task_params import (
     install_service_task_literal_fallback,
 )
-from m8flow_backend.tenant_runtime import install_tenant_runtime
+from m8flow_backend.auth import install_tenant_runtime
 from m8flow_backend.startup.error_handlers import (
     register_connexion_error_handlers,
     register_error_handlers,

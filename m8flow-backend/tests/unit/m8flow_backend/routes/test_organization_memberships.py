@@ -3,7 +3,7 @@ from __future__ import annotations
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 class _ThinTokenProvider:
@@ -48,6 +48,55 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     token = encode_auth_token(user=user)
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
     return user, token
+
+
+class _ActiveOrgTokenProvider:
+    """Since ticket 09 the token's `organization` claim carries only the single
+    *active* org, so verify_token yields one membership -- but the endpoint must
+    still surface the full list from the directory (both orgs), or a multi-org
+    user loses the ability to switch."""
+
+    def verify_token(self, token: str) -> VerifiedClaims:
+        del token
+        return VerifiedClaims(
+            subject="editor-sub",
+            issuer="https://example.test/realms/m8flow",
+            username="editor",
+            email="editor@example.test",
+            roles=["editor"],
+            memberships=[
+                Membership(
+                    tenant_ref=TenantRef(id="t1", alias="m8flow", name="m8flow"),
+                    roles=["editor"],
+                    groups=["editor"],
+                )
+            ],
+            jwt_claims={},
+        )
+
+    def list_memberships(self, *, username: str) -> list[Membership]:
+        assert username == "editor"
+        return [
+            Membership(tenant_ref=TenantRef(id="t1", alias="m8flow", name="m8flow"), roles=["editor"], groups=["editor"]),
+            Membership(
+                tenant_ref=TenantRef(id="t2", alias="second-org", name="Second Org"),
+                roles=["editor"],
+                groups=["editor"],
+            ),
+        ]
+
+
+def test_organization_memberships_lists_all_orgs_even_when_token_carries_only_active(client, monkeypatch):
+    monkeypatch.setattr(
+        "m8flow_backend.routes.keycloak_controller.get_auth_provider",
+        lambda: _ActiveOrgTokenProvider(),
+    )
+    client.set_cookie("access_token", "active-org-token")
+
+    response = client.get("/v1.0/m8flow/organization-memberships")
+    assert response.status_code == 200
+    aliases = [org["alias"] for org in response.get_json()["organizations"]]
+    assert aliases == ["m8flow", "second-org"]  # full directory list, not just the active org
 
 
 def test_organization_memberships_enriches_when_token_omits_orgs(client, monkeypatch):

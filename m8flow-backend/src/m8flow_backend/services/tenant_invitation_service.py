@@ -30,8 +30,8 @@ from m8flow_backend.services.tenant_group_mapping import (
 )
 from m8flow_backend.services.tenant_role_service import add_tenant_member
 from m8flow_backend.services.tenant_service import TenantService
-from m8flow_backend.tenancy import reset_context_tenant_id
-from m8flow_backend.tenancy import set_context_tenant_id
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id
+from m8flow_backend.auth.tenant_context import set_context_tenant_id
 
 logger = logging.getLogger(__name__)
 

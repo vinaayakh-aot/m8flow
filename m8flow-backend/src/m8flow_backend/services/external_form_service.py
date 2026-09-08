@@ -15,7 +15,7 @@ from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.models.external_form_request import ACTIONABLE_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
 

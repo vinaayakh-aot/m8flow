@@ -13,7 +13,7 @@ import logging
 
 from flask import Flask
 
-from m8flow_backend.tenancy import get_context_tenant_id
+from m8flow_backend.auth.tenant_context import get_context_tenant_id
 
 LOGGER = logging.getLogger(__name__)
 

@@ -19,8 +19,8 @@ from m8flow_backend.integrations.auth.keycloak.config import (
     realm_template_path,
     spoke_client_id,
 )
-from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifier
-from m8flow_backend.services.tenant_identity_helpers import normalize_organizational_group_identifiers
+from m8flow_backend.auth.identity_helpers import normalize_organizational_group_identifier
+from m8flow_backend.auth.identity_helpers import normalize_organizational_group_identifiers
 
 logger = logging.getLogger(__name__)
 

@@ -58,6 +58,52 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
+  it('renders the read-only chip (not a button) for a single-org membership', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <Sidebar
+              activeTenantLabel="Acme Corp"
+              organizations={[{ alias: 'acme', id: 'acme', name: 'Acme Corp' }]}
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
+    expect(screen.queryByRole('button', { name: /Acme Corp/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <Sidebar
+              activeTenantLabel="Acme Corp"
+              organizations={[
+                { alias: 'acme', id: 'acme', name: 'Acme Corp' },
+                { alias: 'globex', id: 'globex', name: 'Globex' },
+              ]}
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    const trigger = screen.getByTestId('nav-tenant-name');
+    expect(trigger).toHaveTextContent('Acme Corp');
+    expect(trigger.tagName).toBe('BUTTON');
+  });
+
   it('prefers the super-admin tenant selector over the active-tenant badge', () => {
     const router = createMemoryRouter(
       [

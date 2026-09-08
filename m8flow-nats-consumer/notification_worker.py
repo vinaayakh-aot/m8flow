@@ -60,7 +60,7 @@ def _notify_one(tenant_id: str, reference_id: str) -> str:
     gives this call its own SQLAlchemy session, torn down on exit."""
     from spiffworkflow_backend.models.db import db
     from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
-    from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+    from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)

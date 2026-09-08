@@ -1,3 +1,15 @@
+"""Public interface of the active-tenant deep module: token encode/decode,
+session finalization, request authentication, and re-exports of the
+request-binding helpers (bind.py) that most external callers reach for.
+
+Internals: tenant_context.py (leaf ContextVar/constants), canonicalize.py
+(DB-backed tenant-identifier resolution), claims.py (pure JWT claim
+parsing), identity_helpers.py (shared-realm provisioning + group-identifier
+utilities), resolve.py (pure active-tenant SELECTION core), ports.py /
+adapters.py (the Directory/TenantRepo seam), bind.py (request-time BINDING:
+RLS, ContextVar lifecycle, super-admin/tenant-required checks).
+"""
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +26,25 @@ from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.models import Membership, VerifiedClaims
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME, get_context_tenant_id
+from m8flow_backend.auth.tenant_context import (
+    SELECTED_TENANT_COOKIE_NAME,
+    get_context_tenant_id,
+)
+from m8flow_backend.auth.bind import (  # noqa: F401 -- re-exported public surface
+    apply_postgres_rls,
+    apply_postgres_rls_to_request_session,
+    bind_request_tenant,
+    install_tenant_runtime,
+    is_public_request,
+    is_super_admin_request,
+    is_tenant_context_exempt_request,
+    mark_tenant_exempt,
+    path_matches_any_prefix,
+    path_matches_prefix,
+    require_tenant_id,
+    resolve_request_tenant,
+    TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -182,9 +212,13 @@ def try_finalize_shared_realm_session(redirect_url: str):
             jwt_claims=claims.jwt_claims,
         )
 
-    token_membership = _membership_for_active_tenant(
-        memberships, tenant_alias
-    ) or _membership_for_active_tenant(memberships, selected_tenant_id)
+    from m8flow_backend.auth import resolve as _resolve
+    from m8flow_backend.auth.canonicalize import DbTenantRepo
+
+    tenant_repo = DbTenantRepo()
+    token_membership = _resolve.membership_for_active_tenant(
+        memberships, tenant_alias, tenant_repo=tenant_repo
+    ) or _resolve.membership_for_active_tenant(memberships, selected_tenant_id, tenant_repo=tenant_repo)
     if token_membership is None:
         raise ApiError(
             "tenant_not_available",
@@ -219,7 +253,7 @@ def try_finalize_shared_realm_session(redirect_url: str):
             )
             return None
 
-    _sync_groups_from_token(
+    sync_groups_from_token(
         session,
         user=user,
         decoded=decoded,
@@ -227,9 +261,63 @@ def try_finalize_shared_realm_session(redirect_url: str):
     )
     session.flush()
 
+    # Option D (map ticket 08/10): make the Keycloak-minted token carry the
+    # target org's claims. Record the active org on the user (RealmInfoMapper
+    # reads m8flow_active_tenant), then re-mint via a plain refresh_token grant
+    # -- Keycloak re-runs the mapper against the freshly-written attribute
+    # (verified: no user-cache staleness). Silent, no org-scope, no re-login.
+    remint = _remint_active_tenant_token(
+        username=str(username),
+        identifier=identifier,
+        tenant_id=selected_tenant_id,
+    )
+
+    from m8flow_backend.routes.session_cookies import set_token_cookies, token_set_as_dict
+
     response = redirect(redirect_url)
+    if remint is not None:
+        # New token set carries m8flow_tenant_* + organization.{alias} for the
+        # selected org; refresh rotation replaces the prior refresh token.
+        set_token_cookies(response, token_set_as_dict(remint), identifier=identifier)
+    # Cookie stays authoritative regardless of the re-mint outcome.
     set_selected_tenant_cookie(response, selected_tenant_id)
     return response
+
+
+def _remint_active_tenant_token(*, username: str, identifier: str, tenant_id: str):
+    """Write the active-org attribute and re-mint the session token so it carries
+    the target tenant's claims. Returns the new ``TokenSet`` or ``None``.
+
+    Failure is non-fatal and leaves session cookies untouched: the
+    ``m8flow_selected_tenant`` cookie is authoritative for active-tenant
+    resolution, so a failed re-mint degrades to "cookie switched, token claims
+    catch up on the next natural refresh" rather than blocking the switch.
+    """
+    from flask import request
+
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.errors import (
+        AuthProviderError,
+        ProviderUnavailable,
+        TokenInvalid,
+    )
+
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return None
+    provider = get_auth_provider()
+    try:
+        provider.set_active_tenant(username=username, tenant_id=tenant_id)
+        return provider.refresh(refresh_token=refresh_token, authentication_identifier=identifier)
+    except (AuthProviderError, TokenInvalid, ProviderUnavailable):
+        logger.warning(
+            "tenant switch: active-tenant re-mint failed for %s (tenant=%s); "
+            "cookie switched, token claims will catch up on next refresh",
+            username,
+            tenant_id,
+            exc_info=True,
+        )
+        return None
 
 
 def _directory_memberships_for_username(username: str | None) -> list[Membership]:
@@ -344,9 +432,9 @@ def install_auth_middleware(app: Flask) -> None:
                 ).first()
                 if user is None:
                     return
-            _sync_groups_from_token(session, user=user, decoded=decoded, tenant_id=str(tenant_id))
+            sync_groups_from_token(session, user=user, decoded=decoded, tenant_id=str(tenant_id))
         else:
-            _sync_groups_from_token(
+            sync_groups_from_token(
                 session,
                 user=user,
                 decoded=decoded,
@@ -360,77 +448,56 @@ def install_auth_middleware(app: Flask) -> None:
         g.decoded_token = decoded
 
 
-def _sync_groups_from_token(
+def sync_groups_from_token(
     session: Session,
     *,
     user: UserModel,
     decoded: dict[str, Any],
     tenant_id: str,
 ) -> None:
-    """Persist verified neutral roles onto the local user (esp. master super-admin)."""
+    """Persist verified neutral roles onto the local user (esp. master super-admin).
+
+    Delegates the active-tenant SELECTION (membership match, thin-token
+    enrichment, canonicalization, group-identifier computation) to the pure
+    ``resolve.select(...)`` core; this function owns only the write (identity
+    sync + YAML seed guard), matching resolve.py's ports/adapter design.
+    """
     del decoded  # RBAC/sync reads VerifiedClaims, not raw JWT JSON.
     from m8flow_backend import identity
-    from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE, VALID_TENANT_ROLE_NAMES
-    from m8flow_backend.services.tenant_canonicalization import _canonical_tenant_id_from_identifiers
-    from m8flow_backend.services.tenant_identity_helpers import qualify_group_identifier
+    from m8flow_backend.auth import resolve as _resolve
+    from m8flow_backend.auth.adapters import KeycloakDirectory
+    from m8flow_backend.auth.canonicalize import DbTenantRepo
 
     claims = getattr(g, "verified_claims", None)
     if not isinstance(claims, VerifiedClaims):
         return
 
-    identifiers: list[str] = []
-    seen: set[str] = set()
-
-    def _add(value: str) -> None:
-        cleaned = value.strip()
-        if cleaned and cleaned not in seen:
-            seen.add(cleaned)
-            identifiers.append(cleaned)
-
-    if SUPER_ADMIN_ROLE in claims.roles:
-        _add(SUPER_ADMIN_ROLE)
-
-    membership = _membership_for_active_tenant(claims.memberships, tenant_id)
-    if _active_membership_needs_enrichment(claims.memberships, membership):
-        membership = _enrich_active_membership(user, tenant_id, membership, claims)
-
-    canonical_tenant_id = (
-        _canonical_tenant_id_from_identifiers(
-            tenant_id,
-            None if membership is None else membership.tenant_ref.id,
-            None if membership is None else membership.tenant_ref.alias,
-        )
-        or tenant_id
+    active = _resolve.select(
+        memberships=claims.memberships,
+        roles=frozenset(claims.roles),
+        tenant_id=tenant_id,
+        username=claims.username or getattr(user, "username", None),
+        directory=KeycloakDirectory(),
+        tenant_repo=DbTenantRepo(),
     )
 
-    if membership is not None:
-        for name in [*membership.roles, *membership.groups]:
-            if not isinstance(name, str) or not name.strip():
-                continue
-            cleaned = name.strip()
-            if cleaned == SUPER_ADMIN_ROLE:
-                _add(SUPER_ADMIN_ROLE)
-            elif cleaned in VALID_TENANT_ROLE_NAMES:
-                _add(qualify_group_identifier(cleaned, tenant_id=canonical_tenant_id))
-
-    if not identifiers:
+    if not active.group_identifiers:
         return
     identity.sync_groups(
         session,
         user=user,
-        group_identifiers=identifiers,
-        tenant_id=str(canonical_tenant_id),
+        group_identifiers=active.group_identifiers,
+        tenant_id=str(active.tenant_id),
     )
     # sync_groups only creates the UserGroupAssignmentModel row; it never seeds
     # the tenant-qualified group's actual m8flow.yml permissions into the DB.
     # Without this, allow_uri's real DB-grant check (_uri_permitted) has
     # nothing to find for a freshly-synced tenant role and silently falls
-    # through to _group_identifier_fallback on every request -- see
-    # architecture review finding C5. Skip once the tenant already has YAML
-    # grants; re-importing on every Home GET was ~500 SQL statements and
-    # contended UPDATEs on permission_assignment.
-    if not identity.tenant_yaml_grants_present(session, tenant_id=str(canonical_tenant_id)):
-        identity.import_yaml(session, tenant_id=str(canonical_tenant_id))
+    # through to _group_identifier_fallback on every request. Skip once the
+    # tenant already has YAML grants; re-importing on every Home GET was
+    # ~500 SQL statements and contended UPDATEs on permission_assignment.
+    if not identity.tenant_yaml_grants_present(session, tenant_id=str(active.tenant_id)):
+        identity.import_yaml(session, tenant_id=str(active.tenant_id))
     session.flush()
     try:
         session.expire(user, ["groups"])
@@ -439,69 +506,3 @@ def _sync_groups_from_token(
         # persisted above, so a stale in-memory `user.groups` is a minor
         # inconsistency for this request, not a failed sync.
         logger.debug("Failed to expire cached user.groups after group sync", exc_info=True)
-
-
-def _ref_tokens(membership: Membership) -> set[str]:
-    tokens: set[str] = set()
-    for value in (membership.tenant_ref.id, membership.tenant_ref.alias, membership.tenant_ref.name):
-        if isinstance(value, str) and value.strip():
-            tokens.add(value.strip())
-    return tokens
-
-
-def _membership_for_active_tenant(memberships: list[Membership], tenant_id: str) -> Membership | None:
-    from m8flow_backend.services.tenant_canonicalization import _canonical_tenant_id_from_identifiers
-
-    wanted = {tenant_id.strip()} if tenant_id.strip() else set()
-    cookie_canonical = _canonical_tenant_id_from_identifiers(tenant_id)
-    if cookie_canonical:
-        wanted.add(cookie_canonical)
-    if not wanted:
-        return None
-
-    exact: list[Membership] = []
-    canonical_hits: list[Membership] = []
-    for membership in memberships:
-        tokens = _ref_tokens(membership)
-        if tokens & wanted:
-            exact.append(membership)
-            continue
-        member_canonical = _canonical_tenant_id_from_identifiers(*tokens, tenant_id)
-        if member_canonical and member_canonical in wanted:
-            canonical_hits.append(membership)
-    if exact:
-        return exact[0]
-    if canonical_hits:
-        return canonical_hits[0]
-    return None
-
-
-def _active_membership_needs_enrichment(
-    memberships: list[Membership],
-    membership: Membership | None,
-) -> bool:
-    if not memberships:
-        return False
-    if membership is not None and (membership.roles or membership.groups):
-        return False
-    return True
-
-
-def _enrich_active_membership(
-    user: UserModel,
-    tenant_id: str,
-    membership: Membership | None,
-    claims: VerifiedClaims,
-) -> Membership | None:
-    from m8flow_backend.integrations.auth import get_auth_provider
-    from m8flow_backend.integrations.auth.base.errors import AuthProviderError
-
-    username = claims.username or getattr(user, "username", None)
-    if not isinstance(username, str) or not username.strip():
-        return membership
-    try:
-        directory_memberships = get_auth_provider().list_memberships(username=username.strip())
-    except AuthProviderError:
-        logger.warning("Thin-token membership enrichment failed for user %s", username, exc_info=True)
-        return membership
-    return _membership_for_active_tenant(directory_memberships, tenant_id) or membership

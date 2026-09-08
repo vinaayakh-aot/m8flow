@@ -67,7 +67,7 @@ def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
     """
     from flask import current_app
 
-    from m8flow_backend.services.tenant_identity_helpers import (
+    from m8flow_backend.auth.identity_helpers import (
         find_users_for_current_tenant_by_username,
     )
 
@@ -108,7 +108,7 @@ def instantiate_process(
     from spiffworkflow_backend.models.db import db
     from spiffworkflow_backend.services.process_model_service import ProcessModelService
     from spiffworkflow_backend.services.process_instance_service import ProcessInstanceService
-    from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+    from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
@@ -244,7 +244,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
             def _verify():
                 from m8flow_backend.services.nats_token_service import NatsTokenService
-                from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+                from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
                 with flask_app.app_context():
                     token = set_context_tenant_id(tenant_id)
                     try:

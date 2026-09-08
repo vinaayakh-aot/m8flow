@@ -18,7 +18,7 @@ import pytest
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _SERVICE = "https://example.test/realms/m8flow"
 _MEMBERS = "/v1.0/m8flow/tenants/{tid}/members"

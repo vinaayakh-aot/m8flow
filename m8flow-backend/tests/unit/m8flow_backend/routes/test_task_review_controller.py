@@ -5,7 +5,7 @@ from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
 

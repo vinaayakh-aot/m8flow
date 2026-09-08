@@ -11,8 +11,8 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 from m8flow_backend.services.nats_token_service import AuthenticatedKey, NatsTokenService
 
 from m8flow_backend.services.nats_service import NatsService
-from m8flow_backend.services.tenant_canonicalization import tenant_slug_for_identifier
-from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.auth.canonicalize import tenant_slug_for_identifier
+from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 
 logger = logging.getLogger("m8flow.events.controller")
 

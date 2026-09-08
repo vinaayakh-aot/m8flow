@@ -12,7 +12,7 @@ from m8flow_backend.scheduler.celery_tenant import (
     bind_celery_task_tenant,
     clear_celery_task_tenant,
 )
-from m8flow_backend.tenancy import (
+from m8flow_backend.auth.tenant_context import (
     TENANT_SELECTION_HEADER_NAME,
     get_context_tenant_id,
     reset_context_tenant_id,

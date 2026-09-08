@@ -11,7 +11,7 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.services.tenant_service import TenantService
-from m8flow_backend.tenancy import tenant_id_from_selected_cookie, tenant_override_for_super_admin
+from m8flow_backend.auth.tenant_context import tenant_id_from_selected_cookie, tenant_override_for_super_admin
 
 
 def _optional_tenant_id() -> str | None:

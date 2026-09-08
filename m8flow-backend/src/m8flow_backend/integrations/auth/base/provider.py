@@ -65,6 +65,12 @@ class AuthProvider(ABC):
     def list_memberships(self, *, username: str) -> list[Membership]:
         raise NotImplementedError
 
+    def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
+        """Record the user's single active tenant/org so the next minted token
+        carries its claims. Paired with ``refresh`` to re-mint seamlessly on a
+        tenant switch (active-tenant deep-module map, ticket 10)."""
+        raise NotImplementedError
+
     @property
     def directory_admin(self) -> SupportsDirectoryAdmin:
         raise CapabilityNotSupported("directory_admin")

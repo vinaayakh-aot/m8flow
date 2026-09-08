@@ -17,7 +17,7 @@ from m8flow_backend.connectors import service as profiles
 from m8flow_backend.connectors.templates import all_templates, template_for
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
-from m8flow_backend.tenancy import require_tenant_id
+from m8flow_backend.auth import require_tenant_id
 
 
 def _as_bool(value: Any, default: bool) -> bool:

@@ -37,7 +37,7 @@ from m8flow_backend.services.tenant_group_mapping import (
     VALID_TENANT_ROLE_NAMES,
     organization_group_name_candidates_for_tenant_role,
 )
-from m8flow_backend.services.tenant_identity_helpers import (
+from m8flow_backend.auth.identity_helpers import (
     qualified_config_group_identifier,
     qualify_group_identifier,
     upsert_local_shared_realm_member,

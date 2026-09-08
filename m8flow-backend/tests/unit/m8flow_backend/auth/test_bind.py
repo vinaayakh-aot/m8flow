@@ -6,14 +6,14 @@ from flask import g
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
-from m8flow_backend.tenancy import (
+from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_SELECTION_HEADER_NAME,
     get_context_tenant_id,
     reset_context_tenant_id,
     set_context_tenant_id,
 )
-from m8flow_backend.tenant_runtime import apply_postgres_rls, resolve_request_tenant
+from m8flow_backend.auth.bind import apply_postgres_rls, resolve_request_tenant
 
 
 class _FakeDialect:
@@ -233,7 +233,7 @@ def test_non_postgres_does_nothing():
 def test_postgres_super_admin_without_tenant_sets_bypass_only(app, monkeypatch):
     connection = _FakeConnection("postgresql")
     monkeypatch.setattr(
-        "m8flow_backend.tenant_runtime.is_super_admin_request",
+        "m8flow_backend.auth.bind.is_super_admin_request",
         lambda: True,
     )
     with app.test_request_context("/v1.0/onboarding"):
@@ -247,7 +247,7 @@ def test_postgres_super_admin_without_tenant_sets_bypass_only(app, monkeypatch):
 def test_postgres_super_admin_with_tenant_sets_bypass_and_current(app, monkeypatch):
     connection = _FakeConnection("postgresql")
     monkeypatch.setattr(
-        "m8flow_backend.tenant_runtime.is_super_admin_request",
+        "m8flow_backend.auth.bind.is_super_admin_request",
         lambda: True,
     )
     with app.test_request_context("/v1.0/onboarding"):

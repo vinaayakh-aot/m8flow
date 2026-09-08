@@ -11,7 +11,7 @@ from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.models import TenantRef
 from m8flow_backend.db import db
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
-from m8flow_backend.tenancy import create_tenant_if_not_exists
+from m8flow_backend.identity import create_tenant_if_not_exists
 
 logger = logging.getLogger(__name__)
 

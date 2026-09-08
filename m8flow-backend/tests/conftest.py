@@ -1,6 +1,6 @@
 import pytest
 
-from m8flow_backend.tenancy import clear_tenant_context
+from m8flow_backend.auth.tenant_context import clear_tenant_context
 
 
 @pytest.fixture(autouse=True)

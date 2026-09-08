@@ -21,7 +21,7 @@ def _user_with_groups(db_session, *, username: str, groups: list[str], tenant_id
     )
     ensure_membership(db_session, user, tenant)
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
-    # Mirrors what the real login path (auth._sync_groups_from_token) does
+    # Mirrors what the real login path (auth.sync_groups_from_token) does
     # right after sync_groups: materialize m8flow.yml's declarative grants
     # as PermissionAssignmentModel rows for this tenant's groups, so
     # allow_uri's real DB-backed check (not just the group-identifier

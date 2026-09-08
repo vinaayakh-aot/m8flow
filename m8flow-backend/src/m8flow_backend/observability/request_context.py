@@ -1,6 +1,6 @@
 """Per-request correlation id, propagated the same way tenant id is.
 
-Mirrors ``m8flow_backend.tenancy``'s ContextVar + ``flask.g`` + logging.Filter
+Mirrors ``m8flow_backend.auth.tenant_context``'s ContextVar + ``flask.g`` + logging.Filter
 pattern: a request id is assigned once per request (or taken from an
 inbound ``X-Request-Id`` header so upstream proxies/tests can pin it), stored
 where both request-scoped code (``flask.g``) and background/log code

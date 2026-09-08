@@ -1,15 +1,9 @@
 """Pure JWT/decoded-token claim parsing -- organization membership, tenant
 id/alias/name, and realm identity, all derived from a payload dict with no
 DB or Flask `g` access of their own (tenant_id_from_payload and
-active_organization_from_payload delegate to
-tenant_canonicalization.py for the one thing pure parsing can't do:
-resolving a claimed identifier to the local canonical tenant row).
-
-Split out of tenant_identity_helpers.py (963 lines, 8 callers, 4-6 unrelated
-concerns) along with tenant_canonicalization.py -- see architecture review
-finding S4. tenant_identity_helpers.py keeps shared-realm user provisioning
-+ Keycloak admin calls and group-identifier string normalization; nothing
-in this module depends on those.
+active_organization_from_payload delegate to canonicalize.py for the one
+thing pure parsing can't do: resolving a claimed identifier to the local
+canonical tenant row).
 """
 
 from __future__ import annotations
@@ -17,11 +11,11 @@ from __future__ import annotations
 from typing import Any
 from collections.abc import Mapping
 
-from m8flow_backend.services.tenant_canonicalization import (
+from m8flow_backend.auth.canonicalize import (
     _canonical_tenant_id_from_identifiers,
     current_tenant_identifiers,
 )
-from m8flow_backend.tenancy import TENANT_CLAIM
+from m8flow_backend.auth.tenant_context import TENANT_CLAIM
 
 TENANT_ALIAS_CLAIM = "m8flow_tenant_alias"
 TENANT_NAME_CLAIM = "m8flow_tenant_name"

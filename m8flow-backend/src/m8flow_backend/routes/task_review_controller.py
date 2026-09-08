@@ -10,8 +10,8 @@ from m8flow_backend.auth import require_current_user
 from m8flow_backend.authorization import actor_is_super_admin, allow_uri
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.tenancy import (
-    require_tenant_id,
+from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )

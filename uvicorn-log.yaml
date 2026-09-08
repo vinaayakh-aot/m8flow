@@ -3,7 +3,7 @@ disable_existing_loggers: false
 
 filters:
   tenant_ctx:
-    (): m8flow_backend.tenancy.TenantContextFilter
+    (): m8flow_backend.auth.tenant_context.TenantContextFilter
   request_ctx:
     (): m8flow_backend.observability.request_context.RequestIdFilter
   otel_trace_ctx:

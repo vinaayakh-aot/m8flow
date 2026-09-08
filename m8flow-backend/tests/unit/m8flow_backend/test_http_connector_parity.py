@@ -19,7 +19,7 @@ from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.connectors.service import deactivate_profile
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.secrets import add_secret, build_host_service_task_registry
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _PROFILES = "/v1.0/m8flow/connector-profiles"
 _TEMPLATES = "/v1.0/m8flow/connector-templates"

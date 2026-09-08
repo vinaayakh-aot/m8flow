@@ -12,8 +12,8 @@ from typing import Any
 
 from celery import Celery
 
-from m8flow_backend.services.tenant_canonicalization import current_tenant_id_or_none
-from m8flow_backend.tenancy import (
+from m8flow_backend.auth.canonicalize import current_tenant_id_or_none
+from m8flow_backend.auth.tenant_context import (
     TENANT_SELECTION_HEADER_NAME,
     is_concrete_tenant_id,
     reset_context_tenant_id,

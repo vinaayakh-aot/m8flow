@@ -7,7 +7,7 @@ paths:
     get:
       summary: Health check for load balancers and monitoring
       description: Returns 200 when the process is up. Public, no authentication required.
-      operationId: m8flow_backend.tenancy.health_check
+      operationId: m8flow_backend.observability.health.health_check
       tags:
         - Health
       security: []

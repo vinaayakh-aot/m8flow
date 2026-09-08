@@ -3,33 +3,216 @@
 Resolves the active tenant once per request into flask.g and the tenant
 ContextVar, then applies SET LOCAL so RLS matches the old host. Cookie
 `m8flow_selected_tenant` is authoritative for shared-realm sessions.
+
+This is the request-BINDING decision (which tenant id/RLS scope this
+request runs under) -- distinct from `resolve.select(...)`, the per-session
+SELECTION decision (which membership + groups the login/switch flow grants).
+`resolve_request_tenant` does not call `select`: it only needs membership
+*presence*, not enrichment, and runs on every request.
 """
 from __future__ import annotations
 
 import logging
+import os
+from collections.abc import Iterable
 
 from flask import Flask, g, has_request_context, request
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
-from m8flow_backend.tenancy import (
+from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_CLAIM,
-    TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
     TENANT_SELECTION_HEADER_NAME,
     is_concrete_tenant_id,
-    is_super_admin_request,
-    is_tenant_context_exempt_request,
-    path_matches_any_prefix,
     reset_context_tenant_id,
     set_context_tenant_id,
+    tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )
 
 LOGGER = logging.getLogger(__name__)
 
 _AFTER_BEGIN_REGISTERED = False
+
+# Single source of truth: base path prefixes when no WSGI path prefix is set.
+# When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
+# prefix + each path so both prefixed and unprefixed deployments work.
+_WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
+
+# Base (unprefixed) paths that are exempt from tenant context resolution.
+_BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+    "/.well-known",
+    "/favicon.ico",
+    "/v1.0/ping",
+    "/v1.0/m8flow/ping",
+    "/v1.0/healthy",
+    "/v1.0/status",
+    "/v1.0/readyz",
+    "/v1.0/openapi.json",
+    "/v1.0/openapi.yaml",
+    "/openapi.yaml",
+    "/v1.0/ui",
+    "/v1.0/static",
+    # Connexion serves the spec + Swagger UI under the api base path.
+    "/v1.0/m8flow/openapi.json",
+    "/v1.0/m8flow/openapi.yaml",
+    "/v1.0/m8flow/ui",
+    "/v1.0/logout",
+    "/v1.0/authentication-options",
+    "/v1.0/login",
+    "/v1.0/refresh",
+    "/v1.0/tenants/check",
+    "/v1.0/m8flow/tenant-login-url",
+    "/v1.0/m8flow/organization-memberships",
+    "/v1.0/m8flow/tenant-realms",
+    "/v1.0/m8flow/create-tenant",
+    "/m8flow/create-tenant",
+    "/m8flow/organization-memberships",
+    # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
+    "/v1.0/m8flow/tenants",
+    "/m8flow/tenants",
+    # Public invitation accept/validate endpoints: unauthenticated and not tenant-scoped at the
+    # request level (the invitation row carries its own tenant id).
+    "/v1.0/m8flow/invitations",
+    "/m8flow/invitations",
+)
+
+# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+    _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+    + (
+        tuple(f"{_WSGI_PATH_PREFIX}{p}" for p in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES)
+        if _WSGI_PATH_PREFIX
+        else ()
+    )
+)
+
+# Path suffixes for pre-login tenant selection (no tenant context required). Also included in
+# TENANT_CONTEXT_EXEMPT_PATH_PREFIXES above with /v1.0 prefix.
+PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
+
+# Backward-compatible aliases while call sites migrate to clearer naming.
+PUBLIC_PATH_PREFIXES = TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+TENANT_PUBLIC_PATH_PREFIXES = PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES
+
+
+def path_matches_prefix(path: str, prefix: str) -> bool:
+    """
+    True when path is exactly prefix or is a child path of prefix.
+
+    This avoids prefix-collision bugs like `/v1.0/login_return` matching
+    `/v1.0/login`.
+    """
+    if path == prefix:
+        return True
+    normalized_prefix = prefix if prefix.endswith("/") else f"{prefix}/"
+    return path.startswith(normalized_prefix)
+
+
+def path_matches_any_prefix(path: str, prefixes: Iterable[str]) -> bool:
+    """True when path matches any API prefix using segment-boundary semantics."""
+    return any(path_matches_prefix(path, prefix) for prefix in prefixes)
+
+
+def _request_uses_master_realm_without_tenant_context() -> bool:
+    """Detect master-realm requests when the resolver did not tag the request."""
+    if not has_request_context():
+        return False
+
+    try:
+        from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
+        from m8flow_backend.auth.claims import (
+            authentication_identifier_from_payload,
+            extract_realm_from_issuer,
+        )
+    except Exception:
+        return False
+
+    decoded_token = getattr(g, "_m8flow_decoded_token", None)
+    if not isinstance(decoded_token, dict):
+        decoded_token = getattr(g, "decoded_token", None)
+    if not isinstance(decoded_token, dict):
+        try:
+            token: str | None = getattr(g, "token", None) if isinstance(getattr(g, "token", None), str) else None
+            if not token:
+                auth_header = (request.headers.get("Authorization") or "").strip()
+                if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+                    token = auth_header[7:].strip() or None
+            if not token:
+                token = request.cookies.get("access_token")
+            if token:
+                from m8flow_backend.auth import decode_auth_token
+
+                payload = decode_auth_token(token)
+                if isinstance(payload, dict):
+                    decoded_token = payload
+                    g._m8flow_decoded_token = payload
+        except Exception:
+            decoded_token = None
+
+    if not isinstance(decoded_token, dict):
+        return False
+
+    master_realm = master_realm_name()
+    authentication_identifier = authentication_identifier_from_payload(decoded_token)
+    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
+    return authentication_identifier == master_realm or issuer_realm == master_realm
+
+
+def is_tenant_context_exempt_request() -> bool:
+    if not has_request_context():
+        return False
+    return bool(
+        getattr(g, "_m8flow_tenant_context_exempt_request", False)
+        or getattr(g, "_m8flow_public_request", False)
+        # Master-realm sign-ins, /login_return callbacks, and other
+        # intentionally tenant-less requests are treated the same as
+        # path-exempt requests: tenant-scoped DB queries (e.g.
+        # ReferenceCacheModel.basic_query) skip the tenant filter and
+        # return the global view, instead of raising "missing tenant
+        # context" for users who legitimately have no tenant. That is now
+        # detected by _request_uses_master_realm_without_tenant_context();
+        # the ``g._m8flow_global_request`` flag below is a legacy no-op (the
+        # sync global tenant resolver that set it was retired) kept as a
+        # defensive hook -- see the platform-host-100 map follow-up.
+        or getattr(g, "_m8flow_global_request", False)
+        or _request_uses_master_realm_without_tenant_context()
+    )
+
+
+def is_public_request() -> bool:
+    return is_tenant_context_exempt_request()
+
+
+def is_super_admin_request() -> bool:
+    """Zero-arg convenience wrapper over `authorization.actor_is_super_admin(g.user)`
+    for the many call sites that only have request context, not a `user` in hand."""
+    if not has_request_context():
+        return False
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    return actor_is_super_admin(getattr(g, "user", None))
+
+
+def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
+    """The one 'resolve a concrete tenant id for this request or 400' helper.
+    Super-admins may select any tenant via `tenantId`/`tenant_id`
+    (allow_super_admin_override); everyone else -- and a super-admin who didn't
+    override -- needs the `m8flow_selected_tenant` cookie. Raises tenant_required
+    (400 ApiError) if no concrete tenant resolves. Sets g.m8flow_tenant_id as a
+    side effect so tenant_context.get_tenant_id() and RLS session scoping see
+    the same value."""
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    super_admin = actor_is_super_admin(user)
+    override = tenant_override_for_super_admin(is_super_admin=super_admin) if allow_super_admin_override else None
+    tenant_id = override or tenant_id_from_selected_cookie()
+    if not tenant_id:
+        raise ApiError("tenant_required", "m8flow_selected_tenant cookie is required", 400)
+    g.m8flow_tenant_id = tenant_id
+    return tenant_id
 
 
 def _cookie_tenant() -> str | None:
@@ -55,9 +238,7 @@ def _decoded_payload() -> dict | None:
 
 
 def _canonical(tenant_id: str) -> str:
-    from m8flow_backend.services.tenant_canonicalization import (
-        _canonical_tenant_id_from_identifiers,
-    )
+    from m8flow_backend.auth.canonicalize import _canonical_tenant_id_from_identifiers
 
     return _canonical_tenant_id_from_identifiers(tenant_id) or tenant_id.strip()
 
@@ -65,9 +246,9 @@ def _canonical(tenant_id: str) -> str:
 def _payload_matches_cookie(payload: dict | None, cookie: str) -> bool:
     if not isinstance(payload, dict):
         return False
-    from m8flow_backend.services.identity_claims import organization_memberships_from_payload
-    from m8flow_backend.services.tenant_canonicalization import current_tenant_identifiers
-    from m8flow_backend.services.tenant_identity_helpers import payload_user_belongs_to_tenant
+    from m8flow_backend.auth.claims import organization_memberships_from_payload
+    from m8flow_backend.auth.canonicalize import current_tenant_identifiers
+    from m8flow_backend.auth.identity_helpers import payload_user_belongs_to_tenant
 
     selected = current_tenant_identifiers(cookie) or {cookie}
     for alias, details in organization_memberships_from_payload(payload):
@@ -85,7 +266,7 @@ def _payload_matches_cookie(payload: dict | None, cookie: str) -> bool:
 def _jwt_tenant(payload: dict | None) -> str | None:
     if not isinstance(payload, dict):
         return None
-    from m8flow_backend.services.identity_claims import tenant_id_from_payload
+    from m8flow_backend.auth.claims import tenant_id_from_payload
 
     claimed = tenant_id_from_payload(payload)
     if is_concrete_tenant_id(claimed):
@@ -97,7 +278,7 @@ def _jwt_tenant(payload: dict | None) -> str | None:
 
 
 def _user_belongs(tenant_id: str) -> bool:
-    from m8flow_backend.services.tenant_identity_helpers import user_belongs_to_current_tenant
+    from m8flow_backend.auth.identity_helpers import user_belongs_to_current_tenant
 
     user = getattr(g, "user", None)
     if user is None:
@@ -225,7 +406,7 @@ def apply_postgres_rls(connection) -> None:
     if dialect != "postgresql":
         return
 
-    from m8flow_backend.services.tenant_canonicalization import current_tenant_id_or_none
+    from m8flow_backend.auth.canonicalize import current_tenant_id_or_none
 
     tenant_id = current_tenant_id_or_none()
     super_admin = is_super_admin_request()

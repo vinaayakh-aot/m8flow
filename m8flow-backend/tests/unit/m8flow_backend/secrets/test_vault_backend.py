@@ -10,7 +10,7 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.identity import ensure_user
 from m8flow_backend.models.native import SecretModel
 from m8flow_backend.secrets.provider import register_secret_provider
-from m8flow_backend.tenancy import create_tenant_if_not_exists
+from m8flow_backend.identity import create_tenant_if_not_exists
 
 
 class MemoryKv:

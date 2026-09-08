@@ -7,7 +7,7 @@ from m8flow_backend.connectors.service import secret_ref
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.models.native import SecretModel
 from m8flow_backend.secrets import get_secret_value
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _PROFILES = "/v1.0/m8flow/connector-profiles"
 _TEMPLATES = "/v1.0/m8flow/connector-templates"

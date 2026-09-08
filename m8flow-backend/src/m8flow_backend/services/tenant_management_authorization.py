@@ -7,9 +7,9 @@ from flask import request
 
 from m8flow_backend.authorization import allow_uri
 from m8flow_backend.errors import ApiError
-from m8flow_backend.services.identity_claims import tenant_alias_from_payload
-from m8flow_backend.services.identity_claims import tenant_id_from_payload
-from m8flow_backend.tenancy import is_super_admin_request
+from m8flow_backend.auth.claims import tenant_alias_from_payload
+from m8flow_backend.auth.claims import tenant_id_from_payload
+from m8flow_backend.auth import is_super_admin_request
 
 
 def _user_is_tenant_admin_or_super_admin(
@@ -25,7 +25,7 @@ def _user_is_tenant_admin_or_super_admin(
     if is_super_admin_request():
         return True
 
-    from m8flow_backend.services.tenant_canonicalization import (
+    from m8flow_backend.auth.canonicalize import (
         current_tenant_id_or_none,
         current_tenant_identifiers,
     )

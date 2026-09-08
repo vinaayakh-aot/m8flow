@@ -16,7 +16,7 @@ from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
-from m8flow_backend.tenancy import is_super_admin_request
+from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
 from m8flow_backend.workflow.script_unit_tests import (
     add_script_unit_test as add_script_unit_test,

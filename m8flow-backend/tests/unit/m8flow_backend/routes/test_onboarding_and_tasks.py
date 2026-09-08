@@ -10,7 +10,7 @@ from m8flow_backend.authorization import allow_uri
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):

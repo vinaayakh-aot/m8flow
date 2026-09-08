@@ -18,7 +18,7 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.authorization import allow_uri, user_has_permission
 from m8flow_backend.helpers.response_helper import handle_api_errors
 
-from m8flow_backend.tenancy import create_tenant_if_not_exists
+from m8flow_backend.identity import create_tenant_if_not_exists
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.db import db
@@ -257,11 +257,18 @@ def get_current_user_organization_memberships() -> tuple[dict, int]:
             status_code=401,
         ) from exc
 
-    memberships = list(claims.memberships)
-    if not memberships and claims.username:
-        # Thin/stale tokens may omit the organization claim. Directory lookup is
-        # the source of truth for whether this user has any organizations.
+    # The directory is the source of truth for the *full* membership list this
+    # endpoint exists to serve (it drives the tenant switcher's option list).
+    # The token's `organization` claim can no longer stand in for it: since the
+    # active-tenant deep-module work (ticket 09), RealmInfoMapper populates that
+    # claim with only the single *active* org, not every membership -- so a
+    # multi-org user would otherwise see just their current tenant here and lose
+    # the ability to switch. Fall back to the token claim only when the username
+    # is unavailable (e.g. a service token) to look the user up by.
+    if claims.username:
         memberships = get_auth_provider().list_memberships(username=claims.username)
+    else:
+        memberships = list(claims.memberships)
 
     resolved_memberships: list[dict[str, str | None]] = []
     for membership in memberships:

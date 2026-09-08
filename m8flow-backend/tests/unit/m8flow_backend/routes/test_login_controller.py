@@ -321,7 +321,7 @@ def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_se
     from m8flow_backend.identity import ensure_tenant
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
     from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
-    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+    from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
     db_session.commit()
@@ -376,7 +376,7 @@ def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_
     from m8flow_backend.identity import ensure_tenant
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
     from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
-    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+    from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
     ensure_tenant(db_session, tenant_id="t2", slug="t2")
@@ -495,7 +495,7 @@ def test_tenant_finalization_enriches_thin_token_from_directory(client, db_sessi
     from m8flow_backend.identity import ensure_tenant, ensure_user
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
     from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
-    from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+    from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
     user = ensure_user(

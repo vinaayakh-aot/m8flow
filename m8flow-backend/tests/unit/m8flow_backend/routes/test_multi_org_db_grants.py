@@ -2,7 +2,7 @@
 DB-grant (m8flow.yml permission) path was silently broken for every caller,
 multi-org or not, for two independent reasons now fixed:
 
-1. Ordinary login (auth._sync_groups_from_token) synced a user's tenant-
+1. Ordinary login (auth.sync_groups_from_token) synced a user's tenant-
    qualified group (e.g. "org-a:reviewer") but never called
    identity.import_yaml(tenant_id=...), so that tenant's YAML permissions
    were never materialized as PermissionAssignmentModel rows. Only the
@@ -26,14 +26,14 @@ from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.authorization import _uri_permitted, allow_uri
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 def _provision_tenant_role(db_session, *, username: str, service: str, group_identifier: str, tenant_id: str):
     """Mirrors what a real login now does end-to-end for a shared-realm tenant
     role: create the membership, sync the tenant-qualified group, then seed
     that tenant's m8flow.yml permissions into the DB -- the step ordinary
-    login was missing before auth._sync_groups_from_token started calling
+    login was missing before auth.sync_groups_from_token started calling
     identity.import_yaml itself."""
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(db_session, username=username, service=service, service_id=username)

@@ -26,6 +26,8 @@ import {
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
 import { cn } from '@/lib/utils';
+import type { OrganizationMembership } from '@/lib/auth';
+import { TenantSwitcher } from './TenantSwitcher';
 
 export type SidebarTenant = {
   id: string;
@@ -43,9 +45,16 @@ export type SidebarProps = {
   onTenantChange?: (tenantId: string | null) => void;
   /**
    * Read-only active-tenant chip for non-super-admin shared-realm users.
-   * Ignored when `showTenantSelector` is true. Not a switcher.
+   * Ignored when `showTenantSelector` is true. Becomes an interactive
+   * switcher instead when `organizations` has >=2 entries (ticket 06).
    */
   activeTenantLabel?: string | null;
+  /**
+   * The user's shared-realm org memberships. When this has >=2 entries and
+   * `showTenantSelector` is false, nav-tenant-name renders as a TenantSwitcher
+   * instead of the read-only chip. A single (or empty) list keeps the chip.
+   */
+  organizations?: OrganizationMembership[];
   /** When set, Profile opens a menu with Log out (and optional user label). */
   onLogout?: () => void;
   /** Display name shown in the Profile menu (username / email). */
@@ -187,6 +196,7 @@ function SidebarView({
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
+  organizations = [],
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
   const [setupOpen, setSetupOpen] = useState(true);
@@ -258,6 +268,8 @@ function SidebarView({
             <span className="sr-only">{selectedLabel}</span>
           </label>
         </div>
+      ) : activeTenantLabel && organizations.length >= 2 ? (
+        <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />
       ) : activeTenantLabel ? (
         <div className="px-6 pb-4">
           <div

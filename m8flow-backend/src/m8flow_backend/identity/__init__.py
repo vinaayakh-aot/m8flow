@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -16,6 +17,8 @@ from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+
+LOGGER = logging.getLogger(__name__)
 
 TIMER_SYSTEM_USERNAME = "__m8f_timer_start__"
 GLOBAL_GROUP = "super-admin"
@@ -433,3 +436,87 @@ def Path_from_package() -> str:
     from pathlib import Path
 
     return str(Path(__file__).resolve().parents[1] / "config" / "permissions" / "m8flow.yml")
+
+
+def ensure_tenant_exists(tenant_id: str | None) -> None:
+    """Validate that the tenant row exists; raise if missing to enforce pre-provisioning.
+
+    Relocated from tenancy.py during the active-tenant deep-module collapse
+    (ticket 03): provisioning/validation is identity's job, not auth's.
+    """
+    if not tenant_id:
+        from m8flow_backend.auth.tenant_context import TENANT_CLAIM
+
+        raise RuntimeError(
+            f"Missing tenant id. Ensure the token contains {TENANT_CLAIM} (or set tenant in request context)."
+        )
+
+    from flask import g
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+
+    session = getattr(g, "db_session", None)
+    tenant = session.get(M8flowTenantModel, tenant_id) if session is not None else None
+
+    if tenant is None:
+        raise RuntimeError(
+            f"Tenant '{tenant_id}' does not exist. Create it in m8flow_tenant before using M8Flow."
+        )
+
+
+def _tenant_row_exists(session: Session, tenant_id: str, slug_value: str) -> bool:
+    if session.get(M8flowTenantModel, tenant_id) is not None:
+        return True
+    return (
+        session.scalars(select(M8flowTenantModel).where(M8flowTenantModel.slug == slug_value)).first() is not None
+    )
+
+
+def _ensure_tenant_and_vault_identity(session: Session, *, tenant_id: str, display_name: str, slug_value: str) -> None:
+    from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError, provision_vault_identity_if_enabled
+
+    existed = _tenant_row_exists(session, tenant_id, slug_value)
+    tenant = ensure_tenant(session, tenant_id=tenant_id, name=display_name, slug=slug_value)
+    if existed:
+        return
+    try:
+        provision_vault_identity_if_enabled(tenant_id)
+    except TenantVaultProvisioningError:
+        session.delete(tenant)
+        session.flush()
+        raise
+
+
+def create_tenant_if_not_exists(
+    tenant_id: str,
+    name: str | None = None,
+    slug: str | None = None,
+) -> None:
+    """Create a tenant row if it does not exist (e.g. after creating a Keycloak realm).
+    When slug is provided (e.g. realm name), it is used for M8flowTenantModel.slug;
+    otherwise slug defaults to tenant_id (backward compatible).
+
+    Relocated from tenancy.py during the active-tenant deep-module collapse
+    (ticket 03): provisioning is identity's job, not auth's.
+    """
+    if not tenant_id or not tenant_id.strip():
+        return
+    tenant_id = tenant_id.strip()
+    display_name = (name or tenant_id).strip()
+    slug_value = (slug or tenant_id).strip()
+
+    from flask import g
+
+    session = getattr(g, "db_session", None)
+    if session is None:
+        from m8flow_backend.db import session_scope
+
+        with session_scope() as scoped:
+            _ensure_tenant_and_vault_identity(
+                scoped, tenant_id=tenant_id, display_name=display_name, slug_value=slug_value
+            )
+        LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)
+        return
+    _ensure_tenant_and_vault_identity(
+        session, tenant_id=tenant_id, display_name=display_name, slug_value=slug_value
+    )
+    LOGGER.info("Created tenant row for tenant_id=%s name=%s slug=%s", tenant_id, display_name, slug_value)

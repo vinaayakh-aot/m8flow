@@ -36,7 +36,7 @@ from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.authorization import _uri_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
-from m8flow_backend.tenancy import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _TENANT_ID = "t1"
 _SERVICE = "https://example.test/realms/m8flow"

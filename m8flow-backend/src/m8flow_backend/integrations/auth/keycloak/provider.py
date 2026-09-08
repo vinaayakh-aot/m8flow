@@ -10,6 +10,7 @@ from m8flow_backend.integrations.auth.base.errors import TokenInvalid, UserNotFo
 from m8flow_backend.integrations.auth.base.models import Group, Membership, Tenant, TenantRef, TokenSet, User, VerifiedClaims
 from m8flow_backend.integrations.auth.base.provider import AuthProvider
 from m8flow_backend.integrations.auth.keycloak import directory, groups, oidc, tenants
+from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
 from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
 from m8flow_backend.integrations.auth.keycloak.jwks import verify_access_token
@@ -101,6 +102,17 @@ class KeycloakAuthProvider(AuthProvider):
 
     def list_memberships(self, *, username: str) -> list[Membership]:
         return tenants.list_memberships_for_username(username)
+
+    def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
+        # tenant_id is the Keycloak organization id (== the backend tenant id);
+        # RealmInfoMapper resolves it via OrganizationProvider.getById, gated by
+        # isMember, and emits m8flow_tenant_* + organization.{alias}.{id,name}.
+        directory.set_user_attribute(
+            shared_realm_name(),
+            username,
+            name="m8flow_active_tenant",
+            value=tenant_id,
+        )
 
     @property
     def directory_admin(self) -> SupportsDirectoryAdmin:

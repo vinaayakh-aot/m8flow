@@ -9,7 +9,7 @@ from m8flow_backend import workflow
 from m8flow_backend.db import session_scope
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.scheduler.celery_tenant import TenantAwareCelery, install_celery_tenant_signals
-from m8flow_backend.tenancy import reset_context_tenant_id, set_context_tenant_id
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id, set_context_tenant_id
 
 
 def _active_tenant_ids(session) -> list[str]:
