@@ -7,7 +7,8 @@ from sqlalchemy import select
 
 from m8flow_backend import human_task, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, allow_uri
+from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.auth import require_tenant_id
@@ -19,6 +20,8 @@ from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
+
+_EMPTY_PAGE = {"results": [], "pagination": {"page": 1, "per_page": 20, "total": 0}}
 
 
 def _clamp_page_args() -> tuple[int, int]:
@@ -32,10 +35,6 @@ def _clamp_page_args() -> tuple[int, int]:
     except (TypeError, ValueError):
         per_page = 20
     return page, per_page
-
-
-def _empty_page(page: int, per_page: int) -> dict[str, Any]:
-    return {"results": [], "pagination": {"page": page, "per_page": per_page, "total": 0}}
 
 
 def _initiator_name_by_instance(
@@ -71,6 +70,11 @@ def _tenant_name_by_id(session: Any, tenant_ids: set[str]) -> dict[str, str]:
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/tasks",
+    on_deny="empty",
+    empty_response=_EMPTY_PAGE,
+)
 def list_task_review():
     """Task Review inbox: the caller's pending human tasks (super-admin: every
     tenant's, optionally scoped with ?tenantId=). Denied callers get an empty
@@ -89,9 +93,6 @@ def list_task_review():
         g.m8flow_tenant_id = own_tenant_id
     override = tenant_override_for_super_admin(is_super_admin=super_admin)
     scope_tenant_id = (override or None) if super_admin else own_tenant_id
-
-    if not allow_uri(user, "GET", "/v1.0/tasks", session=session):
-        return success_response(_empty_page(page, per_page), 200)
 
     if super_admin:
         rows = workflow.list_pending_tasks_for_super_admin(session)
@@ -133,6 +134,11 @@ def list_task_review():
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/tasks/{human_task_id}",
+    on_deny="404",
+    forbidden_message="Task not found",
+)
 def get_task_review(human_task_id: int):
     """Composite Task Review detail: task header + form + outcomes + approval
     chain + activity feed + instance summary. Denied or not-visible/missing
@@ -142,9 +148,6 @@ def get_task_review(human_task_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", f"/v1.0/tasks/{human_task_id}", session=session):
-        raise ApiError("not_found", "Task not found", 404)
 
     task = session.get(HumanTaskModel, human_task_id)
     if task is None or task.m8f_tenant_id != tenant_id:
@@ -205,6 +208,10 @@ def get_task_review(human_task_id: int):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/tasks/{human_task_id}",
+    forbidden_message="Not allowed to submit this task",
+)
 def submit_task_review(human_task_id: int):
     """Submit a Task Review: atomic claim-then-complete via
     human_task.submit_external_form. Body is the filled-in task form (its schema
@@ -224,9 +231,6 @@ def submit_task_review(human_task_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", f"/v1.0/tasks/{human_task_id}", session=session):
-        raise ApiError("permission_denied", "Not allowed to submit this task", 403)
 
     task = session.get(HumanTaskModel, human_task_id)
     if task is None or task.m8f_tenant_id != tenant_id:

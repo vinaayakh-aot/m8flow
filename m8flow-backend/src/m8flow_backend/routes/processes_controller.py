@@ -6,7 +6,8 @@ from flask import Response, g, request
 
 from m8flow_backend import catalog, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, allow_uri
+from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.auth import require_tenant_id
@@ -35,20 +36,27 @@ def process_model_identifier_from_path_param(modified: str | None) -> str:
     return value.replace(":", "/")
 
 
+def _process_group_permission_uri(*, modified_process_group_identifier: str, **_kwargs) -> str:
+    group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
+    return f"/v1.0/process-groups/{group_id}"
+
+
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    on_deny="empty",
+    empty_response=[],
+)
 def list_process_models():
     """Designer Processes models list. New endpoint rather than widening
     GET /v1.0/process-models (path-only JSON used by thin/MCP clients).
 
-    Auth mirrors Home: allow_uri against GET /v1.0/process-models; denied
+    Auth mirrors Home: GET /v1.0/process-models; denied
     callers get [] (200), not 403. Concrete tenant always required.
     """
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
-        return success_response([], 200)
 
     group = request.args.get("group") or None
     if group is not None:
@@ -70,14 +78,16 @@ def list_process_models():
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-groups",
+    on_deny="empty",
+    empty_response=[],
+)
 def list_process_groups():
     """Designer Process groups picker. Concrete tenant required; deny → []."""
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-groups", session=session):
-        return success_response([], 200)
 
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     rows = catalog.list_group_rows(tenant_id=tenant_id)
@@ -111,6 +121,10 @@ def _group_write_payload(body: dict | None) -> dict:
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-groups",
+    forbidden_message="Not permitted to create a process group",
+)
 def create_process_group(body: dict | None = None):
     """Create a process group (id, display_name, description). Nested ids
     (`parent/child`) create the leaf directory. Write op: denied → 403.
@@ -118,11 +132,7 @@ def create_process_group(body: dict | None = None):
     """
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-groups", session=session):
-        raise ApiError("permission_denied", "Not permitted to create a process group", 403)
 
     payload = _group_write_payload(body)
     row = catalog.create_process_group(
@@ -135,6 +145,10 @@ def create_process_group(body: dict | None = None):
 
 
 @handle_api_errors
+@require_permission(
+    uri=_process_group_permission_uri,
+    forbidden_message="Not permitted to update this process group",
+)
 def update_process_group(modified_process_group_identifier: str, body: dict | None = None):
     """Update process-group metadata only. Id / path does not change."""
     user = require_current_user()
@@ -143,9 +157,6 @@ def update_process_group(modified_process_group_identifier: str, body: dict | No
     tenant_id = require_tenant_id(user)
 
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
-    if not allow_uri(user, "PUT", f"/v1.0/process-groups/{group_id}", session=session):
-        raise ApiError("permission_denied", "Not permitted to update this process group", 403)
-
     payload = _group_write_payload(body)
     row = catalog.update_process_group(
         tenant_id=tenant_id,
@@ -167,6 +178,10 @@ def update_process_group(modified_process_group_identifier: str, body: dict | No
 
 
 @handle_api_errors
+@require_permission(
+    uri=_process_group_permission_uri,
+    forbidden_message="Not permitted to delete this process group",
+)
 def delete_process_group(modified_process_group_identifier: str):
     """Delete a process group directory. Blocked (409) while any process
     instance still references a model in this group or nested under it.
@@ -177,9 +192,6 @@ def delete_process_group(modified_process_group_identifier: str):
     tenant_id = require_tenant_id(user)
 
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
-    if not allow_uri(user, "DELETE", f"/v1.0/process-groups/{group_id}", session=session):
-        raise ApiError("permission_denied", "Not permitted to delete this process group", 403)
-
     if not catalog.process_group_exists(tenant_id=tenant_id, group_id=group_id):
         raise ApiError("not_found", "Process group not found", 404)
 
@@ -198,6 +210,10 @@ def delete_process_group(modified_process_group_identifier: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to create a process model",
+)
 def create_process_model(body: dict | None = None):
     """Create a process model under an existing group, with a default BPMN.
     Super-admin is always 403. Distinct from thin POST /v1.0/process-models
@@ -207,9 +223,6 @@ def create_process_model(body: dict | None = None):
     _deny_super_admin_catalog_write(user)
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to create a process model", 403)
 
     payload = _group_write_payload(body)
     identity = catalog.create_process_model(
@@ -226,15 +239,15 @@ def create_process_model(body: dict | None = None):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to update this process model",
+)
 def update_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Update process-model metadata (display_name, description, primary_file_name)."""
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "PUT", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to update this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -251,6 +264,10 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to copy this process model",
+)
 def copy_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Duplicate a process model under the same group (new leaf id + display
     name). Copies files; does not copy process instances. Super-admin is
@@ -260,9 +277,6 @@ def copy_process_model(modified_process_model_identifier: str, body: dict | None
     _deny_super_admin_catalog_write(user)
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to copy this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -305,15 +319,15 @@ def _primary_bpmn_name(*, tenant_id: str, process_model_identifier: str) -> str:
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to run process model tests",
+)
 def run_process_model_tests(modified_process_model_identifier: str):
     """Run BPMN unit tests (`test_*.json`) for a process model. Super-admin 403."""
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to run process model tests", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -331,14 +345,15 @@ def run_process_model_tests(modified_process_model_identifier: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    on_deny="404",
+    forbidden_message="Process model not found",
+)
 def list_script_unit_tests(modified_process_model_identifier: str):
     """List script-task unit tests stored on the primary BPMN."""
     user = require_current_user()
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
-        raise ApiError("not_found", "Process model not found", 404)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -356,15 +371,16 @@ def list_script_unit_tests(modified_process_model_identifier: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to create a script unit test",
+)
 def create_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
     """Store a script unit test on the primary BPMN. Super-admin 403. No git."""
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to create a script unit test", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -403,15 +419,15 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to run a script unit test",
+)
 def run_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
     """Run a script unit test (ad-hoc body or stored unit_test_id). Super-admin 403."""
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to run a script unit test", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -442,14 +458,16 @@ def run_script_unit_test(modified_process_model_identifier: str, body: dict | No
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    on_deny="404",
+    forbidden_message="Process model not found",
+)
 def get_process_model(modified_process_model_identifier: str):
     """Combined process-model detail for the designer detail page."""
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
-        raise ApiError("not_found", "Process model not found", 404)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -490,6 +508,11 @@ def get_process_model(modified_process_model_identifier: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    on_deny="404",
+    forbidden_message="Process model not found",
+)
 def get_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Raw content of one named file (.bpmn/.dmn/etc.) inside a process model.
 
@@ -498,11 +521,7 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
     tenant-scoped model's existence to a caller who can't read it).
     """
     user = require_current_user()
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-models", session=session):
-        raise ApiError("not_found", "Process model not found", 404)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -523,6 +542,10 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to modify this process model",
+)
 def put_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Save one named file's bytes into an existing process model directory.
 
@@ -532,11 +555,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
     nothing tenant-identity-revealing to protect by hiding the model here).
     """
     user = require_current_user()
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "PUT", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to modify this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -564,6 +583,10 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to modify this process model",
+)
 def create_process_model_file(modified_process_model_identifier: str, body: dict | None = None):
     """Create one file in an existing process model (default contents or upload).
     Super-admin is always 403. No git.
@@ -572,9 +595,6 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
     _deny_super_admin_catalog_write(user)
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to modify this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -603,15 +623,15 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to modify this process model",
+)
 def delete_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Delete one named file. Primary file is 409. Super-admin is always 403."""
     user = require_current_user()
     _deny_super_admin_catalog_write(user)
-    session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "DELETE", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to modify this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -625,6 +645,10 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances",
+    forbidden_message="Not permitted to start this process model",
+)
 def start_process_instance(modified_process_model_identifier: str):
     """Start (create + initialize) a process instance from a model's latest
     definition — the Processes list/detail "Start" action. Write op: denied →
@@ -636,9 +660,6 @@ def start_process_instance(modified_process_model_identifier: str):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "POST", "/v1.0/process-instances", session=session):
-        raise ApiError("permission_denied", "Not permitted to start this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -664,6 +685,10 @@ def start_process_instance(modified_process_model_identifier: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-models",
+    forbidden_message="Not permitted to delete this process model",
+)
 def delete_process_model(modified_process_model_identifier: str):
     """Delete a process model's on-disk BPMN spec (git-committed removal).
     Blocked (409) while any process instance still references the model, so
@@ -673,9 +698,6 @@ def delete_process_model(modified_process_model_identifier: str):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "DELETE", "/v1.0/process-models", session=session):
-        raise ApiError("permission_denied", "Not permitted to delete this process model", 403)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier

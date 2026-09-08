@@ -5,7 +5,8 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, allow_uri
+from m8flow_backend.authorization import actor_is_super_admin, user_has_permission
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
@@ -55,8 +56,10 @@ def get_home_stats():
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
-    can_read_tasks = allow_uri(user, "GET", "/v1.0/tasks", session=session)
-    can_read_instances = allow_uri(user, "GET", "/v1.0/process-instances", session=session)
+    can_read_tasks = user_has_permission(user, "GET", "/v1.0/tasks", session=session)
+    can_read_instances = user_has_permission(
+        user, "GET", "/v1.0/process-instances", session=session
+    )
 
     stats: dict[str, int | float | None] = {
         "active_process_instances": None,
@@ -104,6 +107,11 @@ def _home_scope_tenant_id(*, user: UserModel, own_tenant_id: str | None) -> str 
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances",
+    on_deny="empty",
+    empty_response=[],
+)
 def get_home_recent_instances():
     """Recent process instances for the Home page table. New endpoint rather
     than extending GET /v1.0/process-instances: that route's bare
@@ -125,9 +133,6 @@ def get_home_recent_instances():
     super_admin = actor_is_super_admin(user)
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
-
-    if not allow_uri(user, "GET", "/v1.0/process-instances", session=session):
-        return success_response([], 200)
 
     limit_raw = request.args.get("limit")
     try:
@@ -168,6 +173,11 @@ def get_home_recent_instances():
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/tasks",
+    on_deny="empty",
+    empty_response=[],
+)
 def get_home_my_tasks():
     """Pending tasks for the Home "My tasks" list. New endpoint rather than
     extending GET /v1.0/tasks: m8flow-frontend's Homepage already expects a
@@ -187,9 +197,6 @@ def get_home_my_tasks():
     super_admin = actor_is_super_admin(user)
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
-
-    if not allow_uri(user, "GET", "/v1.0/tasks", session=session):
-        return success_response([], 200)
 
     limit_raw = request.args.get("limit")
     try:

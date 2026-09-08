@@ -4,7 +4,7 @@ from flask import g, request
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import allow_uri
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.auth import require_tenant_id
@@ -13,6 +13,11 @@ _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances",
+    on_deny="empty",
+    empty_response=_EMPTY_PAGE,
+)
 def list_process_instances():
     """Designer Process Instances list. Concrete tenant always required —
     same posture as Processes/Templates (`tenancy.require_tenant_id`): no
@@ -23,9 +28,6 @@ def list_process_instances():
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(user, "GET", "/v1.0/process-instances", session=session):
-        return success_response(_EMPTY_PAGE, 200)
 
     status = request.args.get("status") or None
     search = request.args.get("search") or None
@@ -54,6 +56,11 @@ def list_process_instances():
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances",
+    on_deny="empty",
+    empty_response={"owners": []},
+)
 def list_process_instance_owners():
     """Distinct process-instance initiators for the tenant — populates the
     Process Instances list's "started by" filter dropdown. Same concrete-
@@ -64,14 +71,16 @@ def list_process_instance_owners():
     session = g.db_session
     tenant_id = require_tenant_id(user)
 
-    if not allow_uri(user, "GET", "/v1.0/process-instances", session=session):
-        return success_response({"owners": []}, 200)
-
     owners = workflow.list_instance_owners_for_designer(session, tenant_id=tenant_id)
     return success_response({"owners": owners}, 200)
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def get_process_instance(process_instance_id: int):
     """Designer Process Instance detail: metadata + source BPMN XML + per-
     task runtime state (for diagram highlighting). Denied or missing
@@ -82,11 +91,6 @@ def get_process_instance(process_instance_id: int):
     session = g.db_session
     tenant_id = require_tenant_id(user)
 
-    if not allow_uri(
-        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("not_found", "Process instance not found", 404)
-
     detail = workflow.get_instance_detail_for_designer(
         session, tenant_id=tenant_id, process_instance_id=process_instance_id
     )
@@ -96,8 +100,13 @@ def get_process_instance(process_instance_id: int):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def list_process_instance_events(process_instance_id: int):
-    """Events tab for one process instance. Same tenant + ``allow_uri``
+    """Events tab for one process instance. Same tenant + permission
     posture as ``get_process_instance`` (authorize as GET on the instance,
     not a new URI). Missing or denied instance → 404.
     """
@@ -106,11 +115,6 @@ def list_process_instance_events(process_instance_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(
-        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("not_found", "Process instance not found", 404)
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -123,20 +127,20 @@ def list_process_instance_events(process_instance_id: int):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def list_process_instance_milestones(process_instance_id: int):
     """Milestones tab: zero or one current last milestone. Same tenant +
-    ``allow_uri`` as ``get_process_instance``. Missing or denied → 404.
+    permission as ``get_process_instance``. Missing or denied → 404.
     """
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(
-        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("not_found", "Process instance not found", 404)
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -149,9 +153,14 @@ def list_process_instance_milestones(process_instance_id: int):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def list_process_instance_completable_tasks(process_instance_id: int):
     """Tasks I can complete: incomplete human tasks on this instance
-    where the current user is a candidate. Same tenant + ``allow_uri`` as
+    where the current user is a candidate. Same tenant + permission as
     ``get_process_instance``. Missing or denied → 404. Empty ``results``
     when the caller has no candidate tasks (including tenant-admin /
     super-admin who are not themselves candidates).
@@ -161,11 +170,6 @@ def list_process_instance_completable_tasks(process_instance_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(
-        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("not_found", "Process instance not found", 404)
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -181,9 +185,14 @@ def list_process_instance_completable_tasks(process_instance_id: int):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def list_process_instance_completed_tasks(process_instance_id: int):
     """Tasks tab: Completed by me and All completed. Same tenant +
-    ``allow_uri`` as ``get_process_instance``. Missing or denied → 404.
+    permission as ``get_process_instance``. Missing or denied → 404.
     Task is title + name, not the approval-chain owner ``name``.
     """
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
@@ -191,11 +200,6 @@ def list_process_instance_completed_tasks(process_instance_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(
-        user, "GET", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("not_found", "Process instance not found", 404)
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -211,22 +215,16 @@ def list_process_instance_completed_tasks(process_instance_id: int):
 
 
 def _lifecycle_write(process_instance_id: int, action: str):
-    """Terminate / suspend / resume. Authorize as POST on the instance URI
-    (YAML create on ``/process-instances/*`` — process.terminate /
-    process.suspend / process.resume). Denied → 403. Missing or other
-    tenant → 404. Invalid status → 409 from core. Writes go through
-    ``workflow``, not ``execute_command`` in this controller.
+    """Terminate / suspend / resume. RBAC is on the three route wrappers
+    (POST on the instance URI — YAML create on ``/process-instances/*``).
+    Missing or other tenant → 404. Invalid status → 409 from core. Writes
+    go through ``workflow``, not ``execute_command`` in this controller.
     """
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-
-    if not allow_uri(
-        user, "POST", f"/v1.0/process-instances/{process_instance_id}", session=session
-    ):
-        raise ApiError("permission_denied", "Not permitted to change this process instance", 403)
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -248,15 +246,27 @@ def _lifecycle_write(process_instance_id: int, action: str):
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    forbidden_message="Not permitted to change this process instance",
+)
 def suspend_process_instance(process_instance_id: int):
     return _lifecycle_write(process_instance_id, "suspend")
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    forbidden_message="Not permitted to change this process instance",
+)
 def resume_process_instance(process_instance_id: int):
     return _lifecycle_write(process_instance_id, "resume")
 
 
 @handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    forbidden_message="Not permitted to change this process instance",
+)
 def terminate_process_instance(process_instance_id: int):
     return _lifecycle_write(process_instance_id, "terminate")
