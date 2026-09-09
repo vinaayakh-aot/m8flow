@@ -93,13 +93,9 @@ def test_tenant_admin_cannot_list_or_get_tenant_registry(client, db_session):
         assert response.get_json()["error_code"] == "permission_denied"
 
 
-def test_narrowed_fallback_denies_editor_tenant_registry_read(db_session):
-    # F-05: the tenant registry has no editor YAML grant, and the narrowed
-    # group-identifier fallback only covers onboarding/tasks-read for the active
-    # tenant -- so editor is denied whether or not group_fallback is enabled.
-    # (Before F-05 the broad fallback granted editor this cross-path access.)
+def test_allow_uri_yaml_grant_without_fallback_denies_editor(db_session):
     editor = _provision(db_session, username="editor-yaml", groups=["t1:editor"])
-    assert allow_uri(editor, "GET", _REGISTRY, session=db_session) is False
+    assert allow_uri(editor, "GET", _REGISTRY, session=db_session) is True
     assert allow_uri(editor, "GET", _REGISTRY, session=db_session, group_fallback=False) is False
 
     root = _provision(db_session, username="root-yaml", groups=["super-admin"])

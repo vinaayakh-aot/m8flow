@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { Copy, Eye, ExternalLink, Link2 } from 'lucide-react';
+import { Copy, ExternalLink, Link2 } from 'lucide-react';
 
 import type { ProcessInstanceListItem, ProcessInstanceSort } from '@/lib/processInstancesApi';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
@@ -10,7 +10,6 @@ import { Pill } from '@/components/library/pill/Pill';
 import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown, type SortDropdownOption } from '@/components/library/sort-dropdown/SortDropdown';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatDuration } from '@/pages/process-model-detail/components/ProcessModelOverview';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -165,23 +164,13 @@ export function ProcessInstancesList({
     {
       key: 'actions',
       header: <span className="sr-only">Actions</span>,
-      width: '88px',
+      width: '44px',
       render: (instance) => (
         <div
-          className="flex items-center justify-end gap-0.5"
+          className="flex items-center justify-end"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="View instance"
-            title="View"
-            onClick={() => onOpenInstance?.(instance)}
-          >
-            <Eye className="size-3.5" strokeWidth={2} />
-          </Button>
           <RowActionsMenu instance={instance} onOpen={() => onOpenInstance?.(instance)} />
         </div>
       ),
@@ -319,7 +308,7 @@ function RowActionsMenu({
           onSelect: () => copy(String(instance.id)),
         },
         {
-          label: 'Copy URL',
+          label: 'Copy link',
           icon: <Link2 className="size-3.5" />,
           onSelect: () => copy(instanceUrl),
         },

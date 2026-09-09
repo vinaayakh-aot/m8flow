@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from flask import g
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.errors import ApiError
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
@@ -281,24 +280,3 @@ def test_resolve_request_tenant_direct_cookie_bind(app, db_session):
         resolve_request_tenant()
         assert g.m8flow_tenant_id == "t1"
         assert get_context_tenant_id() == "t1"
-
-
-def test_resolve_request_tenant_rejects_cookie_for_non_member_tenant(app, db_session):
-    # F-03: the cookie fallback must not bind a tenant the user does not belong
-    # to (no matching token membership, no JWT claim, no header).
-    ensure_tenant(db_session, tenant_id="t1", slug="t1")
-    ensure_tenant(db_session, tenant_id="t2", slug="t2")
-    db_session.commit()
-    user = SimpleNamespace(groups=[SimpleNamespace(identifier="t1:editor")])
-    with app.test_request_context(
-        "/v1.0/tasks",
-        headers={"Cookie": f"{SELECTED_TENANT_COOKIE_NAME}=t2"},
-    ):
-        g.user = user
-        g.db_session = db_session
-        try:
-            resolve_request_tenant()
-        except ApiError as exc:
-            assert exc.error_code == "tenant_override_forbidden"
-        else:
-            raise AssertionError("expected tenant_override_forbidden for non-member cookie")

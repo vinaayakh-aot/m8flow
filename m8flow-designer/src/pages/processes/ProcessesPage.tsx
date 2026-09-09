@@ -229,8 +229,8 @@ export default function ProcessesPage() {
         onOpenModel={(model) => {
           navigate(`/processes/${encodeProcessModelId(model.id)}`);
         }}
-        onStartModel={canManageCatalog ? handleStartModel : undefined}
-        onDeleteModel={canManageCatalog ? handleDeleteModel : undefined}
+        onStartModel={canManageProcesses ? handleStartModel : undefined}
+        onDeleteModel={canManageProcesses ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
       />
       <CreateProcessModelDialog

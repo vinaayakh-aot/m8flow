@@ -27,17 +27,16 @@ describe('Sidebar live nav', () => {
       'href',
       '/process-instances',
     );
-    // Templates is a live Setup child; Configuration / Connectors are omitted
-    // until the matching capability is granted (no inert placeholders).
+    // Templates is a live Setup child; Configuration is inert until secrets
+    // read is granted (showConfiguration).
     expect(screen.getByRole('link', { name: 'Templates' })).toHaveAttribute(
       'href',
       '/templates',
     );
-    expect(screen.queryByText('Configuration')).not.toBeInTheDocument();
-    expect(screen.queryByText('Connectors')).not.toBeInTheDocument();
-    expect(screen.queryByText('Messages')).not.toBeInTheDocument();
-    expect(screen.queryByText('MCP Connection')).not.toBeInTheDocument();
-    expect(screen.queryByText('System')).not.toBeInTheDocument();
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
+    expect(screen.getByText('Connectors')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(screen.queryByText('Tenants')).not.toBeInTheDocument();
     expect(screen.queryByText('Tenant Management')).not.toBeInTheDocument();

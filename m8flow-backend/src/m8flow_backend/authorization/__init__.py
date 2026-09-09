@@ -69,12 +69,12 @@ def allow_uri(
 
         db_session = getattr(g, "db_session", None)
     if db_session is None:
-        return group_fallback and _group_identifier_fallback(user, path, action)
+        return group_fallback and _group_identifier_fallback(user, path)
     if _uri_permitted(db_session, user, action, path):
         return True
     if not group_fallback:
         return False
-    return _group_identifier_fallback(user, path, action)
+    return _group_identifier_fallback(user, path)
 
 
 def user_has_permission(user: UserModel, permission: str, path: str, *, session: Session | None = None) -> bool:
@@ -89,10 +89,9 @@ def require_authorized_user(action: str, *, forbidden_message: str, path: str | 
     user = require_current_user()
     request_path = path or flask_request.path
     session = getattr(g, "db_session", None)
-    method = action if action in {"GET", "POST", "PUT", "DELETE"} else "GET"
-    if allow_uri(user, method, request_path, session=session):
+    if allow_uri(user, action if action in {"GET", "POST", "PUT", "DELETE"} else "GET", request_path, session=session):
         return user
-    if _group_identifier_fallback(user, request_path, _method_to_action(method)):
+    if _group_identifier_fallback(user, request_path):
         return user
     raise ApiError("permission_denied", forbidden_message, 403)
 
@@ -229,46 +228,12 @@ def _path_matches(path: str, uri_pattern: str) -> bool:
     return re.fullmatch("".join(regex_parts), path) is not None
 
 
-_FALLBACK_BOOTSTRAP_ROLES = frozenset(
-    {"tenant-admin", "editor", "reviewer", "user"}
-)
-
-
-def _active_tenant_identifiers() -> set[str]:
-    """Identifiers (id + slug) of the tenant bound to this request, if any."""
-    try:
-        from flask import g
-
-        tenant_id = getattr(g, "m8flow_tenant_id", None)
-    except Exception:
-        tenant_id = None
-    if not tenant_id:
-        return set()
-    from m8flow_backend.auth.canonicalize import current_tenant_identifiers
-
-    return current_tenant_identifiers(tenant_id) or {tenant_id}
-
-
-def _group_identifier_fallback(user: UserModel, path: str, action: str) -> bool:
-    """Bootstrap-only safety net for just-logged-in users before DB-backed YAML
-    grants have persisted. Deliberately narrow (F-05): it grants ONLY read
-    access to the minimum onboarding/tasks routes, and ONLY for groups whose
-    tenant prefix matches the request's active tenant -- never an any-path,
-    any-method, any-tenant grant. Super-admins are handled upstream in
-    ``allow_uri`` / ``actor_is_super_admin`` and never reach here.
-    """
-    if action != "read":
-        return False
-    if "/onboarding" not in path and "/tasks" not in path:
-        return False
-    active = _active_tenant_identifiers()
-    if not active:
-        return False
-    for group in getattr(user, "groups", []):
-        identifier = getattr(group, "identifier", "") or ""
-        prefix, separator, role = identifier.partition(":")
-        if not separator or prefix not in active:
-            continue
-        if role in _FALLBACK_BOOTSTRAP_ROLES:
+def _group_identifier_fallback(user: UserModel, path: str) -> bool:
+    """Load-bearing for just-logged-in multi-org users before YAML grants persist."""
+    identifiers = [getattr(group, "identifier", "") or "" for group in getattr(user, "groups", [])]
+    if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") or item.endswith(":editor") for item in identifiers):
+        return True
+    if "/onboarding" in path or path.endswith("/tasks") or "/tasks" in path:
+        if any(item.endswith(":reviewer") or item.endswith(":editor") or item.endswith(":user") for item in identifiers):
             return True
     return False

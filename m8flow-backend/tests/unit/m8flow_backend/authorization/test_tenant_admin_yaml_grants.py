@@ -1,8 +1,8 @@
 """YAML grant boundary for tenant-admin members/groups/roles.
 
 `_uri_permitted` is the seam (same as test_v1_permission_gaps): it reads DB
-rows from m8flow.yml and never consults `_group_identifier_fallback` (which,
-since F-05, only grants onboarding/tasks-read to active-tenant members anyway).
+rows from m8flow.yml and never consults `_group_identifier_fallback`, which
+would otherwise let tenant-admin (and editor) through on every path.
 """
 
 from __future__ import annotations

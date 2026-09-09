@@ -156,7 +156,7 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByRole('tab', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Messages' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Tasks' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy URL' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Download/ })).not.toBeInTheDocument();
     expect(
       screen.getByText(
@@ -201,7 +201,7 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
   });
 
-  it('copies the current URL from Copy URL', async () => {
+  it('copies the current URL from Copy link', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'test' });
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
@@ -209,9 +209,9 @@ describe('ProcessInstanceDetailPage', () => {
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Copy URL' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Copy URL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(writeText).toHaveBeenCalledWith(window.location.href);
   });
 

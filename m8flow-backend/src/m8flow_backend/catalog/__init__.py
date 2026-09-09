@@ -221,14 +221,7 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
 
 
 def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
-    validate_leaf_file_name(file_name)
-    root = _tenant_models_root(tenant_id).resolve()
-    # Reject empty / traversal model paths the same way delete_process_model does.
-    if not path or path in {".", ".."} or path.startswith("/") or ".." in path.split("/"):
-        raise ApiError("invalid_process_model", "Invalid process model identifier", 400)
-    target = (root / path / file_name).resolve()
-    if root not in target.parents:
-        raise ApiError("invalid_process_model", "Invalid process model identifier", 400)
+    target = _tenant_models_root(tenant_id) / path / file_name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target

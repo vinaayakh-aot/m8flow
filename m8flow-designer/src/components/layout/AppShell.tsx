@@ -39,10 +39,6 @@ export function AppShell() {
         showConnectors={canReadConnectors}
         showTenantsNav={superAdmin}
         showTenantManagement={canManageTenant && !superAdmin}
-        // System (Celery/NATS) stays hidden until designer routes exist —
-        // inert placeholders read as broken links for super-admin too.
-        showSystem={false}
-        showTaskReview={!superAdmin}
       />
       <Outlet />
     </div>

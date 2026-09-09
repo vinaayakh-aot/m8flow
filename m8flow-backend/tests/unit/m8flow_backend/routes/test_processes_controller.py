@@ -5,13 +5,7 @@ import time
 from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.identity import (
-    ensure_membership,
-    ensure_tenant,
-    ensure_user,
-    import_yaml,
-    sync_groups,
-)
+from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.routes.processes_controller import process_model_identifier_from_path_param
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
@@ -44,10 +38,6 @@ def _login_user(
     )
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
-    # Mirror a real login: materialize m8flow.yml grants into the DB so
-    # authorization uses real per-role grants, not the narrowed onboarding/tasks
-    # bootstrap fallback (F-05).
-    import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name=v1_role, user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
@@ -654,19 +644,15 @@ def test_editor_saves_bpmn_file_reimports_definition(client, db_session, tmp_pat
     assert model_dir.joinpath("invoice-approval.bpmn").read_bytes() == xml
 
 
-def test_editor_saves_bpmn_via_import_grant_without_v1_admin_role(client, db_session, tmp_path, monkeypatch):
-    """A .bpmn save triggers workflow.import_definition, whose command RBAC
-    (process_definition.import) is satisfied by the m8flow.yml grant
-    `import-process-definitions` (create on /process-definitions/* for
-    tenant-admin/editor). Once those grants are materialized -- as a real login
-    does, and as _login_user now mirrors via import_yaml -- editor saves a .bpmn
-    with the default v1_role="user"; no separate core V1 "admin" role is needed.
-    (Previously this asserted 403 only because grants were not seeded and the
-    check fell through to the command layer -- an artifact of the test harness,
-    not production behavior.)"""
+def test_editor_without_v1_admin_role_cannot_save_bpmn(client, db_session, tmp_path, monkeypatch):
+    """Pins the gap documented on test_editor_saves_bpmn_file_reimports_definition:
+    the editor group alone is not sufficient for .bpmn saves specifically —
+    core's V1 "admin" role is also required. Non-bpmn saves are unaffected
+    (see test_editor_saves_non_bpmn_file_without_git_commit, same group, no
+    v1_role override, 200)."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="editor-import-grant", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="editor-no-v1-admin", groups=["t1:editor"], tenant_id="t1"
     )
 
     response = client.put(
@@ -675,7 +661,8 @@ def test_editor_saves_bpmn_via_import_grant_without_v1_admin_role(client, db_ses
         headers={"Authorization": f"Bearer {token}"},
         content_type="application/octet-stream",
     )
-    assert response.status_code == 200, response.get_json()
+    assert response.status_code == 403
+    assert response.get_json()["error_code"] == "permission_denied"
 
 
 def test_save_file_missing_model_is_404(client, db_session, tmp_path, monkeypatch):

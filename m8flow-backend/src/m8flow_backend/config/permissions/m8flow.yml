@@ -145,23 +145,6 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [all]
     uri: PM:ALL
-  # The process-model write routes (create/update/delete/file save+delete) all
-  # authorize against the bare collection URI /v1.0/process-models, but PM:ALL
-  # expands to /process-models/% and never matches the bare path. Grant [all] on
-  # the bare collection so editors/tenant-admins get their documented PM:ALL
-  # capability via real DB grants (previously only reachable through the broad
-  # group-identifier fallback, now narrowed -- F-05).
-  manage-process-models-collection:
-    groups: ["tenant-admin", "editor"]
-    actions: [all]
-    uri: /process-models
-  # Process-group create authorizes against the bare /v1.0/process-groups URI;
-  # update/delete use the per-group path (covered by PG:ALL). Grant [all] on the
-  # bare collection for the same reason as process-models above.
-  manage-process-groups-collection:
-    groups: ["tenant-admin", "editor"]
-    actions: [all]
-    uri: /process-groups
   # Compatibility-only command targets for future m8flow-bpmn-core integration.
   # These enrich synced permission targets without changing current URI-based auth behavior.
   import-process-definitions:
@@ -196,14 +179,8 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [create]
     uri: /process-instances/for-me
-  # viewer is read-only (see the group description above) and is intentionally
-  # NOT granted create on the bare /process-instances collection: that grant
-  # prefix-matches the lifecycle routes /process-instances/{id}/suspend|resume|
-  # terminate (via _path_matches' startswith), which would let a viewer change
-  # instance state. Viewers may still start their own via /process-instances/
-  # for-me above.
   create-process-instance-list:
-    groups: ["tenant-admin", "editor"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [create]
     uri: /process-instances
   read-process-instance-report-metadata:

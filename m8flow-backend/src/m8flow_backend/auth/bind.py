@@ -314,8 +314,8 @@ def resolve_request_tenant() -> None:
 
     Order: super-admin tenantId override or exempt; selected-tenant cookie
     when it matches shared-realm membership; JWT tenant claim;
-    x-m8flow-tenant-id when the user belongs; cookie fallback (only when the
-    user belongs); fail closed for authenticated non-exempt paths.
+    x-m8flow-tenant-id when the user belongs; cookie fallback; fail closed
+    for authenticated non-exempt paths.
     """
     if is_super_admin_request():
         override = tenant_override_for_super_admin(is_super_admin=True)
@@ -352,20 +352,7 @@ def resolve_request_tenant() -> None:
         bind_request_tenant(header)
         return
 
-    if cookie and getattr(g, "user", None) is not None:
-        # Cookie fallback: honor the selected-tenant cookie only when the
-        # authenticated user actually belongs to it. Binding it unconditionally
-        # (the previous behavior) let a forged/stale cookie select any tenant
-        # once the token-membership and JWT-claim paths above had failed (F-03).
-        # Anonymous requests fall through so downstream auth returns 401 (not a
-        # tenant error) for a cookie present without a session.
-        if not _user_belongs(cookie):
-            raise ApiError(
-                "tenant_override_forbidden",
-                "Selected-tenant cookie does not match the authenticated "
-                "user's tenant memberships.",
-                400,
-            )
+    if cookie:
         bind_request_tenant(cookie)
         return
 

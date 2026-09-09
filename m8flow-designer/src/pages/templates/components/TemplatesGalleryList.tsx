@@ -169,22 +169,21 @@ export function TemplatesGalleryList({
             <Upload className="size-3.5" strokeWidth={2.2} />
             Import
           </Button>
-          {/* Super-admin is view/export only — hide create chrome entirely.
-              Blank-template creation is still out of scope for other roles
-              (disabled until a starter-BPMN path exists). */}
-          {!isSuperAdmin ? (
-            <Button
-              type="button"
-              variant="pill"
-              size="pill"
-              disabled
-              title="Not yet available — use Import or create a template from an existing process model"
-              className="gap-2"
-            >
-              <Plus className="size-[15px]" strokeWidth={2.2} />
-              New template
-            </Button>
-          ) : null}
+          {/* Blank-template creation deliberately out of scope for this
+              ticket (no starter-BPMN precedent exists elsewhere in this
+              app — "New process model" is the same kind of still-inert
+              chrome on ProcessesModelsList). */}
+          <Button
+            type="button"
+            variant="pill"
+            size="pill"
+            disabled
+            title="Not yet available — use Import or create a template from an existing process model"
+            className="gap-2"
+          >
+            <Plus className="size-[15px]" strokeWidth={2.2} />
+            New template
+          </Button>
         </div>
       </div>
 

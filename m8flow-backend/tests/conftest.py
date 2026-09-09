@@ -10,16 +10,6 @@ def _reset_tenant_context_between_tests():
     clear_tenant_context()
 
 
-@pytest.fixture(autouse=True)
-def _host_token_secret(monkeypatch):
-    # Production code (jwt_secret) now fails hard when FLASK_SESSION_SECRET_KEY is
-    # unset instead of falling back to a public constant. Supply the test secret
-    # here so tests that mint/verify host HS256 tokens without the db_engine
-    # fixture still have a signing key. Individual tests may delenv to assert the
-    # hard-fail behavior.
-    monkeypatch.setenv("FLASK_SESSION_SECRET_KEY", "unit-test-secret-key-32bytes-min")
-
-
 # --- Connexion test-client compatibility shim -----------------------------
 # create_app() now returns a Connexion FlaskApp (ASGI). Its test client is a
 # Starlette TestClient (httpx), whose request/response surface differs from the
