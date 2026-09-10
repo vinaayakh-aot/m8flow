@@ -49,6 +49,7 @@ def test_can_edit_denies_super_admin() -> None:
     app = Flask(__name__)
     with app.app_context():
         with app.test_request_context("/"):
+            g.m8flow_tenant_id = "t1"
             template = _template(tenant_id="t1", created_by="editor", visibility=TemplateVisibility.private.value)
             assert TemplateAuthorizationService.can_edit(template, user=_user("root", super_admin=True)) is False
             assert TemplateAuthorizationService.can_edit(template, user=_user("editor")) is True
