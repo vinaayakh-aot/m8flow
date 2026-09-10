@@ -9,6 +9,7 @@ from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef
 from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
 from m8flow_backend.integrations.auth.keycloak.role_mapping import tenant_roles_for_organization_group
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
 
 ORGS_URL = "http://keycloak.internal/admin/realms/m8flow/organizations"
@@ -45,6 +46,9 @@ def _group_http(monkeypatch):
         "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
+    reset_keycloak_settings()
+    yield
+    reset_keycloak_settings()
 
 
 def _acme() -> dict[str, Any]:
@@ -77,7 +81,13 @@ def test_list_groups_returns_neutral_groups(monkeypatch):
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     found = KeycloakAuthProvider().directory_admin.list_groups(TenantRef(id="org-1"))
-    assert found == [Group(identifier="Administrators", tenant_ref=TenantRef(id="org-1", alias="acme", name="Acme"))]
+    assert found == [
+        Group(
+            identifier="Administrators",
+            tenant_ref=TenantRef(id="org-1", alias="acme", name="Acme"),
+            path="/Administrators",
+        )
+    ]
 
 
 def test_create_group_posts_then_returns_neutral_group(monkeypatch):
@@ -132,6 +142,42 @@ def test_assign_roles_adds_member_to_mapped_group(monkeypatch):
     )
     assert membership.roles == ["tenant-admin"]
     assert put_urls == [f"{GROUPS_URL}/g-admin/members/u1"]
+
+
+def test_remove_roles_removes_member_from_every_candidate_group(monkeypatch):
+    """Symmetric counterpart to assign_roles (auth-provider-seam wayfinder
+    map, ticket 09): removes the member from every candidate group name a
+    role maps to, not just the primary one -- "tenant-admin" candidates are
+    ["Administrators", "tenant-admin"], and a group literally named
+    "tenant-admin" doesn't exist in this fixture, so that lookup resolves to
+    no group and no DELETE for it (remove_group_member_by_id's own no-op
+    behavior when the group can't be found by name)."""
+    delete_urls: list[str] = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == f"{ORGS_URL}/org-1":
+            return _FakeResponse(_acme())
+        if url == USERS_URL:
+            return _FakeResponse([_ada()])
+        if url == GROUPS_URL:
+            search = (params or {}).get("search")
+            if search == "tenant-admin":
+                return _FakeResponse([])
+            return _FakeResponse([_administrators()])
+        raise AssertionError(url)
+
+    def fake_delete(url, json=None, headers=None, timeout=None):
+        delete_urls.append(url)
+        return _FakeResponse({}, status_code=204)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.delete", fake_delete)
+    KeycloakAuthProvider().directory_admin.remove_roles(
+        username="ada",
+        tenant_ref=TenantRef(id="org-1"),
+        roles=["tenant-admin"],
+    )
+    assert delete_urls == [f"{GROUPS_URL}/g-admin/members/u1"]
 
 
 def test_ensure_default_groups_creates_missing_group(monkeypatch):

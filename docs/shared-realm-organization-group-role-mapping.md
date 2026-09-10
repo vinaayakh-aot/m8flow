@@ -101,7 +101,8 @@ It does **not** embed the Keycloak group attributes in the token.
 The shared-realm group-role mapping is stored on the Keycloak organization group
 attributes using two keys defined in:
 
-- [tenant_group_mapping.py](../m8flow-backend/src/m8flow_backend/services/tenant_group_mapping.py)
+- [keycloak/role_mapping.py](../m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/role_mapping.py)
+  (moved here from the now-deleted `services/tenant_group_mapping.py` -- auth-provider-seam wayfinder map, ticket 16)
 
 Those keys are:
 
@@ -280,9 +281,10 @@ as the authoritative role list.
 If the explicit attributes are absent, M8Flow falls back to the static defaults
 in:
 
-- [tenant_group_mapping.py](../m8flow-backend/src/m8flow_backend/services/tenant_group_mapping.py)
-  - `DEFAULT_TENANT_ROLE_TO_ORGANIZATION_GROUP`
-  - `DEFAULT_ORGANIZATION_GROUP_TO_TENANT_ROLE`
+- [keycloak/role_mapping.py](../m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/role_mapping.py)
+  (moved here from the now-deleted `services/tenant_group_mapping.py` -- auth-provider-seam wayfinder map, ticket 16)
+  - `ORGANIZATION_GROUP_FOR_TENANT_ROLE`
+  - `TENANT_ROLE_FOR_ORGANIZATION_GROUP`
   - `tenant_roles_for_organization_group()`
 
 For example:

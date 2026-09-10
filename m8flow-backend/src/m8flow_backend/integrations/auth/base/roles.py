@@ -5,7 +5,9 @@ between these names and its realization of them (Keycloak: organization groups
 named ``Administrators``/``Designers``/... plus realm roles).
 
 The Keycloak group-name table lives in ``integrations.auth.keycloak.role_mapping``.
-``services.tenant_group_mapping`` re-exports these names for older callers.
+(``services.tenant_group_mapping`` used to re-export these names for older
+callers; deleted once its last caller was drained -- auth-provider-seam
+wayfinder map, ticket 16.)
 """
 from __future__ import annotations
 

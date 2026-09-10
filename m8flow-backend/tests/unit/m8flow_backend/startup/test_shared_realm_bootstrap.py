@@ -51,7 +51,11 @@ class _FakeDirectoryAdmin:
 
 class _FakeAuthProvider:
     def __init__(self, tenant: Tenant):
+        self._tenant = tenant
         self.directory_admin = _FakeDirectoryAdmin(tenant)
+
+    def default_tenant_ref(self) -> TenantRef:
+        return TenantRef(alias=self._tenant.ref.alias, name=self._tenant.display_name)
 
 
 def _seed_tenant(db_session, *, tenant_id: str, slug: str, name: str) -> M8flowTenantModel:
@@ -186,7 +190,7 @@ def test_reconcile_is_a_noop_under_unit_testing_environment(app, db_session, mon
 
 
 def test_reconcile_creates_canonical_tenant_when_none_exists(app, db_session, monkeypatch, _real_reconciliation):
-    from m8flow_backend.integrations.auth.keycloak.config import default_organization_alias
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
 
     alias = default_organization_alias()
     provider = _FakeAuthProvider(
@@ -205,7 +209,7 @@ def test_reconcile_creates_canonical_tenant_when_none_exists(app, db_session, mo
 def test_reconcile_canonicalizes_legacy_alias_id_tenant_and_updates_scoped_rows_and_groups(
     app, db_session, monkeypatch, _real_reconciliation
 ):
-    from m8flow_backend.integrations.auth.keycloak.config import default_organization_alias
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
 
     alias = default_organization_alias()
     _seed_tenant(db_session, tenant_id=alias, slug=alias, name="Legacy Name")
@@ -238,7 +242,7 @@ def test_reconcile_canonicalizes_legacy_alias_id_tenant_and_updates_scoped_rows_
 
 
 def test_reconcile_no_op_when_canonical_tenant_already_matches(app, db_session, monkeypatch, _real_reconciliation):
-    from m8flow_backend.integrations.auth.keycloak.config import default_organization_alias
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
 
     alias = default_organization_alias()
     _seed_tenant(db_session, tenant_id="org-real-123", slug=alias, name="Real Org Name")

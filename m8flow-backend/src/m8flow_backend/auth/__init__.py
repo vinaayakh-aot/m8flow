@@ -23,9 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core.models.user import UserModel
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.errors import ApiError
-from m8flow_backend.integrations.auth.base.models import Membership, VerifiedClaims
+from m8flow_backend.integrations.auth.base.models import IssuerRef, Membership, VerifiedClaims
 from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
     get_context_tenant_id,
@@ -103,22 +102,6 @@ def _store_verified_payload(payload: dict[str, Any], *, verified_claims) -> None
         g.verified_claims = verified_claims
 
 
-def authentication_identifier_for_request() -> str:
-    """Both the "original" branch and the realm-hint cookie are effectively
-    unused today: `g.original_authentication_identifier` is never assigned
-    anywhere in this codebase (only read here), and the `m8flow_auth_realm`
-    cookie is dead (see clear_dead_auth_realm_cookie). This function
-    currently always falls through to shared_realm_name().
-    """
-    original = getattr(g, "original_authentication_identifier", None)
-    if isinstance(original, str) and original.strip():
-        return original.strip()
-    realm_hint = request.cookies.get("m8flow_auth_realm") if request else None
-    if isinstance(realm_hint, str) and realm_hint.strip():
-        return realm_hint.strip()
-    return shared_realm_name()
-
-
 def clear_dead_auth_realm_cookie(response) -> None:
     response.set_cookie("m8flow_auth_realm", "", max_age=0, path="/")
 
@@ -155,7 +138,10 @@ def try_finalize_shared_realm_session(redirect_url: str):
         (request.args.get("authentication_identifier") or "").strip()
         or (request.cookies.get("authentication_identifier") or "").strip()
     )
-    if identifier != shared_realm_name():
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.models import IssuerRef
+
+    if IssuerRef(value=identifier) != get_auth_provider().default_issuer():
         return None
 
     session_token = request.cookies.get("access_token") or request.cookies.get("id_token")
@@ -172,11 +158,20 @@ def try_finalize_shared_realm_session(redirect_url: str):
 
     claims = getattr(g, "verified_claims", None)
     if not isinstance(claims, VerifiedClaims):
-        try:
-            from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
+        # decode_auth_token's Keycloak/OIDC branch already populates
+        # g.verified_claims as a side effect (see _store_verified_payload) --
+        # this is a defensive fallback for the rare case it didn't. Re-verify
+        # session_token through the port (never a direct adapter import,
+        # auth-provider-seam wayfinder map ticket 10) rather than hand-
+        # mapping the already-decoded payload; session_token is the exact
+        # token decode_auth_token just verified above, so this is a repeat
+        # of the same cryptographic check, not new trust.
+        from m8flow_backend.integrations.auth import get_auth_provider
+        from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
 
-            claims = verified_claims_from_payload(decoded)
-        except (TypeError, ValueError):
+        try:
+            claims = get_auth_provider().verify_token(session_token)
+        except (TokenInvalid, ProviderUnavailable):
             logger.warning(
                 "tenant_finalization: unable to parse existing shared-realm session; falling back to standard login"
             )
@@ -308,7 +303,7 @@ def _remint_active_tenant_token(*, username: str, identifier: str, tenant_id: st
     provider = get_auth_provider()
     try:
         provider.set_active_tenant(username=username, tenant_id=tenant_id)
-        return provider.refresh(refresh_token=refresh_token, authentication_identifier=identifier)
+        return provider.refresh(refresh_token=refresh_token, issuer=IssuerRef(value=identifier))
     except (AuthProviderError, TokenInvalid, ProviderUnavailable):
         logger.warning(
             "tenant switch: active-tenant re-mint failed for %s (tenant=%s); "
@@ -403,21 +398,37 @@ def install_auth_middleware(app: Flask) -> None:
         if user is None:
             from sqlalchemy.exc import IntegrityError
 
-            username = decoded.get("preferred_username") or decoded.get("sub") or "unknown"
-            service = str(decoded.get("iss") or "local")
-            service_id = str(decoded.get("sub") or username)
+            from m8flow_backend.integrations.auth import get_auth_provider
+
+            # Typed VerifiedClaims is the contract (auth-provider-seam
+            # wayfinder map, ticket 10): decode_auth_token's Keycloak/OIDC
+            # branch always populates g.verified_claims, so a raw payload
+            # read is only ever needed for the HS256 local-token branch,
+            # which builds no VerifiedClaims -- decoded stays the fallback
+            # source for that case only, never the primary one.
+            claims = getattr(g, "verified_claims", None)
+            if isinstance(claims, VerifiedClaims):
+                username = str(claims.username or claims.subject or "unknown")
+                service = str(claims.issuer or "local")
+                service_id = str(claims.subject or username)
+                email = claims.email
+            else:
+                username = str(decoded.get("preferred_username") or decoded.get("sub") or "unknown")
+                service = str(decoded.get("iss") or "local")
+                service_id = str(decoded.get("sub") or username)
+                email = decoded.get("email") if isinstance(decoded.get("email"), str) else None
             tenant_id = (
                 request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
                 or get_context_tenant_id()
-                or shared_realm_name()
+                or get_auth_provider().default_tenant_ref().alias
             )
             try:
                 user = on_login_or_token_enrichment(
                     session,
-                    username=str(username),
+                    username=username,
                     service=service,
                     service_id=service_id,
-                    email=decoded.get("email") if isinstance(decoded.get("email"), str) else None,
+                    email=email,
                     active_tenant_id=str(tenant_id),
                 )
             except IntegrityError:
@@ -434,6 +445,8 @@ def install_auth_middleware(app: Flask) -> None:
                     return
             sync_groups_from_token(session, user=user, decoded=decoded, tenant_id=str(tenant_id))
         else:
+            from m8flow_backend.integrations.auth import get_auth_provider
+
             sync_groups_from_token(
                 session,
                 user=user,
@@ -441,7 +454,7 @@ def install_auth_middleware(app: Flask) -> None:
                 tenant_id=str(
                     request.cookies.get(SELECTED_TENANT_COOKIE_NAME)
                     or get_context_tenant_id()
-                    or shared_realm_name()
+                    or get_auth_provider().default_tenant_ref().alias
                 ),
             )
         g.user = user

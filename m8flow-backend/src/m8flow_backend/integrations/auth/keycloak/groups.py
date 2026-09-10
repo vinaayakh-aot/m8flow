@@ -14,7 +14,7 @@ from typing import Any
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef, User
 from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_default_groups_path,
     shared_realm_name,
 )
@@ -24,6 +24,7 @@ from m8flow_backend.integrations.auth.keycloak.role_mapping import (
     ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE,
     ORGANIZATION_GROUP_ROLE_NAMES_ATTRIBUTE,
     normalize_tenant_role_names,
+    organization_group_name_candidates_for_tenant_role,
     primary_organization_group_name_for_tenant_role,
     tenant_roles_for_organization_group,
 )
@@ -38,7 +39,8 @@ def group_from_representation(payload: dict[str, Any], tenant_ref: TenantRef) ->
     name = payload.get("name")
     if not isinstance(name, str) or not name.strip():
         raise ProviderUnavailable("Directory group is missing an identifier")
-    return Group(identifier=name.strip(), tenant_ref=tenant_ref)
+    path = payload.get("path")
+    return Group(identifier=name.strip(), tenant_ref=tenant_ref, path=path if isinstance(path, str) else None)
 
 
 def _org_groups_segments(organization_id: str, *segments: str) -> tuple[str, ...]:
@@ -729,6 +731,21 @@ def remove_group_member(group: Group, *, username: str, admin_token: str | None 
     remove_group_member_by_id(organization_id, _group_identifier(group), member_id, admin_token=admin_token)
 
 
+def list_member_groups(*, username: str, tenant_ref: TenantRef, admin_token: str | None = None) -> list[Group]:
+    """Given a user, list the groups they belong to within one tenant --
+    the inverse of list_group_members. Added by the auth-provider-seam
+    wayfinder map's ticket 08 (a gap ticket 07's audit found: no capability
+    expressed this direction before)."""
+    tenant = resolve_tenant_ref(tenant_ref, admin_token=admin_token)
+    organization_id = _organization_id(tenant.ref, admin_token=admin_token)
+    member_id = _user_id_for_username(username, admin_token=admin_token)
+    return [
+        Group(identifier=str(item.get("name") or "").strip(), tenant_ref=tenant.ref, path=item.get("path"))
+        for item in fetch_member_group_representations(organization_id, member_id, admin_token=admin_token)
+        if isinstance(item.get("name"), str) and str(item.get("name")).strip()
+    ]
+
+
 def list_group_members(group: Group, *, admin_token: str | None = None) -> list[User]:
     if group.tenant_ref is None:
         raise ValueError("group tenant_ref is required")
@@ -793,3 +810,22 @@ def assign_roles(
         group_name = primary_organization_group_name_for_tenant_role(role_name)
         if group_name:
             add_group_member_by_id(organization_id, group_name, member_id, admin_token=admin_token)
+
+
+def remove_roles(
+    *,
+    username: str,
+    tenant_ref: TenantRef,
+    roles: list[str],
+    admin_token: str | None = None,
+) -> None:
+    """Symmetric counterpart to assign_roles (auth-provider-seam wayfinder
+    map, ticket 09) -- removes from every candidate group name a role maps
+    to, not just the primary one, since assign_roles only ever adds to the
+    primary group but a role could have been granted under a legacy/
+    alternate group name."""
+    organization_id = _organization_id(tenant_ref, admin_token=admin_token)
+    member_id = _user_id_for_username(username, admin_token=admin_token)
+    for role_name in normalize_tenant_role_names(roles):
+        for group_name in organization_group_name_candidates_for_tenant_role(role_name):
+            remove_group_member_by_id(organization_id, group_name, member_id, admin_token=admin_token)

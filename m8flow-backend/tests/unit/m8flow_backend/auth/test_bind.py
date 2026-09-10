@@ -14,6 +14,7 @@ from m8flow_backend.auth.tenant_context import (
     set_context_tenant_id,
 )
 from m8flow_backend.auth.bind import apply_postgres_rls, resolve_request_tenant
+from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
 
 
 class _FakeDialect:
@@ -132,20 +133,29 @@ def test_cookie_wins_over_jwt_claim_for_multi_org_membership(app, db_session):
     ensure_tenant(db_session, tenant_id="org-a", slug="org-a")
     ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     db_session.commit()
-    user = SimpleNamespace(groups=[SimpleNamespace(identifier="org-b:reviewer")])
-    payload = {
-        "m8flow_tenant_id": "org-a",
-        "organization": {
-            "org-a": {"id": "org-a"},
-            "org-b": {"id": "org-b"},
-        },
-    }
+    user = SimpleNamespace(
+        groups=[SimpleNamespace(identifier="org-b:reviewer")], service_id=None, username=None
+    )
+    # VerifiedClaims is the contract resolve_request_tenant reads (auth-
+    # provider-seam wayfinder map, ticket 10) -- active_tenant_ref carries
+    # the explicit m8flow_tenant_id claim (org-a) and memberships carries
+    # every organization (org-a, org-b), mirroring the raw payload this test
+    # used to poke g.decoded_token with directly.
+    claims = VerifiedClaims(
+        subject="user-1",
+        issuer="https://example.test/realms/m8flow",
+        active_tenant_ref=TenantRef(id="org-a"),
+        memberships=[
+            Membership(tenant_ref=TenantRef(id="org-a", alias="org-a")),
+            Membership(tenant_ref=TenantRef(id="org-b", alias="org-b")),
+        ],
+    )
     with app.test_request_context(
         "/v1.0/onboarding",
         headers={"Cookie": f"{SELECTED_TENANT_COOKIE_NAME}=org-b"},
     ):
         g.user = user
-        g.decoded_token = payload
+        g.verified_claims = claims
         g.db_session = db_session
         resolve_request_tenant()
         assert g.m8flow_tenant_id == "org-b"

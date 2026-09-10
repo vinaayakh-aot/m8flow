@@ -8,6 +8,7 @@ import requests
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
 from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
 
 ORGS_URL = "http://keycloak.internal/admin/realms/m8flow/organizations"
@@ -43,6 +44,9 @@ def _tenant_http(monkeypatch):
         "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
+    reset_keycloak_settings()
+    yield
+    reset_keycloak_settings()
 
 
 def _acme() -> dict[str, Any]:

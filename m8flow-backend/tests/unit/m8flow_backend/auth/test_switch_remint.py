@@ -12,7 +12,7 @@ import pytest
 
 import m8flow_backend.auth as auth
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
-from m8flow_backend.integrations.auth.base.models import TokenSet
+from m8flow_backend.integrations.auth.base.models import IssuerRef, TokenSet
 
 
 class _FakeProvider:
@@ -25,7 +25,7 @@ class _FakeProvider:
     def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
         self.set_active_tenant_calls.append((username, tenant_id))
 
-    def refresh(self, *, refresh_token: str, authentication_identifier: str) -> TokenSet:
+    def refresh(self, *, refresh_token: str, issuer: IssuerRef) -> TokenSet:
         self.refresh_calls.append(refresh_token)
         if self._refresh_error is not None:
             raise self._refresh_error

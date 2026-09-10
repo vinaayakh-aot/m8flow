@@ -5,8 +5,6 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from m8flow_backend.integrations.auth.keycloak.config import default_organization_alias
-from m8flow_backend.integrations.auth.keycloak.config import default_organization_name
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.models import TenantRef
 from m8flow_backend.db import db
@@ -112,7 +110,7 @@ def resolve_default_shared_realm_tenant_id() -> str | None:
     alias as its slug, so a slug lookup works for both the legacy alias-id row
     and the post-reconciliation canonical organization-id row.
     """
-    organization_alias = default_organization_alias()
+    organization_alias = get_auth_provider().default_tenant_ref().alias
     if not isinstance(organization_alias, str) or not organization_alias.strip():
         return None
 
@@ -143,11 +141,6 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
     if _should_skip_shared_realm_reconciliation():
         return
 
-    organization_alias = default_organization_alias()
-    if not isinstance(organization_alias, str) or not organization_alias.strip():
-        return
-    organization_alias = organization_alias.strip()
-
     with flask_app.app_context():
         from m8flow_backend.db import db
 
@@ -156,6 +149,13 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
                 "shared_realm_bootstrap: skipping reconciliation because m8flow_tenant does not exist yet"
             )
             return
+
+        # get_auth_provider() is not touched above this point -- callers rely
+        # on that (see test_reconcile_skips_when_m8flow_tenant_table_missing).
+        organization_alias = get_auth_provider().default_tenant_ref().alias
+        if not isinstance(organization_alias, str) or not organization_alias.strip():
+            return
+        organization_alias = organization_alias.strip()
 
         try:
             tenant = get_auth_provider().directory_admin.get_tenant(TenantRef(alias=organization_alias))
@@ -178,7 +178,7 @@ def reconcile_default_shared_realm_tenant(flask_app: Any) -> None:
 
         organization_name = tenant.display_name
         if not isinstance(organization_name, str) or not organization_name.strip():
-            organization_name = default_organization_name()
+            organization_name = get_auth_provider().default_tenant_ref().name
         organization_name = organization_name.strip()
 
         from m8flow_backend.models.m8flow_tenant import M8flowTenantModel

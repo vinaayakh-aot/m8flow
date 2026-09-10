@@ -5,6 +5,7 @@ The provider owns Keycloak client authentication.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 import warnings
@@ -13,7 +14,7 @@ import jwt
 import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_admin_password,
     keycloak_admin_user,
     keycloak_url,
@@ -23,6 +24,30 @@ from m8flow_backend.integrations.auth.keycloak.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache fetch_master_admin_token()'s result for (most of) its own lifetime.
+# Every call site in services/tenant_role_service.py used to fetch this token
+# once per top-level operation and thread it through every nested Keycloak
+# Admin API call by hand, specifically to avoid re-authenticating dozens of
+# times per request (auth-provider-seam wayfinder map, ticket 07's audit).
+# Caching it here gives every caller -- that manual threading, and any future
+# capability call that doesn't thread a token at all -- the same benefit
+# without any signature changes, the same idiom as keycloak/settings.py's
+# configure/current_settings and keycloak/jwks.py's JWKS cache.
+_MASTER_ADMIN_TOKEN_SAFETY_MARGIN_SECONDS = 10
+_MASTER_ADMIN_TOKEN_DEFAULT_TTL_SECONDS = 55  # used when the response omits expires_in
+_master_admin_token_lock = threading.Lock()
+_cached_master_admin_token: str | None = None
+_cached_master_admin_token_expires_at: float | None = None
+
+
+def reset_master_admin_token_cache() -> None:
+    """Drop the cached master admin token. Test-only, mirroring
+    reset_jwks_cache()/reset_keycloak_settings()."""
+    global _cached_master_admin_token, _cached_master_admin_token_expires_at
+    with _master_admin_token_lock:
+        _cached_master_admin_token = None
+        _cached_master_admin_token_expires_at = None
 
 
 def load_spoke_p12_private_key():
@@ -79,7 +104,31 @@ def build_client_assertion_jwt(token_url: str, realm: str) -> str:
 
 
 def fetch_master_admin_token() -> str:
-    """Access token via master-realm admin username/password (Admin API)."""
+    """Cached access token via master-realm admin username/password (Admin API).
+
+    Reuses one token across calls until shortly before it expires (§0 above);
+    a cache miss falls through to _fetch_master_admin_token_uncached()."""
+    global _cached_master_admin_token, _cached_master_admin_token_expires_at
+    now = time.monotonic()
+    with _master_admin_token_lock:
+        if _cached_master_admin_token is not None and _cached_master_admin_token_expires_at is not None:
+            if _cached_master_admin_token_expires_at > now:
+                return _cached_master_admin_token
+
+    token, expires_in = _fetch_master_admin_token_uncached()
+    ttl = (expires_in if isinstance(expires_in, (int, float)) and expires_in > 0 else None) or (
+        _MASTER_ADMIN_TOKEN_DEFAULT_TTL_SECONDS
+    )
+    ttl = max(1, ttl - _MASTER_ADMIN_TOKEN_SAFETY_MARGIN_SECONDS)
+    with _master_admin_token_lock:
+        _cached_master_admin_token = token
+        _cached_master_admin_token_expires_at = now + ttl
+    return token
+
+
+def _fetch_master_admin_token_uncached() -> tuple[str, int | None]:
+    """Access token via master-realm admin username/password (Admin API).
+    Returns (access_token, expires_in) -- expires_in may be absent."""
     url = f"{keycloak_url()}/realms/master/protocol/openid-connect/token"
     password = keycloak_admin_password()
     if not password:
@@ -101,6 +150,7 @@ def fetch_master_admin_token() -> str:
             timeout=30,
         )
         response.raise_for_status()
-        return response.json()["access_token"]
+        payload = response.json()
+        return payload["access_token"], payload.get("expires_in")
     except requests.RequestException as exc:
         raise ProviderUnavailable("Could not obtain Keycloak master admin token") from exc

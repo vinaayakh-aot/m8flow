@@ -11,7 +11,7 @@ from typing import Any
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Membership, Tenant, TenantRef, User
 from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
 from m8flow_backend.integrations.auth.keycloak.directory import fetch_user_representation, user_from_representation
 
 logger = logging.getLogger(__name__)
@@ -420,6 +420,7 @@ def list_members(
     *,
     query: str = "",
     limit: int = 50,
+    offset: int = 0,
     admin_token: str | None = None,
 ) -> list[User]:
     tenant = resolve_tenant_ref(tenant_ref, admin_token=admin_token)
@@ -432,6 +433,7 @@ def list_members(
         exact=False,
         admin_token=admin_token,
         max_results=limit,
+        first_result=offset,
     )
     return [user_from_representation(item) for item in representations]
 

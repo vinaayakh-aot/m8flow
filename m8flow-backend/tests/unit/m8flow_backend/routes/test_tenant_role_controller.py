@@ -197,16 +197,23 @@ class _ThinTenantAdminProvider:
     issuer = _SERVICE
 
     def verify_token(self, token: str) -> VerifiedClaims:
+        # "Thin" on purpose: this session's own token only asserts the one
+        # organization it was scoped to (t1) -- not every tenant Keycloak's
+        # directory happens to know about. ensure_request_can_access_tenant
+        # reads VerifiedClaims.memberships (auth-provider-seam wayfinder map,
+        # ticket 10), so this is the request-scoping boundary: it must NOT
+        # include t2, or a thin t1 session could reach t2 data. The fuller
+        # t1+t2 list in list_memberships() below is the separate directory
+        # lookup group-sync enrichment uses -- that gap between "what this
+        # token asserts" and "what the directory actually knows" is the
+        # whole "thin token enrichment" this test is about.
         del token
         return VerifiedClaims(
             subject="kc-tadmin-1",
             issuer=self.issuer,
             username="stale-tadmin",
             roles=[],
-            memberships=[
-                Membership(tenant_ref=TenantRef(id="t1", alias="t1"), roles=[], groups=[]),
-                Membership(tenant_ref=TenantRef(id="t2", alias="t2"), roles=[], groups=[]),
-            ],
+            memberships=[Membership(tenant_ref=TenantRef(id="t1", alias="t1"), roles=[], groups=[])],
             jwt_claims={
                 "sub": "kc-tadmin-1",
                 "iss": self.issuer,

@@ -6,10 +6,11 @@ import pytest
 import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, UserNotFound
-from m8flow_backend.integrations.auth.base.models import User
+from m8flow_backend.integrations.auth.base.models import IssuerRef, User
 from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
 from m8flow_backend.routes.keycloak_controller import create_user_in_realm
 from m8flow_backend.integrations.auth.keycloak import directory
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
 
 USERS_URL = "http://keycloak.internal/admin/realms/m8flow/users"
@@ -44,6 +45,9 @@ def _directory_http(monkeypatch):
         "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
         lambda: "admin-token",
     )
+    reset_keycloak_settings()
+    yield
+    reset_keycloak_settings()
 
 
 def _ada() -> dict[str, Any]:
@@ -65,7 +69,7 @@ def test_get_user_returns_neutral_user(monkeypatch):
         return _FakeResponse([_ada()])
 
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
-    user = KeycloakAuthProvider().get_user(username="ada", authentication_identifier="m8flow")
+    user = KeycloakAuthProvider().get_user(username="ada", issuer=IssuerRef(value="m8flow"))
     assert user == User(
         subject="u1",
         username="ada",
@@ -80,7 +84,7 @@ def test_get_user_raises_user_not_found(monkeypatch):
         lambda *args, **kwargs: _FakeResponse([]),
     )
     with pytest.raises(UserNotFound):
-        KeycloakAuthProvider().get_user(username="missing", authentication_identifier="m8flow")
+        KeycloakAuthProvider().get_user(username="missing", issuer=IssuerRef(value="m8flow"))
 
 
 def test_search_users_returns_neutral_users(monkeypatch):
@@ -91,7 +95,7 @@ def test_search_users_returns_neutral_users(monkeypatch):
         return _FakeResponse([_ada(), {"id": "u2", "username": "ada-admin"}])
 
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
-    users = KeycloakAuthProvider().search_users(query="ada", authentication_identifier="m8flow")
+    users = KeycloakAuthProvider().search_users(query="ada", issuer=IssuerRef(value="m8flow"))
     assert [user.subject for user in users] == ["u1", "u2"]
     assert users[0].username == "ada"
 

@@ -1,6 +1,6 @@
 """M8Flow host configuration from the environment.
 
-Keycloak accessors live in ``m8flow_backend.integrations.auth.keycloak.config``.
+Keycloak accessors live in ``m8flow_backend.integrations.auth.keycloak.settings``.
 """
 from __future__ import annotations
 

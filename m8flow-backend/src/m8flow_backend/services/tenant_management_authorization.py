@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from flask import g
 from flask import request
 
 from m8flow_backend.authorization import allow_uri
 from m8flow_backend.errors import ApiError
-from m8flow_backend.auth.claims import tenant_alias_from_payload
-from m8flow_backend.auth.claims import tenant_id_from_payload
+from m8flow_backend.integrations.auth.base.models import VerifiedClaims
 from m8flow_backend.auth import is_super_admin_request
 
 
@@ -85,41 +82,38 @@ def require_authorized_user(
 
 
 def _normalized_request_tenant_identifiers() -> set[str]:
+    """Every tenant identifier (id and/or alias) this request's session can
+    plausibly be scoped to: the already-resolved request tenant, the
+    finalized/active tenant, and every tenant the user is a member of.
+
+    Reads only `VerifiedClaims` (auth-provider-seam wayfinder map, ticket 10:
+    "Neutralize the token shape") -- `active_tenant_ref` replaces the former
+    raw `m8flow_tenant_id`/`m8flow_tenant_alias`/active-organization claim
+    reads, and `memberships` replaces the raw `organization` claim
+    destructuring. Despite the filename this is tenant-identifier
+    resolution, not authorization.
+    """
     tenant_identifiers: set[str] = set()
 
     request_tenant_id = getattr(g, "m8flow_tenant_id", None)
     if isinstance(request_tenant_id, str) and request_tenant_id.strip():
         tenant_identifiers.add(request_tenant_id.strip())
 
-    decoded_token = getattr(g, "_m8flow_decoded_token", None)
-    if not isinstance(decoded_token, Mapping):
+    claims = getattr(g, "verified_claims", None)
+    if not isinstance(claims, VerifiedClaims):
         return tenant_identifiers
 
-    token_tenant_id = tenant_id_from_payload(decoded_token)
-    if isinstance(token_tenant_id, str) and token_tenant_id.strip():
-        tenant_identifiers.add(token_tenant_id.strip())
+    if claims.active_tenant_ref is not None:
+        if claims.active_tenant_ref.id:
+            tenant_identifiers.add(claims.active_tenant_ref.id.strip())
+        if claims.active_tenant_ref.alias:
+            tenant_identifiers.add(claims.active_tenant_ref.alias.strip())
 
-    token_tenant_alias = tenant_alias_from_payload(decoded_token)
-    if isinstance(token_tenant_alias, str) and token_tenant_alias.strip():
-        tenant_identifiers.add(token_tenant_alias.strip())
-
-    organization_claim = decoded_token.get("organization")
-    if isinstance(organization_claim, Mapping):
-        for alias, details in organization_claim.items():
-            if isinstance(alias, str) and alias.strip():
-                tenant_identifiers.add(alias.strip())
-            if isinstance(details, Mapping):
-                organization_id = details.get("id")
-                if isinstance(organization_id, str) and organization_id.strip():
-                    tenant_identifiers.add(organization_id.strip())
-
-    explicit_tenant_id = decoded_token.get("m8flow_tenant_id")
-    if isinstance(explicit_tenant_id, str) and explicit_tenant_id.strip():
-        tenant_identifiers.add(explicit_tenant_id.strip())
-
-    explicit_tenant_alias = decoded_token.get("m8flow_tenant_alias")
-    if isinstance(explicit_tenant_alias, str) and explicit_tenant_alias.strip():
-        tenant_identifiers.add(explicit_tenant_alias.strip())
+    for membership in claims.memberships:
+        if membership.tenant_ref.id:
+            tenant_identifiers.add(membership.tenant_ref.id.strip())
+        if membership.tenant_ref.alias:
+            tenant_identifiers.add(membership.tenant_ref.alias.strip())
 
     return tenant_identifiers
 

@@ -4,7 +4,6 @@ from flask import Flask, g, jsonify, request
 
 from m8flow_backend import catalog, human_task, identity, secrets, workflow
 from m8flow_backend.auth import (
-    authentication_identifier_for_request,
     clear_dead_auth_realm_cookie,
     encode_auth_token,
     on_login_or_token_enrichment,
@@ -12,7 +11,6 @@ from m8flow_backend.auth import (
     set_selected_tenant_cookie,
 )
 from m8flow_backend.authorization.decorators import require_permission
-from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
@@ -285,8 +283,6 @@ def register_v1_routes(app: Flask) -> None:
             response = jsonify({"access_token": token, "token_type": "Bearer"})
             set_selected_tenant_cookie(response, tenant_id)
             clear_dead_auth_realm_cookie(response)
-            _ = authentication_identifier_for_request()
-            _ = master_realm_name()
             return response
 
     # Browser-redirect Keycloak login/logout (distinct from the JSON POST /v1.0/login

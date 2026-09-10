@@ -9,8 +9,6 @@ from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TenantNotFound, TokenInvalid
 from m8flow_backend.integrations.auth.base.models import TenantRef
 from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
-from m8flow_backend.integrations.auth.keycloak.oidc import authorization_endpoint
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
 from m8flow_backend.services.tenant_management_authorization import require_authorized_user
 from sqlalchemy.exc import IntegrityError
@@ -164,31 +162,6 @@ def create_realm(body: dict) -> tuple[dict, int]:
         return {"detail": str(e)}, 400
 
 
-def tenant_login(body: dict) -> tuple[dict, int]:
-    """Login as a user in a spoke realm. Returns (token_response_dict, status_code)."""
-    realm = body.get("realm")
-    username = body.get("username")
-    password = body.get("password")
-    if not realm or not username:
-        return {"detail": "realm and username are required"}, 400
-    if password is None:
-        password = ""
-    try:
-        result = get_auth_provider().password_grant(
-            realm=str(realm).strip(),
-            username=str(username),
-            password=password,
-        )
-        return result, 200
-    except TokenInvalid:
-        return {"detail": "Invalid credentials"}, 401
-    except ProviderUnavailable as e:
-        logger.warning("Keycloak tenant login failed: %s", e)
-        return {"detail": str(e)}, 500
-    except ValueError as e:
-        return {"detail": str(e)}, 400
-
-
 def create_user_in_realm(realm: str, body: dict) -> tuple[dict, int]:
     """Create a user in a spoke realm. Returns (response_dict, status_code)."""
     username = body.get("username")
@@ -225,12 +198,12 @@ def get_tenant_login_url(tenant: str) -> tuple[dict, int]:
     if not tenant_exists.get("exists"):
         return {"detail": "Tenant not found"}, 404
     try:
-        auth_identifier = shared_realm_name()
-        login_url = authorization_endpoint(auth_identifier)
+        auth_identifier = get_auth_provider().default_issuer()
+        login_url = get_auth_provider().authorization_endpoint_url(auth_identifier)
         return {
             "login_url": login_url,
-            "realm": auth_identifier,
-            "authentication_identifier": auth_identifier,
+            "realm": auth_identifier.value,
+            "authentication_identifier": auth_identifier.value,
             "tenant_id": tenant_exists["tenant_id"],
         }, 200
     except ValueError as e:

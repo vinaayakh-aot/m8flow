@@ -4,7 +4,7 @@ import ast
 import base64
 from urllib.parse import parse_qs, urlparse
 
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     shared_realm_name,
     spoke_client_id,
@@ -312,15 +312,57 @@ class _DirectoryProvider:
     def __init__(self, memberships):
         self._memberships = memberships
 
+    def verify_token(self, token: str):
+        """try_finalize_shared_realm_session's fallback path (auth-provider-
+        seam wayfinder map, ticket 10) re-verifies through the port when
+        decode_auth_token's HS256 branch (this fixture mints HS256 tokens
+        via encode_auth_token, standing in for an already-authenticated
+        shared-realm session) never populated g.verified_claims. A real
+        Keycloak provider would reject an HS256 token outright; this fake
+        instead decodes it and maps the same organization-claim shape
+        verified_claims_from_payload used to, so these tests keep exercising
+        the full-fidelity claims path rather than the minimal wrapper."""
+        import jwt as _jwt
+
+        from m8flow_backend.auth import JWT_ALGORITHM, jwt_secret
+        from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
+
+        payload = _jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
+        memberships = []
+        for alias, details in (payload.get("organization") or {}).items():
+            details = details if isinstance(details, dict) else {}
+            memberships.append(
+                Membership(
+                    tenant_ref=TenantRef(id=details.get("id"), alias=alias, name=details.get("name"))
+                )
+            )
+        return VerifiedClaims(
+            subject=str(payload.get("sub") or ""),
+            issuer=str(payload.get("iss") or ""),
+            username=payload.get("preferred_username"),
+            memberships=memberships,
+            jwt_claims=payload,
+        )
+
     def list_memberships(self, *, username: str):
         del username
         return list(self._memberships)
+
+    def default_tenant_ref(self):
+        from m8flow_backend.integrations.auth.base.models import TenantRef
+
+        return TenantRef(alias=shared_realm_name(), name=shared_realm_name())
+
+    def default_issuer(self):
+        from m8flow_backend.integrations.auth.base.models import IssuerRef
+
+        return IssuerRef(value=shared_realm_name())
 
 
 def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_session, monkeypatch):
     from m8flow_backend.identity import ensure_tenant
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
     from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
@@ -375,7 +417,7 @@ def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_se
 def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_session, monkeypatch):
     from m8flow_backend.identity import ensure_tenant
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
     from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -435,7 +477,7 @@ def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_
 
 def test_tenant_finalization_forbidden_when_tenant_not_in_session(client, db_session, monkeypatch):
     from m8flow_backend.identity import ensure_tenant
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
     ensure_tenant(db_session, tenant_id="t-other", slug="t-other")
@@ -467,7 +509,7 @@ def test_tenant_finalization_forbidden_when_tenant_not_in_session(client, db_ses
 
 def test_tenant_finalization_falls_back_when_session_cannot_be_parsed(client, db_session):
     from m8flow_backend.identity import ensure_tenant
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
     from urllib.parse import urlparse
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -494,7 +536,7 @@ def test_tenant_finalization_enriches_thin_token_from_directory(client, db_sessi
     from m8flow_backend.auth import encode_auth_token
     from m8flow_backend.identity import ensure_tenant, ensure_user
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
     from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1", name="Tenant 1")
@@ -539,7 +581,7 @@ def test_tenant_finalization_enriches_thin_token_from_directory(client, db_sessi
 def test_tenant_finalization_falls_back_when_session_lacks_organizations(client, db_session, monkeypatch):
     from m8flow_backend.auth import encode_auth_token
     from m8flow_backend.identity import ensure_tenant, ensure_user
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
     from urllib.parse import urlparse
 
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -572,12 +614,23 @@ def test_tenant_finalization_falls_back_when_session_lacks_organizations(client,
     assert parsed.path.endswith("/protocol/openid-connect/auth")
 
 
-def test_tenant_finalization_not_found_when_tenant_missing(client, db_session):
-    from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+def test_tenant_finalization_not_found_when_tenant_missing(client, db_session, monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak.settings import shared_realm_name
 
     token = _finalization_token(
         username="editor",
         organizations={"missing": {"id": "missing"}},
+    )
+    # _finalization_token mints an HS256 token whose "issuer" is a fake
+    # https://example.test/... realm the real KeycloakAuthProvider would
+    # correctly refuse to trust (auth-provider-seam wayfinder map, ticket
+    # 10's fallback now re-verifies through the port instead of hand-mapping
+    # an unverified payload) -- use the same fake directory provider the
+    # sibling finalization tests use so this test still reaches the
+    # tenant-lookup 404 it's actually about.
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider",
+        lambda: _DirectoryProvider([]),
     )
     client.set_cookie("access_token", token)
     client.set_cookie("authentication_identifier", shared_realm_name())

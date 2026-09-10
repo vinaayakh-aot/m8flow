@@ -18,6 +18,7 @@ from m8flow_backend.auth.canonicalize import (
     current_tenant_id_or_none,
     current_tenant_identifiers,
 )
+from m8flow_backend.integrations.auth.base.models import VerifiedClaims
 
 REALM_ID_CLAIM = "m8flow_realm_id"
 ORGANIZATION_CLAIM = "organization"
@@ -69,13 +70,19 @@ def user_belongs_to_current_tenant(
     return False
 
 
-def local_user_from_payload(payload: Mapping[str, Any] | None) -> Any | None:
-    """Resolve the local mirrored user row for an external token payload."""
-    if payload is None:
+def local_user_from_claims(claims: VerifiedClaims | None) -> Any | None:
+    """Resolve the local mirrored user row for a verified session's claims.
+
+    Replaces the former ``local_user_from_payload(payload)`` (auth-provider-
+    seam wayfinder map, ticket 10): ``claims.issuer``/``claims.subject`` are
+    the same values a raw payload's ``iss``/``sub`` claims held, now read
+    from the typed contract instead of a raw dict.
+    """
+    if claims is None:
         return None
 
-    issuer = payload.get("iss")
-    subject = payload.get("sub")
+    issuer = getattr(claims, "issuer", None)
+    subject = getattr(claims, "subject", None)
     if not isinstance(issuer, str) or not issuer.strip():
         return None
     if not isinstance(subject, str) or not subject.strip():
@@ -91,13 +98,13 @@ def local_user_from_payload(payload: Mapping[str, Any] | None) -> Any | None:
         return None
 
 
-def payload_user_belongs_to_tenant(
-    payload: Mapping[str, Any] | None,
+def claims_user_belongs_to_tenant(
+    claims: VerifiedClaims | None,
     tenant_id: str | None = None,
     tenant_identifiers: set[str] | None = None,
 ) -> bool:
-    """Return whether the local mirrored user for a token belongs to the given tenant."""
-    user = local_user_from_payload(payload)
+    """Return whether the local mirrored user for a verified session belongs to the given tenant."""
+    user = local_user_from_claims(claims)
     if user is None:
         return False
     return user_belongs_to_current_tenant(
@@ -110,10 +117,9 @@ def payload_user_belongs_to_tenant(
 def _shared_realm_service_issuer() -> str | None:
     """Return the configured shared-realm issuer URL used for local user rows."""
     try:
-        from m8flow_backend.integrations.auth.keycloak.config import keycloak_url
-        from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
+        from m8flow_backend.integrations.auth import get_auth_provider
 
-        return f"{keycloak_url().rstrip('/')}/realms/{shared_realm_name().strip()}"
+        return get_auth_provider().default_issuer_claim()
     except Exception:
         return None
 
@@ -298,7 +304,7 @@ def upsert_local_shared_realm_member(member: Mapping[str, Any]) -> Any | None:
     return _upsert_local_shared_realm_member(member)
 
 
-def _member_mapping_from_user(user: Any) -> dict[str, Any]:
+def member_mapping_from_user(user: Any) -> dict[str, Any]:
     return {
         "id": user.subject,
         "username": user.username,
@@ -363,7 +369,7 @@ def _provision_shared_realm_user_for_tenant(username: str, tenant_id: str | None
             username=normalized_username,
             tenant_ref=TenantRef(id=organization_id),
         )
-        return _upsert_local_shared_realm_member(_member_mapping_from_user(user))
+        return _upsert_local_shared_realm_member(member_mapping_from_user(user))
     except UserNotFound:
         return None
     except Exception:
@@ -445,7 +451,7 @@ def find_users_for_current_tenant_by_username_prefix(
                 if not isinstance(member_username, str) or not member_username.startswith(normalized_prefix):
                     continue
 
-                local_user = _upsert_local_shared_realm_member(_member_mapping_from_user(user))
+                local_user = _upsert_local_shared_realm_member(member_mapping_from_user(user))
                 if local_user is None:
                     continue
 

@@ -1,16 +1,27 @@
-"""Keycloak OIDC URL builders and token grants."""
+"""Keycloak-specific overrides on top of ``base/oidc.py``'s spec-defined
+engine (auth-provider-seam wayfinder map, ticket 04).
+
+Discovery/JWKS fetch+cache, RS256 verification, and the authorization-code/
+refresh token-endpoint grants all live in ``base.oidc.OidcClient`` now. Only
+what's genuinely Keycloak-specific remains here: realm URL templating, the
+public/internal Docker base split (``_internalize_url``), and Keycloak's own
+issuer/audience allow-listing rules -- exactly the ~54 lines ticket 04's own
+audit found weren't spec-defined.
+"""
 from __future__ import annotations
 
-import logging
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlparse
 
-import requests
+# Kept importable (not used directly below) so existing tests that
+# monkeypatch "keycloak.oidc.requests.post" keep resolving -- the actual
+# POST now happens in base/oidc.py's OidcClient._post_token, but `requests`
+# is one process-wide module object: patching .post here mutates the same
+# function object base/oidc.py calls.
+import requests  # noqa: F401
 
-from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
-from m8flow_backend.integrations.auth.base.models import TokenSet
-from m8flow_backend.integrations.auth.keycloak.client_auth import build_client_assertion_jwt
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.base.oidc import OidcClient
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     keycloak_url,
     master_client_secret,
@@ -18,162 +29,71 @@ from m8flow_backend.integrations.auth.keycloak.config import (
     spoke_client_secret,
 )
 
-logger = logging.getLogger(__name__)
 
-_TOKEN_TIMEOUT_SECONDS = 30
+class _KeycloakOidcClient(OidcClient):
+    """Keycloak's realization of the OIDC hooks. Every method here reads
+    settings live (via keycloak/settings.py's accessors), not at
+    construction time, so `configure()`/`reset_keycloak_settings()` between
+    tests are picked up correctly."""
 
+    def discovery_url(self, realm: str) -> str:
+        return f"{keycloak_url().rstrip('/')}/realms/{realm}/.well-known/openid-configuration"
 
-def authorization_endpoint(realm: str) -> str:
-    """Browser-facing authorization URL (public issuer base, no query)."""
-    if not realm or not str(realm).strip():
-        raise ValueError("realm is required")
-    realm = str(realm).strip()
-    return f"{keycloak_public_issuer_base()}/realms/{realm}/protocol/openid-connect/auth"
+    def token_url(self, realm: str) -> str:
+        return f"{keycloak_url()}/realms/{str(realm).strip()}/protocol/openid-connect/token"
 
+    def authorization_endpoint(self, realm: str) -> str:
+        if not realm or not str(realm).strip():
+            raise ValueError("realm is required")
+        return f"{keycloak_public_issuer_base()}/realms/{str(realm).strip()}/protocol/openid-connect/auth"
 
-def token_endpoint(realm: str) -> str:
-    """Server-side token URL (container-internal Keycloak base)."""
-    realm = str(realm).strip()
-    return f"{keycloak_url()}/realms/{realm}/protocol/openid-connect/token"
+    def logout_endpoint(self, realm: str) -> str:
+        return f"{keycloak_public_issuer_base()}/realms/{str(realm).strip()}/protocol/openid-connect/logout"
 
+    def internalize_url(self, url: str) -> str:
+        public = keycloak_public_issuer_base().rstrip("/")
+        internal = keycloak_url().rstrip("/")
+        if public and url.startswith(public):
+            return internal + url[len(public):]
+        return url
 
-def logout_endpoint(realm: str) -> str:
-    """Browser-facing RP-initiated logout URL (public issuer base, no query)."""
-    realm = str(realm).strip()
-    return f"{keycloak_public_issuer_base()}/realms/{realm}/protocol/openid-connect/logout"
+    def realm_from_issuer(self, issuer: str) -> str | None:
+        parsed = urlparse(issuer)
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 2 and parts[0] == "realms":
+            return parts[1]
+        return None
 
+    def issuer_is_allowed(self, issuer: str, *, realm: str) -> bool:
+        allowed = {
+            f"{keycloak_public_issuer_base().rstrip('/')}/realms/{realm}",
+            f"{keycloak_url().rstrip('/')}/realms/{realm}",
+        }
+        return issuer.rstrip("/") in allowed
 
-def build_authorization_url(
-    *,
-    realm: str,
-    redirect_uri: str,
-    state: str,
-    prompt: str | None = None,
-) -> str:
-    params: dict[str, str] = {
-        "client_id": spoke_client_id(),
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": state,
-    }
-    if prompt:
-        params["prompt"] = prompt
-    return f"{authorization_endpoint(realm)}?{urlencode(params)}"
+    def audience_is_allowed(self, payload: dict[str, Any]) -> bool:
+        client_id = spoke_client_id()
+        azp = payload.get("azp")
+        aud = payload.get("aud")
+        if azp == client_id:
+            return True
+        if isinstance(aud, str) and aud in {client_id, "account"}:
+            return True
+        if isinstance(aud, list) and (client_id in aud or "account" in aud):
+            return True
+        if aud is None and azp is None:
+            return True
+        return False
 
+    def client_id(self) -> str:
+        return spoke_client_id()
 
-def build_logout_url(
-    *,
-    realm: str,
-    redirect_uri: str | None = None,
-    id_token_hint: str | None = None,
-) -> str:
-    params: dict[str, str] = {}
-    if id_token_hint:
-        params["id_token_hint"] = id_token_hint
-    if redirect_uri:
-        params["post_logout_redirect_uri"] = redirect_uri
-    if not params:
-        return logout_endpoint(realm)
-    return f"{logout_endpoint(realm)}?{urlencode(params)}"
-
-
-def _client_secret() -> str:
-    return spoke_client_secret() or master_client_secret()
-
-
-def _token_set_from_response(payload: dict[str, Any]) -> TokenSet:
-    access_token = payload.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
-        raise TokenInvalid("Keycloak did not return an access token")
-    expires_in = payload.get("expires_in")
-    refresh_expires_in = payload.get("refresh_expires_in")
-    return TokenSet(
-        access_token=access_token,
-        refresh_token=payload.get("refresh_token") if isinstance(payload.get("refresh_token"), str) else None,
-        id_token=payload.get("id_token") if isinstance(payload.get("id_token"), str) else None,
-        expires_in=int(expires_in) if expires_in is not None else None,
-        refresh_expires_in=int(refresh_expires_in) if refresh_expires_in is not None else None,
-    )
+    def client_auth_params(self) -> dict[str, str]:
+        return {"client_id": spoke_client_id(), "client_secret": spoke_client_secret() or master_client_secret()}
 
 
-def exchange_authorization_code(*, realm: str, code: str, redirect_uri: str) -> TokenSet:
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "client_id": spoke_client_id(),
-        "client_secret": _client_secret(),
-    }
-    return _post_token(realm, data, failure_log="authorization-code exchange")
-
-
-def refresh_tokens(*, realm: str, refresh_token: str) -> TokenSet:
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id": spoke_client_id(),
-        "client_secret": _client_secret(),
-    }
-    return _post_token(realm, data, failure_log="refresh")
-
-
-def password_grant(*, realm: str, username: str, password: str) -> dict[str, Any]:
-    """Spoke-realm resource-owner password grant using the PKCS#12 client assertion."""
-    if not realm or not username:
-        raise ValueError("realm and username are required")
-    url = token_endpoint(realm)
-    data = {
-        "grant_type": "password",
-        "client_id": spoke_client_id(),
-        "username": username,
-        "password": password,
-        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-        "client_assertion": build_client_assertion_jwt(url, realm),
-    }
-    try:
-        response = requests.post(
-            url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=_TOKEN_TIMEOUT_SECONDS,
-            allow_redirects=False,
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else 500
-        if status == 401:
-            raise TokenInvalid("Invalid credentials") from exc
-        raise ProviderUnavailable("Keycloak password grant failed") from exc
-    except requests.RequestException as exc:
-        raise ProviderUnavailable("Keycloak password grant failed") from exc
-
-
-def _post_token(realm: str, data: dict[str, str], *, failure_log: str) -> TokenSet:
-    url = token_endpoint(realm)
-    try:
-        response = requests.post(
-            url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=_TOKEN_TIMEOUT_SECONDS,
-        )
-    except requests.RequestException as exc:
-        raise ProviderUnavailable(f"Keycloak {failure_log} request failed") from exc
-    if not response.ok:
-        logger.warning(
-            "Keycloak %s failed: realm=%s status=%s body=%s",
-            failure_log,
-            realm,
-            response.status_code,
-            response.text[:500],
-        )
-        raise TokenInvalid(f"Keycloak {failure_log} was rejected")
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise TokenInvalid(f"Keycloak {failure_log} returned non-JSON") from exc
-    if not isinstance(payload, dict):
-        raise TokenInvalid(f"Keycloak {failure_log} returned an unexpected payload")
-    return _token_set_from_response(payload)
+#: Process-wide singleton -- shares one JWKS cache across every call site,
+#: exactly as the pre-hoist module-level `_jwks_cache` dict did. Imported by
+#: keycloak/jwks.py (verify_access_token/reset_jwks_cache) and
+#: keycloak/provider.py (KeycloakAuthProvider's OidcAuthProvider base).
+oidc_client = _KeycloakOidcClient()

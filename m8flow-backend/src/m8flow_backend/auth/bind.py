@@ -121,15 +121,6 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
     if not has_request_context():
         return False
 
-    try:
-        from m8flow_backend.integrations.auth.keycloak.config import master_realm_name
-        from m8flow_backend.auth.claims import (
-            authentication_identifier_from_payload,
-            extract_realm_from_issuer,
-        )
-    except Exception:
-        return False
-
     decoded_token = getattr(g, "_m8flow_decoded_token", None)
     if not isinstance(decoded_token, dict):
         decoded_token = getattr(g, "decoded_token", None)
@@ -155,10 +146,25 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
     if not isinstance(decoded_token, dict):
         return False
 
-    master_realm = master_realm_name()
-    authentication_identifier = authentication_identifier_from_payload(decoded_token)
-    issuer_realm = extract_realm_from_issuer(decoded_token.get("iss"))
-    return authentication_identifier == master_realm or issuer_realm == master_realm
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.models import VerifiedClaims
+
+    verified_claims = getattr(g, "verified_claims", None)
+    if not isinstance(verified_claims, VerifiedClaims):
+        # Not every path that reaches here has a full VerifiedClaims stored --
+        # a local HS256 token (decode_auth_token's "local token" branch) never
+        # gets one, and its `iss` can still be a Keycloak-shaped realm URL
+        # (identity_helpers.py's local-user sync sets `service`, which becomes
+        # `iss`, to exactly that shape). is_master_issuer only reads
+        # .issuer/.jwt_claims, so a minimal wrapper around the raw payload
+        # preserves behavior without needing a real verified session.
+        verified_claims = VerifiedClaims(
+            subject=str(decoded_token.get("sub") or ""),
+            issuer=str(decoded_token.get("iss") or ""),
+            jwt_claims=decoded_token,
+        )
+
+    return get_auth_provider().is_master_issuer(verified_claims)
 
 
 def is_tenant_context_exempt_request() -> bool:
@@ -243,37 +249,47 @@ def _canonical(tenant_id: str) -> str:
     return _canonical_tenant_id_from_identifiers(tenant_id) or tenant_id.strip()
 
 
-def _payload_matches_cookie(payload: dict | None, cookie: str) -> bool:
-    if not isinstance(payload, dict):
+def _claims_match_cookie(claims, cookie: str) -> bool:
+    """Neutral replacement for the former ``_payload_matches_cookie`` (auth-
+    provider-seam wayfinder map, ticket 10): reads ``VerifiedClaims.memberships``
+    instead of destructuring the raw ``organization`` claim."""
+    from m8flow_backend.integrations.auth.base.models import VerifiedClaims
+
+    if not isinstance(claims, VerifiedClaims):
         return False
-    from m8flow_backend.auth.claims import organization_memberships_from_payload
     from m8flow_backend.auth.canonicalize import current_tenant_identifiers
-    from m8flow_backend.auth.identity_helpers import payload_user_belongs_to_tenant
+    from m8flow_backend.auth.identity_helpers import claims_user_belongs_to_tenant
 
     selected = current_tenant_identifiers(cookie) or {cookie}
-    for alias, details in organization_memberships_from_payload(payload):
-        org_ids = {alias}
-        org_id = details.get("id")
-        if isinstance(org_id, str) and org_id.strip():
-            org_ids.add(org_id.strip())
+    for membership in claims.memberships:
+        org_ids: set[str] = set()
+        if membership.tenant_ref.alias:
+            org_ids.add(membership.tenant_ref.alias)
+        if membership.tenant_ref.id:
+            org_ids.add(membership.tenant_ref.id)
         if org_ids.intersection(selected):
             return True
-    return payload_user_belongs_to_tenant(
-        payload, tenant_id=cookie, tenant_identifiers=selected
-    )
+    return claims_user_belongs_to_tenant(claims, tenant_id=cookie, tenant_identifiers=selected)
 
 
-def _jwt_tenant(payload: dict | None) -> str | None:
-    if not isinstance(payload, dict):
-        return None
-    from m8flow_backend.auth.claims import tenant_id_from_payload
+def _jwt_tenant(claims, payload: dict | None) -> str | None:
+    """Neutral replacement for the former raw-payload-only lookup (auth-
+    provider-seam wayfinder map, ticket 10): ``VerifiedClaims.active_tenant_ref``
+    carries the finalized/active tenant. The ``TENANT_CLAIM`` (default
+    ``m8flow_tenant_id``, overridable via ``M8FLOW_TENANT_CLAIM``) fallback
+    stays a raw-payload read on purpose -- it's a host-configurable generic
+    claim name, not Keycloak-shape parsing, so it can't be expressed as a
+    fixed VerifiedClaims field."""
+    from m8flow_backend.integrations.auth.base.models import VerifiedClaims
 
-    claimed = tenant_id_from_payload(payload)
-    if is_concrete_tenant_id(claimed):
-        return claimed
-    explicit = payload.get(TENANT_CLAIM)
-    if isinstance(explicit, str) and is_concrete_tenant_id(explicit.strip()):
-        return explicit.strip()
+    if isinstance(claims, VerifiedClaims) and claims.active_tenant_ref is not None:
+        candidate = claims.active_tenant_ref.id or claims.active_tenant_ref.alias
+        if candidate and is_concrete_tenant_id(candidate):
+            return candidate
+    if isinstance(payload, dict):
+        explicit = payload.get(TENANT_CLAIM)
+        if isinstance(explicit, str) and is_concrete_tenant_id(explicit.strip()):
+            return explicit.strip()
     return None
 
 
@@ -330,12 +346,13 @@ def resolve_request_tenant() -> None:
         return
 
     payload = _decoded_payload()
+    claims = getattr(g, "verified_claims", None)
     cookie = _cookie_tenant()
-    if cookie and _payload_matches_cookie(payload, cookie):
+    if cookie and _claims_match_cookie(claims, cookie):
         bind_request_tenant(cookie)
         return
 
-    jwt_tenant = _jwt_tenant(payload)
+    jwt_tenant = _jwt_tenant(claims, payload)
     if jwt_tenant:
         bind_request_tenant(jwt_tenant)
         return

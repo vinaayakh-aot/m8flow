@@ -20,7 +20,7 @@ import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
-from m8flow_backend.integrations.auth.keycloak.config import keycloak_url
+from m8flow_backend.integrations.auth.keycloak.settings import keycloak_url
 
 _HTTP_TIMEOUT_SECONDS = 30
 

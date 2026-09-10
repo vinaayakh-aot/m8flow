@@ -11,7 +11,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from m8flow_backend.auth import JWT_ALGORITHM, decode_auth_token, jwt_secret
 from m8flow_backend.integrations.auth.base.errors import TokenInvalid
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     keycloak_url,
     shared_realm_name,

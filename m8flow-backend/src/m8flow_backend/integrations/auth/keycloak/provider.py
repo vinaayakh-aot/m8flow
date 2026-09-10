@@ -1,87 +1,69 @@
-"""Keycloak realization of ``AuthProvider``.
+"""Keycloak realization of ``AuthProvider``, on top of ``OidcAuthProvider``.
 
-Session/OIDC + JWKS ``verify_token``, directory user get/search/create/delete,
-tenant/membership operations, group/role mapping, and realm provisioning.
+Session/OIDC + JWKS ``verify_token`` are inherited (auth-provider-seam
+wayfinder map, ticket 04); this module supplies claims mapping, directory
+user get/search/create/delete, tenant/membership operations, group/role
+mapping, and realm provisioning.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from m8flow_backend.integrations.auth.base.capabilities import SupportsDirectoryAdmin, SupportsProvisioning
-from m8flow_backend.integrations.auth.base.errors import TokenInvalid, UserNotFound
-from m8flow_backend.integrations.auth.base.models import Group, Membership, Tenant, TenantRef, TokenSet, User, VerifiedClaims
-from m8flow_backend.integrations.auth.base.provider import AuthProvider
-from m8flow_backend.integrations.auth.keycloak import directory, groups, oidc, tenants
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
-from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
-from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
-from m8flow_backend.integrations.auth.keycloak.jwks import verify_access_token
+from m8flow_backend.integrations.auth.base.errors import UserNotFound
+from m8flow_backend.integrations.auth.base.models import (
+    Group,
+    IssuerRef,
+    Membership,
+    Tenant,
+    TenantRef,
+    User,
+    VerifiedClaims,
+)
+from m8flow_backend.integrations.auth.base.oidc import OidcAuthProvider
+from m8flow_backend.integrations.auth.keycloak import directory, groups, tenants
+from m8flow_backend.integrations.auth.keycloak.settings import (
+    KeycloakSettings,
+    configure,
+    default_organization_alias,
+    default_organization_name,
+    keycloak_url,
+    master_realm_name,
+    shared_realm_name,
+)
+from m8flow_backend.integrations.auth.keycloak.claims import (
+    extract_realm_from_issuer,
+    realm_name_from_payload,
+    verified_claims_from_payload,
+)
+from m8flow_backend.integrations.auth.keycloak.oidc import oidc_client
 from m8flow_backend.integrations.auth.keycloak.provisioning import KeycloakProvisioning
 
 
-class KeycloakAuthProvider(AuthProvider):
-    """Concrete Keycloak provider."""
+class KeycloakAuthProvider(OidcAuthProvider):
+    """Concrete Keycloak provider. Session/OIDC + verify_token are inherited
+    from OidcAuthProvider (auth-provider-seam wayfinder map, ticket 04) --
+    this class supplies map_claims plus everything Keycloak-specific:
+    directory reads, self-description, and the directory-admin/provisioning
+    capabilities."""
 
-    def build_login_url(
-        self,
-        *,
-        redirect_uri: str,
-        state: str,
-        authentication_identifier: str,
-        nonce: str | None = None,
-        prompt: str | None = None,
-    ) -> str:
-        del nonce  # stored by the host in state/cookie; not sent to Keycloak today
-        return oidc.build_authorization_url(
-            realm=authentication_identifier,
-            redirect_uri=redirect_uri,
-            state=state,
-            prompt=prompt,
-        )
+    def __init__(self, settings: KeycloakSettings | None = None) -> None:
+        # Resolves fresh from the environment when no explicit settings is
+        # given (existing bare ``KeycloakAuthProvider()`` call sites keep
+        # working unchanged), then configures the module-level adapter
+        # functions (settings.py's back-compat API) to use it -- the same
+        # singleton idiom factory.py and jwks.py already use elsewhere.
+        self._settings = settings if settings is not None else KeycloakSettings.from_env()
+        configure(self._settings)
+        super().__init__(oidc_client)
 
-    def exchange_code(
-        self,
-        *,
-        code: str,
-        redirect_uri: str,
-        authentication_identifier: str,
-    ) -> TokenSet:
-        return oidc.exchange_authorization_code(
-            realm=authentication_identifier,
-            code=code,
-            redirect_uri=redirect_uri,
-        )
+    def map_claims(self, payload: dict[str, Any]) -> VerifiedClaims:
+        # ValueError -> TokenInvalid translation happens once, centrally, in
+        # OidcAuthProvider.verify_token -- map_claims just maps.
+        return verified_claims_from_payload(payload)
 
-    def refresh(self, *, refresh_token: str, authentication_identifier: str) -> TokenSet:
-        return oidc.refresh_tokens(realm=authentication_identifier, refresh_token=refresh_token)
-
-    def build_logout_url(
-        self,
-        *,
-        authentication_identifier: str,
-        redirect_uri: str | None = None,
-        id_token_hint: str | None = None,
-    ) -> str:
-        return oidc.build_logout_url(
-            realm=authentication_identifier,
-            redirect_uri=redirect_uri,
-            id_token_hint=id_token_hint,
-        )
-
-    def verify_token(self, token: str) -> VerifiedClaims:
-        payload = verify_access_token(token)
-        try:
-            return verified_claims_from_payload(payload)
-        except ValueError as exc:
-            raise TokenInvalid(str(exc)) from exc
-
-    def master_admin_token(self) -> str:
-        """Master-realm admin token for Keycloak Admin API callers still in services."""
-        return fetch_master_admin_token()
-
-    def password_grant(self, *, realm: str, username: str, password: str) -> dict:
-        return oidc.password_grant(realm=realm, username=username, password=password)
-
-    def get_user(self, *, username: str, authentication_identifier: str) -> User:
-        representation = directory.fetch_user_representation(authentication_identifier, username)
+    def get_user(self, *, username: str, issuer: IssuerRef) -> User:
+        representation = directory.fetch_user_representation(issuer.value, username)
         if representation is None:
             raise UserNotFound(username)
         return directory.user_from_representation(representation)
@@ -90,13 +72,15 @@ class KeycloakAuthProvider(AuthProvider):
         self,
         *,
         query: str,
-        authentication_identifier: str,
+        issuer: IssuerRef,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[User]:
         representations = directory.search_user_representations(
-            authentication_identifier,
+            issuer.value,
             query,
             max_results=limit,
+            first_result=offset,
         )
         return [directory.user_from_representation(item) for item in representations]
 
@@ -114,6 +98,40 @@ class KeycloakAuthProvider(AuthProvider):
             value=tenant_id,
         )
 
+    def default_issuer(self) -> IssuerRef:
+        return IssuerRef(value=shared_realm_name())
+
+    def default_tenant_ref(self) -> TenantRef:
+        return TenantRef(alias=default_organization_alias(), name=default_organization_name())
+
+    def authorization_endpoint_url(self, issuer: IssuerRef) -> str:
+        return self._oidc.authorization_endpoint(issuer.value)
+
+    def default_issuer_claim(self) -> str:
+        return f"{keycloak_url().rstrip('/')}/realms/{shared_realm_name().strip()}"
+
+    def is_master_issuer(self, claims: VerifiedClaims) -> bool:
+        master_realm = master_realm_name()
+        authentication_identifier = realm_name_from_payload(claims.jwt_claims)
+        issuer_realm = extract_realm_from_issuer(claims.issuer)
+        return authentication_identifier == master_realm or issuer_realm == master_realm
+
+    @property
+    def user_admin(self) -> SupportsDirectoryAdmin:
+        return _KeycloakDirectoryAdmin()
+
+    @property
+    def tenant_admin(self) -> SupportsDirectoryAdmin:
+        return _KeycloakDirectoryAdmin()
+
+    @property
+    def group_admin(self) -> SupportsDirectoryAdmin:
+        return _KeycloakDirectoryAdmin()
+
+    @property
+    def role_admin(self) -> SupportsDirectoryAdmin:
+        return _KeycloakDirectoryAdmin()
+
     @property
     def directory_admin(self) -> SupportsDirectoryAdmin:
         return _KeycloakDirectoryAdmin()
@@ -123,8 +141,11 @@ class KeycloakAuthProvider(AuthProvider):
         return KeycloakProvisioning()
 
 
-class _KeycloakDirectoryAdmin:
-    """Directory mutations: users, tenants, memberships, and groups."""
+class _KeycloakDirectoryAdmin(SupportsDirectoryAdmin):
+    """Directory mutations: users, tenants, memberships, and groups. One class
+    implementing all four narrow capabilities (SupportsDirectoryAdmin's
+    composing aggregate) -- Keycloak supports everything, so there's no
+    reason to split the implementation, only the interface (ticket 13)."""
 
     def create_user(
         self,
@@ -159,8 +180,9 @@ class _KeycloakDirectoryAdmin:
         tenant_ref: TenantRef,
         query: str = "",
         limit: int = 50,
+        offset: int = 0,
     ) -> list[User]:
-        return tenants.list_members(tenant_ref, query=query, limit=limit)
+        return tenants.list_members(tenant_ref, query=query, limit=limit, offset=offset)
 
     def get_tenant(self, tenant_ref: TenantRef) -> Tenant:
         return tenants.resolve_tenant_ref(tenant_ref)
@@ -179,6 +201,9 @@ class _KeycloakDirectoryAdmin:
     def assign_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> Membership:
         groups.assign_roles(username=username, tenant_ref=tenant_ref, roles=roles)
         return Membership(tenant_ref=tenant_ref, roles=list(roles), groups=[])
+
+    def remove_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> None:
+        groups.remove_roles(username=username, tenant_ref=tenant_ref, roles=roles)
 
     def list_groups(self, tenant_ref: TenantRef) -> list[Group]:
         return groups.list_groups(tenant_ref)
@@ -200,6 +225,9 @@ class _KeycloakDirectoryAdmin:
 
     def list_group_members(self, group: Group) -> list[User]:
         return groups.list_group_members(group)
+
+    def list_member_groups(self, *, username: str, tenant_ref: TenantRef) -> list[Group]:
+        return groups.list_member_groups(username=username, tenant_ref=tenant_ref)
 
     def set_group_roles(self, group: Group, *, roles: list[str]) -> Group:
         return groups.set_group_roles(group, roles=roles)

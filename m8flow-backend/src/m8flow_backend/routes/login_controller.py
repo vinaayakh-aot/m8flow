@@ -33,10 +33,10 @@ from urllib.parse import unquote
 
 from flask import Response, jsonify, redirect, request
 
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
+from m8flow_backend.integrations.auth.base.models import IssuerRef
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.routes.session_cookies import (
     clear_session_cookies,
@@ -100,7 +100,10 @@ def login() -> Response:
     if finalized is not None:
         return finalized
 
-    identifier = (request.args.get("authentication_identifier") or "").strip() or shared_realm_name()
+    identifier = (
+        (request.args.get("authentication_identifier") or "").strip()
+        or get_auth_provider().default_issuer().value
+    )
     nonce = secrets.token_urlsafe(24)
     state = _encode_state(authentication_identifier=identifier, redirect_url=redirect_url, nonce=nonce)
 
@@ -110,7 +113,7 @@ def login() -> Response:
     auth_url = get_auth_provider().build_login_url(
         redirect_uri=_redirect_uri(),
         state=state,
-        authentication_identifier=identifier,
+        issuer=IssuerRef(value=identifier),
         prompt=prompt,
     )
 
@@ -146,14 +149,14 @@ def login_return() -> Response:
     if not code:
         raise ApiError("missing_code", "code is required", 400)
 
-    identifier = state.get("authentication_identifier") or shared_realm_name()
+    identifier = state.get("authentication_identifier") or get_auth_provider().default_issuer().value
     redirect_url = state.get("redirect_url") or "/"
 
     try:
         token_set = get_auth_provider().exchange_code(
             code=code,
             redirect_uri=_redirect_uri(),
-            authentication_identifier=identifier,
+            issuer=IssuerRef(value=identifier),
         )
     except (TokenInvalid, ProviderUnavailable):
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
@@ -177,12 +180,12 @@ def refresh() -> Response:
     if not refresh_token:
         raise ApiError("no_refresh_token", "No refresh token cookie present", 401)
 
-    identifier = request.cookies.get("authentication_identifier") or shared_realm_name()
+    identifier = request.cookies.get("authentication_identifier") or get_auth_provider().default_issuer().value
 
     try:
         token_set = get_auth_provider().refresh(
             refresh_token=refresh_token,
-            authentication_identifier=identifier,
+            issuer=IssuerRef(value=identifier),
         )
     except (TokenInvalid, ProviderUnavailable):
         raise ApiError("keycloak_refresh_failed", "Could not refresh session", 401) from None
@@ -207,14 +210,14 @@ def logout() -> Response:
     identifier = (
         request.args.get("authentication_identifier")
         or request.cookies.get("authentication_identifier")
-        or shared_realm_name()
+        or get_auth_provider().default_issuer().value
     )
     id_token = request.args.get("id_token") or request.cookies.get("id_token")
     backend_only = (request.args.get("backend_only") or "").strip().lower() == "true"
 
     if not backend_only and id_token:
         target = get_auth_provider().build_logout_url(
-            authentication_identifier=identifier,
+            issuer=IssuerRef(value=identifier),
             redirect_uri=redirect_url,
             id_token_hint=id_token,
         )

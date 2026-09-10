@@ -7,6 +7,44 @@ from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, 
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.integrations.auth.keycloak.role_mapping import tenant_roles_for_organization_group
 
+# Realm-name claim keys the m8flow RealmInfoMapper emits, and the extraction
+# logic for them. Deliberately duplicated here (not imported) from
+# m8flow_backend.auth.claims's realm_name_from_payload/extract_realm_from_issuer
+# -- that module is host code and this runs inside the adapter, which must
+# never depend on the host (auth.claims already depends on this module, so a
+# reverse import would cycle). Ticket 10 (Neutralize the token shape) is
+# expected to consolidate onto this copy and retire the host one.
+_AUTHENTICATION_IDENTIFIER_CLAIM = "m8flow_authentication_identifier"
+_REALM_NAME_CLAIM = "m8flow_realm_name"
+_TENANT_NAME_CLAIM = "m8flow_tenant_name"  # legacy RealmInfoMapper claim
+
+
+def _string_claim(payload: dict[str, Any], claim: str) -> str | None:
+    value = payload.get(claim)
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
+def realm_name_from_payload(payload: dict[str, Any]) -> str | None:
+    """Extract the Keycloak realm name a token claims, trying the explicit
+    authentication-identifier/realm-name claims before falling back to the
+    legacy ``m8flow_tenant_name`` claim."""
+    for claim in (_AUTHENTICATION_IDENTIFIER_CLAIM, _REALM_NAME_CLAIM, "realm_name"):
+        value = _string_claim(payload, claim)
+        if value:
+            return value
+    return _string_claim(payload, _TENANT_NAME_CLAIM)
+
+
+def extract_realm_from_issuer(issuer: str | None) -> str | None:
+    """Extract the Keycloak realm name from an issuer URL."""
+    if isinstance(issuer, str) and "/realms/" in issuer:
+        return issuer.split("/realms/")[-1].split("/")[0]
+    return None
+
 
 def _string(value: object) -> str | None:
     if isinstance(value, str):
@@ -101,6 +139,22 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
     return memberships
 
 
+def _active_tenant_ref_from_payload(payload: dict[str, Any], memberships: list[Membership]) -> TenantRef | None:
+    """The RealmInfoMapper's explicit finalized-tenant signal (ticket 01's
+    decision 6): `m8flow_tenant_id`/`m8flow_tenant_alias`, falling back to the
+    sole membership when there's exactly one -- mirrors
+    active_organization_from_payload's existing single-org shortcut on the
+    host side (auth/claims.py), so a single-tenant user needs no explicit
+    claim at all."""
+    tenant_id = _string(payload.get("m8flow_tenant_id"))
+    tenant_alias = _string(payload.get("m8flow_tenant_alias"))
+    if tenant_id or tenant_alias:
+        return TenantRef(id=tenant_id, alias=tenant_alias)
+    if len(memberships) == 1:
+        return memberships[0].tenant_ref
+    return None
+
+
 def verified_claims_from_payload(payload: dict[str, Any]) -> VerifiedClaims:
     subject = _string(payload.get("sub"))
     issuer = _string(payload.get("iss"))
@@ -134,5 +188,6 @@ def verified_claims_from_payload(payload: dict[str, Any]) -> VerifiedClaims:
         email=_string(payload.get("email")),
         roles=flattened,
         memberships=memberships,
+        active_tenant_ref=_active_tenant_ref_from_payload(payload, memberships),
         jwt_claims=dict(payload),
     )

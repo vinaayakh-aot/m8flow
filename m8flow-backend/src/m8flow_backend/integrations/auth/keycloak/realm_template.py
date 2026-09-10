@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from m8flow_backend.config import redirect_uri_backend_host_and_path, redirect_uri_frontend_host
-from m8flow_backend.integrations.auth.keycloak.config import (
+from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_default_groups_path,
     realm_template_path,
     spoke_client_id,

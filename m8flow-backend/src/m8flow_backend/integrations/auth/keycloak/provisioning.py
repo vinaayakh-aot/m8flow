@@ -15,7 +15,7 @@ from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
 from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
 from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
-from m8flow_backend.integrations.auth.keycloak.config import keycloak_url, spoke_client_id, template_realm_name
+from m8flow_backend.integrations.auth.keycloak.settings import keycloak_url, spoke_client_id, template_realm_name
 from m8flow_backend.integrations.auth.keycloak.realm_template import (
     GROUPS_CLAIM_NAME,
     NORMALIZED_GROUP_MAPPER_PROVIDER_ID,

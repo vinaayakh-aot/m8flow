@@ -5,6 +5,7 @@ import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
 
 class _FakeResponse:
@@ -26,6 +27,9 @@ class _FakeResponse:
 @pytest.fixture(autouse=True)
 def _base_url(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
+    reset_keycloak_settings()
+    yield
+    reset_keycloak_settings()
 
 
 def test_url_is_admin_realms_prefixed_and_segment_quoted(monkeypatch):

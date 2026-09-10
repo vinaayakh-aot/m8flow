@@ -9,6 +9,7 @@ from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
 from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
 from m8flow_backend.integrations.auth.keycloak import provisioning
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
 
 BASE = "http://keycloak.internal"
@@ -79,6 +80,9 @@ def _provision_http(monkeypatch):
         lambda full: {"ifResourceExists": "SKIP", "clients": [], "roles": {}, "users": []},
     )
     monkeypatch.setattr(provisioning, "ensure_backend_redirect_uri_in_keycloak_client", lambda realm_id: None)
+    reset_keycloak_settings()
+    yield
+    reset_keycloak_settings()
 
 
 def test_create_tenant_realm_posts_minimal_realm_partial_import_and_login_theme(monkeypatch):

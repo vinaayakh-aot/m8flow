@@ -17,17 +17,14 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
 
 from m8flow_backend.config import app_frontend_base_url
-from m8flow_backend.integrations.auth.keycloak.config import shared_realm_name
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import UserNotFound
+from m8flow_backend.integrations.auth.base.models import IssuerRef
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel
 from m8flow_backend.models.tenant_invitation import TenantInvitationStatus
+from m8flow_backend.integrations.auth.base.roles import normalize_tenant_role_names
 from m8flow_backend.services.email_service import send_email
 from m8flow_backend.services.email_service import smtp_is_configured
-from m8flow_backend.services.tenant_group_mapping import normalize_tenant_role_names
-from m8flow_backend.services.tenant_group_mapping import (
-    primary_organization_group_name_for_tenant_role,
-)
 from m8flow_backend.services.tenant_role_service import add_tenant_member
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.auth.tenant_context import reset_context_tenant_id
@@ -172,7 +169,7 @@ def create_invitation(
     try:
         get_auth_provider().get_user(
             username=normalized_email,
-            authentication_identifier=shared_realm_name(),
+            issuer=get_auth_provider().default_issuer(),
         )
     except UserNotFound:
         pass
@@ -372,18 +369,11 @@ def accept_invitation(raw_token: str, password: str) -> dict[str, Any]:
     email = invitation.email
     role_names = invitation.role_names()
 
-    # Map roles -> organization groups; tenant roles are derived from group membership.
-    group_names = []
-    for role_name in role_names:
-        group_name = primary_organization_group_name_for_tenant_role(role_name)
-        if group_name and group_name not in group_names:
-            group_names.append(group_name)
-
     # Create the directory user (username == email). If it already exists (e.g. a retried
     # accept after a partial failure), continue so the rest of the flow is idempotent.
-    realm = shared_realm_name()
+    realm = get_auth_provider().default_issuer().value
     try:
-        get_auth_provider().get_user(username=email, authentication_identifier=realm)
+        get_auth_provider().get_user(username=email, issuer=IssuerRef(value=realm))
     except UserNotFound:
         get_auth_provider().directory_admin.create_user(
             username=email,
@@ -396,7 +386,7 @@ def accept_invitation(raw_token: str, password: str) -> dict[str, Any]:
     # invitation's tenant for the membership write (mirrors an authenticated tenant request).
     context_token = set_context_tenant_id(invitation.m8f_tenant_id)
     try:
-        add_tenant_member(invitation.m8f_tenant_id, username=email, group_names=group_names)
+        add_tenant_member(invitation.m8f_tenant_id, username=email, roles=list(role_names))
 
         invitation.status = TenantInvitationStatus.ACCEPTED
         invitation.accepted_at_in_seconds = _now_seconds()
