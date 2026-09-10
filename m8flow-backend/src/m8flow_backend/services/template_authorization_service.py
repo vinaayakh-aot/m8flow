@@ -21,6 +21,11 @@ class TemplateAuthorizationService:
         return getattr(g, "m8flow_tenant_id", None)
 
     @classmethod
+    def _is_current_tenant_template(cls, template: TemplateModel) -> bool:
+        tenant_id = cls._tenant_id()
+        return tenant_id is not None and tenant_id == template.m8f_tenant_id
+
+    @classmethod
     def has_admin_permission(cls, user: UserModel | None, permission: str) -> bool:
         """Check if user has admin-level permission on templates via RBAC.
 
@@ -74,6 +79,9 @@ class TemplateAuthorizationService:
             return False
 
         if user is None:
+            return False
+
+        if not cls._is_current_tenant_template(template):
             return False
 
         # Owner can edit: in-place if unpublished, or create new version if published

@@ -12,6 +12,9 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
+from m8flow_backend.services.process_model_service_patch import (
+    super_admin_workflow_write_context,
+)
 
 
 def _safe_content_disposition(filename: str) -> dict[str, str]:
@@ -399,9 +402,9 @@ def template_create_process_model(id: int):
     - description: Optional description for the new process model
     """
     user = getattr(g, "user", None)
-    tenant_id = getattr(g, "m8flow_tenant_id", None)
-
     body = request.get_json(force=True, silent=True) or {}
+    explicit_tenant_id = body.get("m8f_tenant_id")
+    tenant_id = getattr(g, "m8flow_tenant_id", None)
 
     process_group_id = body.get("process_group_id")
     process_model_id = body.get("process_model_id")
@@ -421,15 +424,20 @@ def template_create_process_model(id: int):
                 status_code=400,
             )
 
-    result = TemplateService.create_process_model_from_template(
-        template_id=id,
-        process_group_id=process_group_id,
-        process_model_id=process_model_id,
-        display_name=display_name,
-        description=description,
-        user=user,
-        tenant_id=tenant_id,
-    )
+    # Super-admin workflow writes are permitted only after the selected tenant
+    # has been resolved and pinned by the shared tenant-binding guard.
+    with super_admin_workflow_write_context(
+        explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else tenant_id
+    ):
+        result = TemplateService.create_process_model_from_template(
+            template_id=id,
+            process_group_id=process_group_id,
+            process_model_id=process_model_id,
+            display_name=display_name,
+            description=description,
+            user=user,
+            tenant_id=tenant_id,
+        )
 
     return jsonify(result), 201
 
