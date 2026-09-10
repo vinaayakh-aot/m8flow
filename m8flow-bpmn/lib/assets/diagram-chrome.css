@@ -223,41 +223,32 @@
 }
 
 /**
- * PROTOTYPE (ticket 02 — context-pad styling): the mockup has no selection
- * state to match, so this is a decided live option, not a restyle-to-spec.
- * Decided (HITL): the shared card (reusing the palette's own component —
- * rounded card, same line-art icon technique from ticket 01), over an
- * individual-floating-pills alternative that was built and shown but
- * rejected as less legible (near-invisible against the canvas until
- * hovered). Positioned above the selected element instead of diagram-js's
- * default right-of-element placement — see `positionContextPadAboveTarget`
- * in `BpmnCanvas.tsx` for the position override; this file only supplies
- * the card's own look. Grid wraps at 4 columns x 2 rows (revised from an
- * initial 2x4, HITL follow-up) — wider/shorter reads better floating
- * directly above a single element than the palette's own tall 2x4 does
- * fixed in a canvas corner.
- *
- * Width, decided live (HITL follow-up): sized to the *actual* entry
- * count rather than always fixed at the full 4-column width — a 1-entry
- * pad (e.g. a sequence flow's own context pad) used to render as a
- * mostly-empty 152px card, which read oddly next to a genuinely full
- * 6-8 entry one at the exact same width. `max-width` still caps it at 4
- * columns (unchanged row-wrap point); `repeat(auto-fit, 32px)` (not
- * `auto-fill`, whose empty trailing tracks would keep the old fixed-width
- * behavior) + an intrinsic (`max-content`) container width is what
- * actually lets the grid collapse to N columns instead of always 4.
+ * Context pad card (above selected element — position is
+ * `positionContextPadAboveTarget`). Shared card look like the palette;
+ * grid wraps at 4 columns. Width follows entry count (`max-content` +
+ * `repeat(auto-fit, …)`), capped at 4 columns — not `auto-fill`, which
+ * would keep empty tracks and a fixed full width.
  */
 .djs-context-pad {
-  /* 4 * 32px entries + 3 * 2px grid gap + 2 * 8px padding + 2 * 1px border
-     (box-sizing: border-box, set by diagram-js) = 152px — the cap, not
-     the fixed width; see `.open`'s own comment above. */
-  max-width: 152px !important;
+  /* 1.1x the palette's 32px grid; retune via --m8flow-context-pad-scale.
+     Palette stays unscaled. 1px border is a hairline — not scaled. */
+  --m8flow-context-pad-scale: 1.1;
+  --m8flow-context-pad-entry: calc(32px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-gap: calc(2px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-padding: calc(8px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-icon: calc(16px * var(--m8flow-context-pad-scale));
+
+  /* 4 entries + 3 gaps + 2×padding + 2×1px border (box-sizing: border-box). */
+  max-width: calc(
+    4 * var(--m8flow-context-pad-entry) + 3 * var(--m8flow-context-pad-gap) + 2 *
+      var(--m8flow-context-pad-padding) + 2px
+  ) !important;
   width: max-content !important;
   background: var(--color-card);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--m8flow-context-pad-scale));
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.08);
-  padding: 8px;
+  padding: var(--m8flow-context-pad-padding);
   display: none;
 }
 
@@ -266,8 +257,8 @@
      override (ticket 01) — diagram-js's base CSS also targets
      `.djs-context-pad.open` (for its own `display: block`). */
   display: grid !important;
-  grid-template-columns: repeat(auto-fit, 32px);
-  gap: 2px;
+  grid-template-columns: repeat(auto-fit, var(--m8flow-context-pad-entry));
+  gap: var(--m8flow-context-pad-gap);
 }
 
 /* Same wrapper-neutralizing trick as the palette: diagram-js groups entries
@@ -278,11 +269,11 @@
 }
 
 .djs-context-pad .entry {
-  width: 32px !important;
-  height: 32px !important;
-  line-height: 32px !important;
+  width: var(--m8flow-context-pad-entry) !important;
+  height: var(--m8flow-context-pad-entry) !important;
+  line-height: var(--m8flow-context-pad-entry) !important;
   margin: 0 !important;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--m8flow-context-pad-scale));
   color: var(--color-muted-foreground);
   /* Neutralize diagram-js's own per-entry mini background + box-shadow
      (its stand-in for a card when there isn't one) — the shared card above
@@ -332,8 +323,8 @@
   mask-repeat: no-repeat;
   -webkit-mask-position: center;
   mask-position: center;
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
+  -webkit-mask-size: var(--m8flow-context-pad-icon) var(--m8flow-context-pad-icon);
+  mask-size: var(--m8flow-context-pad-icon) var(--m8flow-context-pad-icon);
   background-color: currentColor;
 }
 

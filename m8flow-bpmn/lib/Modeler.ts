@@ -36,6 +36,7 @@ import {
   positionContextPadAboveTarget,
 } from './features/modelerBehaviors';
 import { serviceTaskConnectorPanelModule } from './features/serviceTaskConnectorPanel';
+import { taskSizingModule } from './features/taskSizingBehavior';
 import { zoomControlsModule } from './features/zoomControls';
 
 /**
@@ -78,6 +79,9 @@ Modeler.prototype._m8flowModules = [
   // After Spiff panel groups: strip dropped-construct editors and, when a
   // leftover dropped shape is selected, show a short "not supported" notice.
   droppedConstructPanelModule,
+  // After customPaletteModule: palette injects `elementFactory`, so the
+  // sizing override must win in DI resolution.
+  taskSizingModule,
   zoomControlsModule,
 ];
 

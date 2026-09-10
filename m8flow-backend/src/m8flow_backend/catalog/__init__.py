@@ -54,18 +54,18 @@ _DEFAULT_BPMN_TEMPLATE = """\
         <dc:Bounds x="180" y="160" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_1_di" bpmnElement="Activity_1">
-        <dc:Bounds x="270" y="138" width="100" height="80" />
+        <dc:Bounds x="270" y="148" width="150" height="60" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="430" y="160" width="36" height="36" />
+        <dc:Bounds x="480" y="160" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
         <di:waypoint x="216" y="178" />
         <di:waypoint x="270" y="178" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint x="370" y="178" />
-        <di:waypoint x="430" y="178" />
+        <di:waypoint x="420" y="178" />
+        <di:waypoint x="480" y="178" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
