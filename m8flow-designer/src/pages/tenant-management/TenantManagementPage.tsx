@@ -3,10 +3,21 @@ import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 import { getActiveTenantDisplayLabel } from '@/lib/auth';
+import type { TenantStatus } from '@/lib/tenantsApi';
 import TenantAdminPanel from './TenantAdminPanel';
 
 type TenantManagementLocationState = {
   tenantName?: string;
+  /**
+   * Carried from `TenantsPage`'s already-fetched registry row (super-admin
+   * only) so the header can show the mockup's alias/status without a
+   * second fetch. Absent on the tenant-admin's own-tenant path (bare
+   * `/tenant-management`) and on direct navigation to a super-admin URL —
+   * `TenantAdminPanel` renders without them rather than fetching, since
+   * `/v1.0/m8flow/tenants` is registry-scoped (super-admin only).
+   */
+  tenantSlug?: string;
+  tenantStatus?: TenantStatus;
 };
 
 /**
@@ -79,6 +90,8 @@ export default function TenantManagementPage() {
     <TenantAdminPanel
       tenantId={tenantId}
       tenantName={tenantName ?? tenantId}
+      tenantSlug={isSuperAdmin ? locationState?.tenantSlug : undefined}
+      tenantStatus={isSuperAdmin ? locationState?.tenantStatus : undefined}
       isSuperAdmin={isSuperAdmin}
       refreshTenants={refreshTenants}
     />

@@ -221,8 +221,19 @@ describe('TenantManagementPage', () => {
     expect(screen.queryByTestId('pending-invitations-panel')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
     expect(mockFetchTenantInvitations).not.toHaveBeenCalled();
+
+    // Groups lives on its own tab (Users is the default) — the Groups tab's
+    // own count badge reads from the same fetch, so it's already right
+    // without switching.
+    expect(screen.getByRole('tab', { name: /Groups/ })).toHaveTextContent('2');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    // The Groups panel is a fresh mount on tab switch (see TenantAdminPanel's
+    // own comment on why Groups/Users unmount-on-switch is fine but
+    // Invitations isn't) — its own fetch resolves async, so its table rows
+    // need awaiting even though the toolbar's "Add Group" button (rendered
+    // unconditionally, not gated on the fetch) doesn't.
     expect(screen.getByTestId('tenant-group-add-button')).toBeInTheDocument();
-    expect(screen.getByTestId('tenant-group-name-cell-g1')).toBeInTheDocument();
+    expect(await screen.findByTestId('tenant-group-name-cell-g1')).toBeInTheDocument();
     expect(screen.getByTestId('tenant-group-role-chip-g1-editor')).toBeInTheDocument();
   });
 
@@ -385,6 +396,7 @@ describe('TenantManagementPage', () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
     fireEvent.click(screen.getByTestId('tenant-group-add-button'));
     fireEvent.change(screen.getByTestId('tenant-group-name-input'), {
       target: { value: '  QA   Reviewers  ' },
@@ -405,7 +417,8 @@ describe('TenantManagementPage', () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
-    fireEvent.click(screen.getByTestId('tenant-group-rename-button-reviewers'));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-rename-button-reviewers'));
     fireEvent.change(screen.getByTestId('tenant-group-rename-input'), {
       target: { value: 'QA Reviewers' },
     });
@@ -421,7 +434,8 @@ describe('TenantManagementPage', () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
-    fireEvent.click(screen.getByTestId('tenant-group-remove-button-reviewers'));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-remove-button-reviewers'));
     const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
@@ -447,7 +461,8 @@ describe('TenantManagementPage', () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
 
-    fireEvent.click(screen.getByTestId('tenant-group-manage-roles-button-reviewers'));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-manage-roles-button-reviewers'));
     expect(await screen.findByRole('heading', { name: 'Group roles' })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter'));
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer'));

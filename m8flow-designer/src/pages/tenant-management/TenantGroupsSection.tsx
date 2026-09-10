@@ -343,13 +343,7 @@ export default function TenantGroupsSection({
         </Alert>
       ) : null}
 
-      <Card variant="bordered" className="mt-6 overflow-hidden">
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
-          data-testid="tenant-groups-section-header"
-        >
-          <h2 className="text-[15px] font-semibold text-foreground">Groups</h2>
-        </div>
+      <Card variant="bordered" className="overflow-hidden">
         <div
           className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
           data-testid="tenant-groups-toolbar"

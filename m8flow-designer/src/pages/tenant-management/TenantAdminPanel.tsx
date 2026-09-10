@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   addTenantGroupMember,
   addTenantMember,
@@ -37,6 +38,7 @@ import {
   tenantsErrorMessage,
   updateTenantName,
   validateTenantDisplayName,
+  type TenantStatus,
 } from '@/lib/tenantsApi';
 
 const MEMBERS_PAGE_SIZE = 10;
@@ -44,9 +46,31 @@ const PICKER_GROUPS_LIMIT = 100;
 const AVAILABLE_USERS_PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 
+/** Mirrors `TenantsPage.tsx`'s own `STATUS_TONE` (kept local rather than
+ * imported, since pages in this app don't otherwise import from each
+ * other) — but keyed to `ui/badge.tsx`'s variant names rather than
+ * `Pill`'s tone names (`destructive`, not `error`), since the header
+ * reuses `Badge` to match the mockup's pill-shaped status chip. */
+const STATUS_BADGE_VARIANT: Record<TenantStatus, 'success' | 'warning' | 'destructive'> = {
+  ACTIVE: 'success',
+  INACTIVE: 'warning',
+  DELETED: 'destructive',
+};
+
+type TenantAdminTab = 'users' | 'groups' | 'invitations';
+
 export type TenantAdminPanelProps = {
   tenantId: string;
   tenantName: string;
+  /**
+   * Alias/status for the header — carried from `TenantsPage`'s registry row
+   * via router state (super-admin only; see `TenantManagementPage.tsx`).
+   * `undefined` on the tenant-admin's own-tenant path: `/v1.0/m8flow/tenants`
+   * is registry-scoped, so there's no second fetch to fall back to. The
+   * header omits whichever piece it doesn't have rather than fabricating one.
+   */
+  tenantSlug?: string;
+  tenantStatus?: TenantStatus;
   isSuperAdmin: boolean;
   refreshTenants?: () => void;
   onTenantNameChange?: (name: string) => void;
@@ -70,11 +94,14 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 export default function TenantAdminPanel({
   tenantId,
   tenantName: initialTenantName,
+  tenantSlug,
+  tenantStatus,
   isSuperAdmin,
   refreshTenants,
   onTenantNameChange,
 }: TenantAdminPanelProps) {
   const [tenantName, setTenantName] = useState(initialTenantName);
+  const [tab, setTab] = useState<TenantAdminTab>('users');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -84,6 +111,10 @@ export default function TenantAdminPanel({
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Live PENDING count reported by InvitationManagementSection — see its
+  // own onCountChange doc comment. Starts at 0, not derived from `groups`
+  // or `members`, since it tracks a status filter those don't have.
+  const [pendingInvitationCount, setPendingInvitationCount] = useState(0);
 
   const [groups, setGroups] = useState<TenantGroup[]>([]);
 
@@ -584,6 +615,8 @@ export default function TenantAdminPanel({
     },
   ];
 
+  const tenantInitial = (tenantName || tenantId).trim().charAt(0).toUpperCase() || '?';
+
   return (
     <main className="flex-1 px-11 py-10">
       {isSuperAdmin ? (
@@ -597,20 +630,30 @@ export default function TenantAdminPanel({
           ]}
         />
       ) : null}
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">
-            Tenant Management
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Add existing users as members, manage groups, and grant roles on groups
-            for{' '}
-            <span className="font-medium text-foreground">{tenantName || tenantId}</span>.
-            Members show effective roles from their groups.
-            {isSuperAdmin
-              ? ' Invitation management is available here for platform admins.'
-              : ''}
-          </p>
+
+      <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div
+            className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-info/10 font-display text-lg font-bold text-info"
+            aria-hidden
+          >
+            {tenantInitial}
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="font-display text-[28px] font-semibold tracking-tight text-foreground">
+                {tenantName || tenantId}
+              </h1>
+              {tenantStatus ? (
+                <Badge variant={STATUS_BADGE_VARIANT[tenantStatus]} data-testid="tenant-management-status-badge">
+                  {tenantStatus}
+                </Badge>
+              ) : null}
+            </div>
+            <div className="mt-0.5 font-mono text-[12.5px] text-muted-foreground">
+              {tenantSlug || tenantId}
+            </div>
+          </div>
         </div>
         <Button
           type="button"
@@ -624,90 +667,141 @@ export default function TenantAdminPanel({
         </Button>
       </div>
 
-      {error ? (
-        <Alert tone="error" className="mb-4">
-          {error}
-        </Alert>
-      ) : null}
+      {/* Tabs/TabsList/TabsTrigger only — no TabsContent. Same pattern as
+          ProcessInstanceDetailPage: panels below are plain `tab === 'x'`
+          conditionals, not Radix's own tabpanel, because Radix unmounts an
+          inactive TabsContent's children by default (no `forceMount`),
+          which would zero out the Invitations panel's own live PENDING
+          count every time the user left that tab. The Invitations panel
+          below stays mounted (CSS-`hidden`, not conditionally rendered) for
+          the same reason — its fetch needs to run before it's ever opened,
+          so the tab's own count badge is right from first paint, not just
+          after a visit. Users/Groups have no such requirement (their badge
+          counts come from state already fetched at this level, not from
+          the panel component itself), so those two use the plain unmount-
+          on-switch conditional like the rest of the app. */}
+      <Tabs value={tab} onValueChange={(value) => setTab(value as TenantAdminTab)}>
+        <TabsList className="mb-5 gap-7">
+          <TabsTrigger value="users" className="gap-1.5">
+            Users
+            <Badge variant="secondary">{hasMore ? `${members.length}+` : members.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="groups" className="gap-1.5">
+            Groups
+            <Badge variant="secondary">{groups.length}</Badge>
+          </TabsTrigger>
+          {isSuperAdmin ? (
+            <TabsTrigger value="invitations" className="gap-1.5">
+              Pending invites
+              <Badge variant="secondary">{pendingInvitationCount}</Badge>
+            </TabsTrigger>
+          ) : null}
+        </TabsList>
+      </Tabs>
 
-      <Card variant="bordered" className="overflow-hidden">
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
-          data-testid="tenant-members-toolbar"
-        >
-          <SearchBar
-            value={searchInput}
-            onChange={setSearchInput}
-            placeholder="Search tenant members…"
-            aria-label="Search tenant members"
-            data-testid="tenant-member-search-input"
-            className="min-w-0 flex-1"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            {isSuperAdmin ? (
-              <Button
-                type="button"
-                variant="pill-outline"
-                size="pill"
-                onClick={() => setInviteOpen(true)}
-                data-testid="tenant-invite-user-button"
-              >
-                <MailPlus className="size-3.5" aria-hidden />
-                Invite User
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="pill-dark"
-              size="pill"
-              onClick={openAdd}
-              data-testid="tenant-member-add-button"
+      {tab === 'users' ? (
+        <>
+          {error ? (
+            <Alert tone="error" className="mb-4">
+              {error}
+            </Alert>
+          ) : null}
+
+          <Card variant="bordered" className="overflow-hidden">
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
+              data-testid="tenant-members-toolbar"
             >
-              <UserPlus className="size-3.5" aria-hidden />
-              Add Member
-            </Button>
-          </div>
-        </div>
+              <SearchBar
+                value={searchInput}
+                onChange={setSearchInput}
+                placeholder="Search tenant members…"
+                aria-label="Search tenant members"
+                data-testid="tenant-member-search-input"
+                className="min-w-0 flex-1"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {isSuperAdmin ? (
+                  <Button
+                    type="button"
+                    variant="pill-outline"
+                    size="pill"
+                    onClick={() => setInviteOpen(true)}
+                    data-testid="tenant-invite-user-button"
+                  >
+                    <MailPlus className="size-3.5" aria-hidden />
+                    Invite User
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="pill-dark"
+                  size="pill"
+                  onClick={openAdd}
+                  data-testid="tenant-member-add-button"
+                >
+                  <UserPlus className="size-3.5" aria-hidden />
+                  Add Member
+                </Button>
+              </div>
+            </div>
 
-        {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading members…</p>
-        ) : members.length === 0 ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">
-            {search ? 'No members match this search.' : 'No members in this tenant yet.'}
-          </p>
-        ) : (
-          <DataTable
-            columns={memberColumns}
-            rows={members}
-            getRowKey={(member) => member.username}
-            data-testid="tenant-member-table-container"
-          />
-        )}
+            {loading ? (
+              <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading members…</p>
+            ) : members.length === 0 ? (
+              <p className="px-[22px] py-6 text-sm text-muted-foreground">
+                {search ? 'No members match this search.' : 'No members in this tenant yet.'}
+              </p>
+            ) : (
+              <DataTable
+                columns={memberColumns}
+                rows={members}
+                getRowKey={(member) => member.username}
+                data-testid="tenant-member-table-container"
+              />
+            )}
 
-        <div className="px-[22px] py-3">
-          <Pagination
-            page={page + 1}
-            onPageChange={(nextPage) => setPage(nextPage - 1)}
-            hasMore={hasMore}
-          />
-        </div>
-      </Card>
-
-      {isSuperAdmin && tenantId ? (
-        <InvitationManagementSection
-          tenantId={tenantId}
-          inviteOpen={inviteOpen}
-          onInviteOpenChange={setInviteOpen}
-        />
+            <div className="px-[22px] py-3">
+              <Pagination
+                page={page + 1}
+                onPageChange={(nextPage) => setPage(nextPage - 1)}
+                hasMore={hasMore}
+              />
+            </div>
+          </Card>
+        </>
       ) : null}
 
-      {tenantId ? (
+      {tab === 'groups' && tenantId ? (
         <TenantGroupsSection
           tenantId={tenantId}
           existingGroupNames={groupNames}
           reloadKey={reloadKey}
           onChanged={() => setReloadKey((key) => key + 1)}
         />
+      ) : null}
+
+      {isSuperAdmin && tenantId ? (
+        <div className={tab === 'invitations' ? undefined : 'hidden'}>
+          <div className="mb-3 flex justify-end">
+            <Button
+              type="button"
+              variant="pill-dark"
+              size="pill"
+              onClick={() => setInviteOpen(true)}
+              data-testid="tenant-invite-user-button-invitations-tab"
+            >
+              <MailPlus className="size-3.5" aria-hidden />
+              Invite User
+            </Button>
+          </div>
+          <InvitationManagementSection
+            tenantId={tenantId}
+            inviteOpen={inviteOpen}
+            onInviteOpenChange={setInviteOpen}
+            onCountChange={setPendingInvitationCount}
+          />
+        </div>
       ) : null}
 
       <Modal

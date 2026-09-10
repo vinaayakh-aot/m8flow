@@ -28,6 +28,15 @@ type InvitationManagementSectionProps = {
   tenantId: string;
   inviteOpen: boolean;
   onInviteOpenChange: (open: boolean) => void;
+  /**
+   * Reports the live count of PENDING invitations after every successful
+   * load — matches the tab's own "Pending invites" label, not the total
+   * row count (the table itself still shows every status, accepted/revoked
+   * included, for an audit trail). Feeds the count badge on
+   * `TenantAdminPanel`'s tab trigger; omitted on error so a transient
+   * failure doesn't zero out an already-shown count.
+   */
+  onCountChange?: (pendingCount: number) => void;
 };
 
 function statusTone(status: TenantInvitation['status']): NonNullable<PillProps['tone']> {
@@ -55,6 +64,7 @@ export default function InvitationManagementSection({
   tenantId,
   inviteOpen,
   onInviteOpenChange,
+  onCountChange,
 }: InvitationManagementSectionProps) {
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +87,7 @@ export default function InvitationManagementSection({
       .then((payload) => {
         if (!cancelled) {
           setInvitations(payload.results);
+          onCountChange?.(payload.results.filter((invitation) => invitation.status === 'PENDING').length);
         }
       })
       .catch((err: unknown) => {
@@ -93,6 +104,9 @@ export default function InvitationManagementSection({
     return () => {
       cancelled = true;
     };
+    // onCountChange intentionally excluded from deps — it's not this
+    // effect's own trigger; TenantAdminPanel passes an inline callback, so
+    // treating it as a dep would re-fetch on every parent render.
   }, [tenantId, reloadKey]);
 
   const canSubmit = useMemo(
@@ -259,17 +273,13 @@ export default function InvitationManagementSection({
 
   return (
     <>
-      <Card variant="bordered" className="mt-6 overflow-hidden" data-testid="pending-invitations-panel">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3">
-          <h2 className="text-[15px] font-semibold text-foreground">Invitations</h2>
-        </div>
+      {error ? (
+        <Alert tone="error" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
 
-        {error ? (
-          <Alert tone="error" className="mx-[22px] mt-4">
-            {error}
-          </Alert>
-        ) : null}
-
+      <Card variant="bordered" className="overflow-hidden" data-testid="pending-invitations-panel">
         {loading ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading invitations…</p>
         ) : invitations.length === 0 ? (

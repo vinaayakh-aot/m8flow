@@ -215,7 +215,7 @@ export default function TenantsPage() {
       render: (tenant) => (
         <Link
           to={`/tenant-management/${encodeURIComponent(tenant.id)}`}
-          state={{ tenantName: tenant.name }}
+          state={{ tenantName: tenant.name, tenantSlug: tenant.slug, tenantStatus: tenant.status }}
           className="text-left font-medium text-foreground no-underline hover:underline"
           data-testid={`tenant-open-${tenant.id}`}
         >
@@ -258,7 +258,7 @@ export default function TenantsPage() {
         <Button variant="ghost" size="sm" asChild>
           <Link
             to={`/tenant-management/${encodeURIComponent(tenant.id)}`}
-            state={{ tenantName: tenant.name }}
+            state={{ tenantName: tenant.name, tenantSlug: tenant.slug, tenantStatus: tenant.status }}
             data-testid={`tenant-manage-${tenant.id}`}
           >
             Manage
