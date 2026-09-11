@@ -42,8 +42,11 @@ vi.mock('./components/DiagramCanvas', () => ({
   ) {
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
     useImperativeHandle(ref, () => ({
-      saveXML: async () => xml,
-      markSaved: () => onDirtyChange?.(false),
+      saveXML: async () => ({ xml, baseline: xml }),
+      markSaved: () => {
+        onDirtyChange?.(false);
+        return false;
+      },
     }));
     return (
       <div>

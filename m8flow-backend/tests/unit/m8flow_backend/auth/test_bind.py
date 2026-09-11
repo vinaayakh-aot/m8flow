@@ -290,3 +290,37 @@ def test_resolve_request_tenant_direct_cookie_bind(app, db_session):
         resolve_request_tenant()
         assert g.m8flow_tenant_id == "t1"
         assert get_context_tenant_id() == "t1"
+
+
+def test_cookie_fallback_rejected_when_user_does_not_belong(client, db_session):
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    _user, token = _login(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+    response = client.get("/v1.0/onboarding", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_override_forbidden"
+
+
+def test_cookie_fallback_rejected_in_direct_resolve(app, db_session):
+    ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    user = SimpleNamespace(groups=[SimpleNamespace(identifier="t1:editor")])
+    with app.test_request_context(
+        "/v1.0/tasks",
+        headers={"Cookie": f"{SELECTED_TENANT_COOKIE_NAME}=t2"},
+    ):
+        g.user = user
+        g.db_session = db_session
+        try:
+            resolve_request_tenant()
+            raised = None
+        except Exception as exc:  # noqa: BLE001 -- assert ApiError below
+            raised = exc
+    from m8flow_backend.errors import ApiError
+
+    assert isinstance(raised, ApiError)
+    assert raised.error_code == "tenant_override_forbidden"

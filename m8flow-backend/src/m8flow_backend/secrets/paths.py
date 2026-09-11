@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 from m8flow_backend.config import vault_secret_path_prefix
+
+_SECRET_KEY_PATTERN = re.compile(r"^\w+$")
 
 
 def join_vault_path(*parts: str) -> str:
@@ -28,7 +31,9 @@ def secret_root(tenant_id: str, *, prefix: str | None = None) -> str:
 
 
 def secret_path(tenant_id: str, key: str, *, prefix: str | None = None) -> str:
-    cleaned = (key or "").strip().strip("/")
+    cleaned = (key or "").strip()
     if not cleaned:
         raise ValueError("secret key must not be empty.")
+    if ".." in cleaned or "/" in cleaned or not _SECRET_KEY_PATTERN.fullmatch(cleaned):
+        raise ValueError("secret key must be a word (letters, digits, underscore).")
     return join_vault_path(secret_root(tenant_id, prefix=prefix), cleaned)

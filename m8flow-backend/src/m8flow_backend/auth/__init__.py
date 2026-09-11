@@ -45,13 +45,24 @@ from m8flow_backend.auth.bind import (  # noqa: F401 -- re-exported public surfa
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
 )
 
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
+
 logger = logging.getLogger(__name__)
 
 JWT_ALGORITHM = "HS256"
 
+_TEST_ONLY_JWT_SECRET = "unit-test-secret-key-32bytes-min"
+
 
 def jwt_secret() -> str:
-    return os.environ.get("FLASK_SESSION_SECRET_KEY") or "unit-test-secret-key-32bytes-min"
+    configured = (os.environ.get("FLASK_SESSION_SECRET_KEY") or "").strip()
+    if configured:
+        return configured
+    if is_unit_testing_environment():
+        return _TEST_ONLY_JWT_SECRET
+    raise RuntimeError(
+        "FLASK_SESSION_SECRET_KEY must be set outside unit-testing environments."
+    )
 
 
 def encode_auth_token(*, user: UserModel, extra: dict[str, Any] | None = None) -> str:

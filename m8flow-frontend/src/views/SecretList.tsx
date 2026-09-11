@@ -65,6 +65,7 @@ export default function SecretList() {
 
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [pageMeta, setPageMeta] = useState<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SecretRow | null>(null);
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
@@ -74,6 +75,7 @@ export default function SecretList() {
 
   const load = useCallback(() => {
     const { page, perPage } = getPageInfoFromSearchParams(searchParams);
+    setLoadError(null);
     HttpService.makeCallToBackend({
       path: secretsListPath(
         page,
@@ -84,8 +86,13 @@ export default function SecretList() {
         setRows(payload.results ?? []);
         setPageMeta(payload.pagination);
       },
+      failureCallback: () => {
+        setRows([]);
+        setPageMeta({ count: 0, total: 0, pages: 0 });
+        setLoadError(t('error_loading_secrets') || 'Failed to load secrets.');
+      },
     });
-  }, [searchParams, sa, selectedTenantId]);
+  }, [searchParams, sa, selectedTenantId, t]);
 
   useEffect(() => {
     if (!permissionsLoaded) return;
@@ -110,11 +117,18 @@ export default function SecretList() {
       path: `/secrets/${key}`,
       httpMethod: 'DELETE',
       successCallback: () => window.location.reload(),
+      failureCallback: () => {
+        setLoadError(t('error_deleting_secret') || 'Failed to delete secret.');
+      },
     });
   };
 
   if (!pageMeta) {
-    return null;
+    return loadError ? (
+      <Typography color="error" role="alert">
+        {loadError}
+      </Typography>
+    ) : null;
   }
 
   const { page, perPage } = getPageInfoFromSearchParams(searchParams);
@@ -160,6 +174,11 @@ export default function SecretList() {
 
   return (
     <div>
+      {loadError ? (
+        <Typography color="error" role="alert" sx={{ mb: 2 }}>
+          {loadError}
+        </Typography>
+      ) : null}
       <Box
         sx={{
           display: 'flex',

@@ -306,10 +306,10 @@ export default function ProcessModelModelerPage() {
     if (!canvasRef.current) return;
     setSavePhase('saving');
     try {
-      const currentXml = await canvasRef.current.saveXML();
-      await saveProcessModelFileContent(modifiedId, file, currentXml, scopedTenantId);
-      canvasRef.current.markSaved();
-      setSavePhase('saved');
+      const { xml, baseline } = await canvasRef.current.saveXML();
+      await saveProcessModelFileContent(modifiedId, file, xml, scopedTenantId);
+      const stillDirty = canvasRef.current.markSaved(baseline);
+      setSavePhase(stillDirty ? 'dirty' : 'saved');
     } catch {
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
@@ -331,8 +331,8 @@ export default function ProcessModelModelerPage() {
 
   async function handleDownload() {
     if (!canvasRef.current) return;
-    const savedXml = await canvasRef.current.saveXML();
-    downloadTextFile(file || 'diagram.bpmn', savedXml);
+    const { xml } = await canvasRef.current.saveXML();
+    downloadTextFile(file || 'diagram.bpmn', xml);
   }
 
   const fileLower = file.toLowerCase();
@@ -382,7 +382,7 @@ export default function ProcessModelModelerPage() {
     setViewXml(null);
     setViewXmlError(null);
     try {
-      const current = canvasRef.current ? await canvasRef.current.saveXML() : xml;
+      const current = canvasRef.current ? (await canvasRef.current.saveXML()).xml : xml;
       setViewXml(current ?? '');
     } catch (err) {
       setViewXmlError(err instanceof Error ? err.message : 'Failed to export XML');

@@ -208,12 +208,41 @@ describe('FormSchemaEditor', () => {
     expect(onDirtyChange).toHaveBeenCalledWith(true);
     expect(session.onWriteFile).not.toHaveBeenCalled();
 
-    await expect(ref.current?.saveXML()).resolves.toBe('{"title":"B"}');
+    await expect(ref.current?.saveXML()).resolves.toEqual({
+      xml: '{"title":"B"}',
+      baseline: {
+        schema: '{"title":"B"}',
+        ui: EMPTY_JSON,
+        example: EMPTY_JSON,
+      },
+    });
     expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-schema.json', '{"title":"B"}');
     expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-uischema.json', EMPTY_JSON);
     expect(session.onWriteFile).toHaveBeenCalledWith('sample-form-exampledata.json', EMPTY_JSON);
 
-    ref.current?.markSaved();
+    expect(
+      ref.current?.markSaved({
+        schema: '{"title":"B"}',
+        ui: EMPTY_JSON,
+        example: EMPTY_JSON,
+      }),
+    ).toBe(false);
     expect(onDirtyChange).toHaveBeenCalledWith(false);
+  });
+
+  it('flushes pending modal writes when Close is clicked during debounce', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const session = makeSession({ fileName: 'task-schema.json' });
+    const onClose = vi.fn();
+    render(<FormSchemaEditor session={session} onClose={onClose} />);
+
+    const editor = await screen.findByLabelText('JSON Schema editor');
+    session.onWriteFile.mockClear();
+    fireEvent.change(editor, { target: { value: '{"title":"Pending"}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(session.onWriteFile).toHaveBeenCalledWith('task-schema.json', '{"title":"Pending"}');
+    vi.useRealTimers();
   });
 });

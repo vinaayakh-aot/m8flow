@@ -75,10 +75,16 @@ export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProp
     useImperativeHandle(
       ref,
       () => ({
-        saveXML: async () => valueRef.current,
-        markSaved: () => {
-          savedRef.current = valueRef.current;
-          onDirtyChange?.(false);
+        saveXML: async () => {
+          const xml = valueRef.current;
+          return { xml, baseline: xml };
+        },
+        markSaved: (baseline) => {
+          const saved = typeof baseline === 'string' ? baseline : valueRef.current;
+          savedRef.current = saved;
+          const stillDirty = valueRef.current !== saved;
+          onDirtyChange?.(stillDirty);
+          return stillDirty;
         },
       }),
       [onDirtyChange],

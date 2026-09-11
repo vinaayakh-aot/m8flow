@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Wand2, X } from 'lucide-react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
@@ -317,19 +317,36 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
         const schema = strSchemaRef.current;
         const ui = strUiRef.current;
         const example = strDataRef.current;
+        const baseline = { schema, ui, example };
         if (files) {
           await Promise.all([
             session.onWriteFile(files.schema, schema),
             session.onWriteFile(files.ui, ui),
             session.onWriteFile(files.example, example),
           ]);
-          return formSchemaOpenFileContent(session.fileName, files, { schema, ui, example });
+          return {
+            xml: formSchemaOpenFileContent(session.fileName, files, { schema, ui, example }),
+            baseline,
+          };
         }
-        return schema;
+        return { xml: schema, baseline };
       },
-      markSaved: () => {
-        snapshotSaved(strSchemaRef.current, strUiRef.current, strDataRef.current);
-        onDirtyChange?.(false);
+      markSaved: (baseline) => {
+        const snap =
+          baseline && typeof baseline === 'object' && 'schema' in baseline
+            ? baseline
+            : {
+                schema: strSchemaRef.current,
+                ui: strUiRef.current,
+                example: strDataRef.current,
+              };
+        snapshotSaved(snap.schema, snap.ui, snap.example);
+        const stillDirty =
+          strSchemaRef.current !== snap.schema ||
+          strUiRef.current !== snap.ui ||
+          strDataRef.current !== snap.example;
+        onDirtyChange?.(stillDirty);
+        return stillDirty;
       },
     }),
     [session, onDirtyChange],
@@ -404,35 +421,59 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
     onDirtyChange?.(dirty);
   }, [isPage, loaded, strSchema, strUi, strData, onDirtyChange]);
 
+  const flushModalWrites = useCallback(() => {
+    const files = namesRef.current;
+    if (!files || !loaded) return;
+    const writes = [
+      session.onWriteFile(files.schema, strSchemaRef.current),
+      session.onWriteFile(files.ui, strUiRef.current),
+      session.onWriteFile(files.example, strDataRef.current),
+    ];
+    void Promise.all(writes)
+      .then(() => setSaveError(null))
+      .catch((err: unknown) => {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save form files');
+      });
+  }, [loaded, session]);
+
+  const pendingModalSaveRef = useRef(false);
+
   useEffect(() => {
     if (isPage || !names || !loaded) return undefined;
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return undefined;
     }
+    pendingModalSaveRef.current = true;
     const timer = window.setTimeout(() => {
-      const writes = [
-        session.onWriteFile(names.schema, strSchema),
-        session.onWriteFile(names.ui, strUi),
-        session.onWriteFile(names.example, strData),
-      ];
-      Promise.all(writes)
-        .then(() => setSaveError(null))
-        .catch((err: unknown) => {
-          setSaveError(err instanceof Error ? err.message : 'Failed to save form files');
-        });
+      pendingModalSaveRef.current = false;
+      flushModalWrites();
     }, SAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [isPage, names, loaded, session, strSchema, strUi, strData]);
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingModalSaveRef.current) {
+        pendingModalSaveRef.current = false;
+        flushModalWrites();
+      }
+    };
+  }, [isPage, names, loaded, flushModalWrites, strSchema, strUi, strData]);
+
+  const handleClose = useCallback(() => {
+    if (pendingModalSaveRef.current) {
+      pendingModalSaveRef.current = false;
+      flushModalWrites();
+    }
+    onClose?.();
+  }, [flushModalWrites, onClose]);
 
   useEffect(() => {
     if (isPage || !onClose) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPage, onClose]);
+  }, [isPage, onClose, handleClose]);
 
   const schemaObj = useMemo(() => parseObject(strSchema) as JsonSchema | null, [strSchema]);
   const uiObj = useMemo(() => parseObject(strUi) as UiSchema, [strUi]);
@@ -587,7 +628,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
             ) : null}
             {!isPage && onClose ? (
               <div className="flex flex-none justify-start border-t border-border px-5 py-3">
-                <Button type="button" variant="pill-cancel" size="pill" onClick={onClose}>
+                <Button type="button" variant="pill-cancel" size="pill" onClick={handleClose}>
                   Close
                 </Button>
               </div>

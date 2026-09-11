@@ -370,6 +370,13 @@ def resolve_request_tenant() -> None:
         return
 
     if cookie:
+        if not _user_belongs(cookie):
+            raise ApiError(
+                "tenant_override_forbidden",
+                f"Tenant override forbidden via {SELECTED_TENANT_COOKIE_NAME}; "
+                "the authenticated user does not belong to that tenant.",
+                400,
+            )
         bind_request_tenant(cookie)
         return
 

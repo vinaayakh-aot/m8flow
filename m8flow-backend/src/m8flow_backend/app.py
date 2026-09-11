@@ -28,6 +28,7 @@ from m8flow_backend.startup.logging_setup import harden_logging
 from m8flow_backend.startup.process_error_guard import install_process_level_error_guards
 from m8flow_backend.startup.telemetry_setup import install_telemetry
 from m8flow_backend.integrations.auth import get_auth_provider
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.startup.env_var_mapper import apply_m8flow_env_mapping
 from m8flow_backend.startup.routes import (
     register_process_model_file_fallback_routes,
@@ -91,7 +92,14 @@ def create_app() -> FlaskApp:
     # The served object is the FlaskApp (ASGI).
     connexion_app = FlaskApp(__name__)
     app = connexion_app.app
-    app.config["SECRET_KEY"] = os.environ.get("FLASK_SESSION_SECRET_KEY") or "dev-secret"
+    session_secret = (os.environ.get("FLASK_SESSION_SECRET_KEY") or "").strip()
+    if not session_secret:
+        if not is_unit_testing_environment():
+            raise RuntimeError(
+                "FLASK_SESSION_SECRET_KEY must be set outside unit-testing environments."
+            )
+        session_secret = "dev-secret"
+    app.config["SECRET_KEY"] = session_secret
     templates_dir = os.environ.get("M8FLOW_TEMPLATES_STORAGE_DIR")
     if templates_dir:
         app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = templates_dir
@@ -150,8 +158,6 @@ def create_app() -> FlaskApp:
 
     install_auth_middleware(app)
     install_tenant_runtime(app)
-
-    from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 
     if not is_unit_testing_environment():
         from m8flow_backend.services.sample_template_loader import load_sample_templates

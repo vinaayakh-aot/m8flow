@@ -15,18 +15,33 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
+
 _SALT = b"m8flow-secrets-v1"
 _INFO = b"secret-at-rest"
 _FALLBACK_MATERIAL = "unit-test-secret-key-32bytes-min"
 
 
-def _fernet() -> Fernet:
+def _secret_material() -> bytes:
     material = (
         os.environ.get("M8FLOW_SECRETS_ENCRYPTION_KEY")
         or os.environ.get("FLASK_SESSION_SECRET_KEY")
-        or _FALLBACK_MATERIAL
-    ).encode("utf-8")
-    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=_SALT, info=_INFO).derive(material)
+        or ""
+    ).strip()
+    if material:
+        return material.encode("utf-8")
+    if is_unit_testing_environment():
+        return _FALLBACK_MATERIAL.encode("utf-8")
+    raise RuntimeError(
+        "M8FLOW_SECRETS_ENCRYPTION_KEY or FLASK_SESSION_SECRET_KEY must be set "
+        "outside unit-testing environments."
+    )
+
+
+def _fernet() -> Fernet:
+    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=_SALT, info=_INFO).derive(
+        _secret_material()
+    )
     return Fernet(base64.urlsafe_b64encode(derived))
 
 

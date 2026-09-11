@@ -255,11 +255,14 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 
 | Service | Purpose |
 |---------|---------|
-| `fetch-upstream` | Fetches upstream spiff-arena code into the working tree |
 | `keycloak-master-admin-init` | Sets up Keycloak master realm admin |
 | `minio-mc-init` | Creates MinIO buckets (`m8flow-process-models`, `m8flow-templates`) |
 | `process-models-sync` | Syncs process models into MinIO |
 | `templates-sync` | Syncs templates into MinIO |
+
+> **Node-wire wheels:** building `m8flow-node-wire-proxy` requires staging private
+> wheels first (`m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh`). See
+> [docs/known-gaps.md](docs/known-gaps.md).
 
 ### Stop and clean up
 
@@ -290,4 +293,6 @@ We welcome contributions from the community!
 
 m8flow is released under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for the full text.
 
-The upstream [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) code (LGPL-2.1) is **not stored in this repository**. It is fetched on demand via `bin/fetch-upstream.sh` or `bin/fetch-upstream.ps1` and gitignored so that it never enters the m8flow commit history. This keeps the licence boundaries cleanly separated while still allowing the app to run against the upstream SpiffWorkflow engine.
+The HTTP host consumes a pinned **`m8flow-bpmn-core`** wheel (see
+[docs/upstream-recovery.md](docs/upstream-recovery.md)). SpiffArena vendor source
+trees are not part of this repository and must not be reintroduced.

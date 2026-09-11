@@ -34,9 +34,12 @@ describe('TextFileCanvas', () => {
     fireEvent.change(screen.getByLabelText('File editor'), {
       target: { value: '# Updated\n' },
     });
-    await expect(ref.current?.saveXML()).resolves.toBe('# Updated\n');
+    await expect(ref.current?.saveXML()).resolves.toEqual({
+      xml: '# Updated\n',
+      baseline: '# Updated\n',
+    });
 
-    ref.current?.markSaved();
+    expect(ref.current?.markSaved('# Updated\n')).toBe(false);
     expect(onDirtyChange).toHaveBeenCalledWith(false);
   });
 

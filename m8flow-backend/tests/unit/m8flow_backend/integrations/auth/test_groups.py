@@ -238,3 +238,91 @@ def test_list_groups_http_error_is_provider_unavailable(monkeypatch):
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
     with pytest.raises(ProviderUnavailable):
         KeycloakAuthProvider().directory_admin.list_groups(TenantRef(id="org-1"))
+
+
+def test_fetch_realm_role_representation(monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak import groups as groups_mod
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert url.endswith("/admin/realms/m8flow/roles/editor")
+        return _FakeResponse({"id": "role-1", "name": "editor"})
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    found = groups_mod.fetch_realm_role_representation("m8flow", "editor", admin_token="t")
+    assert found == {"id": "role-1", "name": "editor"}
+
+
+def test_add_group_realm_role_mapping_posts_when_missing(monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak import groups as groups_mod
+
+    posted: list[Any] = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "role-mappings/realm/composite" in url:
+            return _FakeResponse([])
+        if url.endswith("/admin/realms/m8flow/roles/editor"):
+            return _FakeResponse({"id": "role-1", "name": "editor"})
+        raise AssertionError(url)
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        posted.append((url, json))
+        return _FakeResponse({}, status_code=204)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
+    groups_mod.add_group_realm_role_mapping(
+        "g-admin",
+        "editor",
+        organization_id="org-1",
+        admin_token="t",
+    )
+    assert len(posted) == 1
+    assert posted[0][0].endswith("/organizations/org-1/groups/g-admin/role-mappings/realm")
+    assert posted[0][1] == [{"id": "role-1", "name": "editor"}]
+
+
+def test_add_group_realm_role_mapping_skips_when_present(monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak import groups as groups_mod
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "role-mappings/realm/composite" in url:
+            return _FakeResponse([{"id": "role-1", "name": "editor"}])
+        raise AssertionError(url)
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
+    groups_mod.add_group_realm_role_mapping(
+        "g-admin",
+        "editor",
+        organization_id="org-1",
+        admin_token="t",
+    )
+
+
+def test_remove_group_realm_role_mapping_deletes_when_present(monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak import groups as groups_mod
+
+    deleted: list[Any] = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "role-mappings/realm/composite" in url:
+            return _FakeResponse([{"id": "role-1", "name": "editor"}])
+        raise AssertionError(url)
+
+    def fake_delete(url, json=None, headers=None, timeout=None):
+        deleted.append((url, json))
+        return _FakeResponse({}, status_code=204)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.delete", fake_delete)
+    groups_mod.remove_group_realm_role_mapping(
+        "g-admin",
+        "editor",
+        organization_id="org-1",
+        admin_token="t",
+    )
+    assert len(deleted) == 1
+    assert deleted[0][1] == [{"id": "role-1", "name": "editor"}]

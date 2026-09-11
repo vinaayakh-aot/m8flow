@@ -34,8 +34,11 @@ vi.mock('@/pages/process-model-modeler/components/DiagramCanvas', () => ({
     ref: Ref<DiagramCanvasHandle>,
   ) {
     useImperativeHandle(ref, () => ({
-      saveXML: async () => xml,
-      markSaved: () => onDirtyChange?.(false),
+      saveXML: async () => ({ xml, baseline: xml }),
+      markSaved: () => {
+        onDirtyChange?.(false);
+        return false;
+      },
     }));
     return (
       <div>

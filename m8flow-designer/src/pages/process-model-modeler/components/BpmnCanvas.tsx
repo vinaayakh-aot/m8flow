@@ -214,13 +214,17 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   useImperativeHandle(ref, () => ({
     saveXML: async () => {
       if (!modeler) throw new Error('Modeler not ready');
+      const baseline = modeler.get('commandStack')._stackIdx as number;
       const { xml: savedXml } = await modeler.saveXML({ format: true });
-      return savedXml as string;
+      return { xml: savedXml as string, baseline };
     },
-    markSaved: () => {
-      if (!modeler) return;
-      savedStackIndexRef.current = modeler.get('commandStack')._stackIdx;
-      onDirtyChange?.(false);
+    markSaved: (baseline) => {
+      if (!modeler) return false;
+      const savedIdx = typeof baseline === 'number' ? baseline : modeler.get('commandStack')._stackIdx;
+      savedStackIndexRef.current = savedIdx;
+      const stillDirty = modeler.get('commandStack')._stackIdx !== savedIdx;
+      onDirtyChange?.(stillDirty);
+      return stillDirty;
     },
   }), [modeler, onDirtyChange]);
 

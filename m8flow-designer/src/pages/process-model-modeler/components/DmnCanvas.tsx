@@ -35,17 +35,27 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
   useImperativeHandle(ref, () => ({
     saveXML: async () => {
       if (!modeler) throw new Error('Modeler not ready');
-      const { xml: savedXml } = await modeler.saveXML({ format: true });
-      return savedXml as string;
-    },
-    markSaved: () => {
-      if (!modeler) return;
+      let baseline = -1;
       try {
-        savedStackIndexRef.current = modeler.getActiveViewer().get('commandStack')._stackIdx;
+        baseline = modeler.getActiveViewer().get('commandStack')._stackIdx as number;
       } catch {
-        // No active viewer's commandStack (e.g. non-diagram view) — nothing to baseline.
+        // No active viewer's commandStack — export still works.
       }
-      onDirtyChange?.(false);
+      const { xml: savedXml } = await modeler.saveXML({ format: true });
+      return { xml: savedXml as string, baseline };
+    },
+    markSaved: (baseline) => {
+      if (!modeler) return false;
+      const savedIdx = typeof baseline === 'number' ? baseline : -1;
+      savedStackIndexRef.current = savedIdx;
+      let stillDirty = false;
+      try {
+        stillDirty = modeler.getActiveViewer().get('commandStack')._stackIdx !== savedIdx;
+      } catch {
+        stillDirty = false;
+      }
+      onDirtyChange?.(stillDirty);
+      return stillDirty;
     },
   }), [modeler, onDirtyChange]);
 

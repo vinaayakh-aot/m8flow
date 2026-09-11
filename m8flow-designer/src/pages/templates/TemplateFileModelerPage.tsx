@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
@@ -19,6 +19,7 @@ import { DiagramCanvas } from '@/pages/process-model-modeler/components/DiagramC
 import type { DiagramCanvasHandle } from '@/pages/process-model-modeler/components/DiagramCanvasHandle';
 import type { BpmnCanvasServiceTaskOperator } from '@/pages/process-model-modeler/components/BpmnCanvas';
 import { ModelerFileToolbar, type ModelerSavePhase } from '@/pages/process-model-modeler/components/ModelerFileToolbar';
+import { UnsavedChangesDialog } from '@/pages/process-model-modeler/components/ModelerFileDialogs';
 
 type SavePhase = ModelerSavePhase;
 
@@ -60,6 +61,8 @@ export default function TemplateFileModelerPage() {
   const [error, setError] = useState<string | null>(null);
   const [savePhase, setSavePhase] = useState<SavePhase>('saved');
   const currentIdRef = useRef<number | null>(null);
+  const allowLeaveRef = useRef(false);
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!validId || !file) {
@@ -134,15 +137,15 @@ export default function TemplateFileModelerPage() {
     if (!canvasRef.current || currentIdRef.current == null) return;
     setSavePhase('saving');
     try {
-      const currentXml = await canvasRef.current.saveXML();
+      const { xml, baseline } = await canvasRef.current.saveXML();
       const updated = await saveTemplateFileContent(
         currentIdRef.current,
         file,
-        currentXml,
+        xml,
         contentTypeForTemplateFileName(file),
       );
-      canvasRef.current.markSaved();
-      setSavePhase('saved');
+      const stillDirty = canvasRef.current.markSaved(baseline);
+      setSavePhase(stillDirty ? 'dirty' : 'saved');
       reanchorIfForked(updated);
     } catch {
       setSavePhase('error');
@@ -165,8 +168,8 @@ export default function TemplateFileModelerPage() {
 
   async function handleDownload() {
     if (!canvasRef.current) return;
-    const savedXml = await canvasRef.current.saveXML();
-    downloadTextFile(file, savedXml, contentTypeForTemplateFileName(file));
+    const { xml } = await canvasRef.current.saveXML();
+    downloadTextFile(file, xml, contentTypeForTemplateFileName(file));
   }
 
   const handleReadFile = useCallback(
@@ -214,6 +217,35 @@ export default function TemplateFileModelerPage() {
   const fileLower = file.toLowerCase();
   const isBpmn = fileLower.endsWith('.bpmn');
   const isDiagram = isBpmn || fileLower.endsWith('.dmn');
+
+  const dirty = savePhase === 'dirty';
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (dirty) event.preventDefault();
+      },
+      [dirty],
+    ),
+  );
+  useEffect(() => {
+    if (!dirty) return undefined;
+    function onClick(event: MouseEvent) {
+      if (allowLeaveRef.current || event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      const url = new URL(href, window.location.origin);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveTo(`${url.pathname}${url.search}${url.hash}`);
+    }
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [dirty]);
 
   return (
     <div className="flex min-h-screen flex-1 flex-col">
@@ -282,6 +314,16 @@ export default function TemplateFileModelerPage() {
           />
         ) : null}
       </main>
+      <UnsavedChangesDialog
+        open={leaveTo != null}
+        onStay={() => setLeaveTo(null)}
+        onLeave={() => {
+          const to = leaveTo;
+          allowLeaveRef.current = true;
+          setLeaveTo(null);
+          if (to) navigate(to);
+        }}
+      />
     </div>
   );
 }
