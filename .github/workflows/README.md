@@ -17,7 +17,7 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 - **backend** — Pytest for `m8flow-backend/` (uv sync against the pinned `m8flow-bpmn-core` wheel)
 - **frontend-lint** — Lint for `m8flow-frontend/`
 - **frontend-build-unit** — Build and unit tests for `m8flow-frontend/`
-- **mcp-lint** / **mcp** — Lint and unit tests for `m8flow-mcp/`
+- **mcp-lint** / **mcp** — Lint and unit tests for `m8flow-mcp/` (`uv sync --extra dev` for sibling `m8flow-telemetry`)
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
 - **migration-check** — Calls `check-migrations.yml` when migration files change

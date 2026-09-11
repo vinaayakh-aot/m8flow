@@ -65,6 +65,14 @@ Runs ESLint against the repo-owned frontend using [`m8flow-frontend/eslint.confi
 
 Builds the repo-owned frontend bundle and runs the frontend unit tests. This is the main frontend regression gate in CI.
 
+### MCP Lint
+
+Runs Ruff check and format against `m8flow-mcp/`.
+
+### MCP Unit Tests
+
+Installs MCP deps with `uv sync --extra dev` (required so `[tool.uv.sources]` resolves the local sibling `m8flow-telemetry`) and runs `uv run pytest` under `m8flow-mcp/`. Plain `pip install` cannot resolve that path override.
+
 ### Migration Compatibility Check
 
 Runs the reusable workflow in [`.github/workflows/check-migrations.yml`](../.github/workflows/check-migrations.yml).
@@ -112,6 +120,14 @@ npm ci
 npm run lint
 npm run build
 npm test
+```
+
+### MCP changes
+
+```powershell
+cd C:\dev\repos\m8flow\m8flow-mcp
+uv sync --extra dev
+uv run pytest tests/ --cov=src --cov-report=term-missing
 ```
 
 ### Migration changes

@@ -51,7 +51,7 @@ Install the following tools:
 
 ### Default host ports
 
-By default, the stack publishes **6840–6852** on your machine (configured in [sample.env](sample.env)).
+By default, the main stack publishes **6840–6850** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851 / 6852**.
 
 | Port(s) | Service |
 |---------|---------|
