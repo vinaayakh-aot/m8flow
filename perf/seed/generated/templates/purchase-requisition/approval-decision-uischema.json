@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "outcome",
+    "comments"
+  ],
+  "comments": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

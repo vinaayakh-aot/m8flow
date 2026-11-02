@@ -1,0 +1,51 @@
+{
+  "title": "Report an incident",
+  "type": "object",
+  "required": [
+    "summary",
+    "service",
+    "impact",
+    "urgency"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "title": "Summary"
+    },
+    "service": {
+      "type": "string",
+      "title": "Affected service",
+      "enum": [
+        "Email",
+        "VPN",
+        "ERP",
+        "Website",
+        "Laptop"
+      ]
+    },
+    "impact": {
+      "type": "string",
+      "title": "Impact",
+      "enum": [
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "urgency": {
+      "type": "string",
+      "title": "Urgency",
+      "enum": [
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "affected_users": {
+      "type": "integer",
+      "title": "Users affected",
+      "minimum": 1,
+      "default": 1
+    }
+  }
+}

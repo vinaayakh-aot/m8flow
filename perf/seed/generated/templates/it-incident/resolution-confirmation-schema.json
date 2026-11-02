@@ -1,0 +1,24 @@
+{
+  "title": "Confirm resolution",
+  "type": "object",
+  "required": [
+    "confirmed"
+  ],
+  "properties": {
+    "confirmed": {
+      "type": "boolean",
+      "title": "The issue is resolved",
+      "default": true
+    },
+    "satisfaction": {
+      "type": "integer",
+      "title": "Satisfaction (1-5)",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "feedback": {
+      "type": "string",
+      "title": "Feedback"
+    }
+  }
+}

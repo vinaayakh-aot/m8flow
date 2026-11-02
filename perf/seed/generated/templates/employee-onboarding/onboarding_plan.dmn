@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="Definitions_onboarding_plan" name="Onboarding plan" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="onboarding_plan" name="Onboarding plan">
+    <decisionTable id="DecisionTable_onboarding_plan" hitPolicy="UNIQUE">
+      <input id="Input_1" label="Department">
+        <inputExpression id="InputExpression_1" typeRef="string" expressionLanguage="python"><text>department</text></inputExpression>
+      </input>
+      <input id="Input_2" label="Employment type">
+        <inputExpression id="InputExpression_2" typeRef="string" expressionLanguage="python"><text>employment_type</text></inputExpression>
+      </input>
+      <output id="Output_1" label="Systems" name="base_systems" typeRef="string" />
+      <output id="Output_2" label="Buddy programme" name="buddy_programme" typeRef="boolean" />
+      <rule id="Rule_1">
+        <description>Contractors get the minimum</description>
+        <inputEntry id="Rule_1_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_1_in_2"><text>"Contractor"</text></inputEntry>
+        <outputEntry id="Rule_1_out_1"><text>"email,vpn"</text></outputEntry>
+        <outputEntry id="Rule_1_out_2"><text>False</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <description>Engineering</description>
+        <inputEntry id="Rule_2_in_1"><text>"Engineering"</text></inputEntry>
+        <inputEntry id="Rule_2_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_2_out_1"><text>"email,vpn,hris,github,jira,ci"</text></outputEntry>
+        <outputEntry id="Rule_2_out_2"><text>True</text></outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <description>Sales</description>
+        <inputEntry id="Rule_3_in_1"><text>"Sales"</text></inputEntry>
+        <inputEntry id="Rule_3_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_3_out_1"><text>"email,vpn,hris,crm,cpq"</text></outputEntry>
+        <outputEntry id="Rule_3_out_2"><text>True</text></outputEntry>
+      </rule>
+      <rule id="Rule_4">
+        <description>Everyone else</description>
+        <inputEntry id="Rule_4_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_4_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_4_out_1"><text>"email,vpn,hris"</text></outputEntry>
+        <outputEntry id="Rule_4_out_2"><text>True</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape dmnElementRef="onboarding_plan"><dc:Bounds height="80" width="180" x="160" y="100" /></dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

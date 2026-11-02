@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="Definitions_claim_triage" name="Claim triage" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="claim_triage" name="Claim triage">
+    <decisionTable id="DecisionTable_claim_triage" hitPolicy="UNIQUE">
+      <input id="Input_1" label="Estimated amount">
+        <inputExpression id="InputExpression_1" typeRef="number" expressionLanguage="python"><text>estimated_amount</text></inputExpression>
+      </input>
+      <input id="Input_2" label="Prior claims">
+        <inputExpression id="InputExpression_2" typeRef="integer" expressionLanguage="python"><text>prior_claims</text></inputExpression>
+      </input>
+      <input id="Input_3" label="Police report">
+        <inputExpression id="InputExpression_3" typeRef="boolean" expressionLanguage="python"><text>police_report_filed</text></inputExpression>
+      </input>
+      <output id="Output_1" label="Triage" name="triage" typeRef="string" />
+      <output id="Output_2" label="Authority limit" name="authority_limit" typeRef="number" />
+      <rule id="Rule_1">
+        <description>Repeat claimants are investigated</description>
+        <inputEntry id="Rule_1_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_1_in_2"><text>? &gt;= 3</text></inputEntry>
+        <inputEntry id="Rule_1_in_3"><text></text></inputEntry>
+        <outputEntry id="Rule_1_out_1"><text>"investigate"</text></outputEntry>
+        <outputEntry id="Rule_1_out_2"><text>10000</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <description>Large losses without a police report</description>
+        <inputEntry id="Rule_2_in_1"><text>? &gt; 50000</text></inputEntry>
+        <inputEntry id="Rule_2_in_2"><text></text></inputEntry>
+        <inputEntry id="Rule_2_in_3"><text>False</text></inputEntry>
+        <outputEntry id="Rule_2_out_1"><text>"investigate"</text></outputEntry>
+        <outputEntry id="Rule_2_out_2"><text>25000</text></outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <description>Small clean claims are fast-tracked</description>
+        <inputEntry id="Rule_3_in_1"><text>? &lt;= 2500</text></inputEntry>
+        <inputEntry id="Rule_3_in_2"><text></text></inputEntry>
+        <inputEntry id="Rule_3_in_3"><text></text></inputEntry>
+        <outputEntry id="Rule_3_out_1"><text>"fast_track"</text></outputEntry>
+        <outputEntry id="Rule_3_out_2"><text>2500</text></outputEntry>
+      </rule>
+      <rule id="Rule_4">
+        <description>Everything else is standard</description>
+        <inputEntry id="Rule_4_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_4_in_2"><text></text></inputEntry>
+        <inputEntry id="Rule_4_in_3"><text></text></inputEntry>
+        <outputEntry id="Rule_4_out_1"><text>"standard"</text></outputEntry>
+        <outputEntry id="Rule_4_out_2"><text>25000</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape dmnElementRef="claim_triage"><dc:Bounds height="80" width="180" x="160" y="100" /></dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

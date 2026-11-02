@@ -1,0 +1,23 @@
+{
+  "title": "Onboarding documents",
+  "type": "object",
+  "required": [
+    "id_document_provided",
+    "tax_form_provided",
+    "bank_details_provided"
+  ],
+  "properties": {
+    "id_document_provided": {
+      "type": "boolean",
+      "title": "Photo ID uploaded"
+    },
+    "tax_form_provided": {
+      "type": "boolean",
+      "title": "Tax form completed"
+    },
+    "bank_details_provided": {
+      "type": "boolean",
+      "title": "Bank details provided"
+    }
+  }
+}

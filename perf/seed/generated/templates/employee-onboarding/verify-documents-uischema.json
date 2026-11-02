@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "documents_verified",
+    "hr_notes"
+  ],
+  "hr_notes": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

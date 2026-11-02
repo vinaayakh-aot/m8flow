@@ -1,0 +1,7 @@
+{
+  "ui:order": [
+    "outcome",
+    "approved_amount",
+    "comments"
+  ]
+}

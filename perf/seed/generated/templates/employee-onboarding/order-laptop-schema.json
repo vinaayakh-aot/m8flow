@@ -1,0 +1,19 @@
+{
+  "title": "Order replacement laptop",
+  "type": "object",
+  "required": [
+    "laptop_vendor",
+    "laptop_eta_days"
+  ],
+  "properties": {
+    "laptop_vendor": {
+      "type": "string",
+      "title": "Vendor"
+    },
+    "laptop_eta_days": {
+      "type": "integer",
+      "title": "ETA (days)",
+      "minimum": 0
+    }
+  }
+}

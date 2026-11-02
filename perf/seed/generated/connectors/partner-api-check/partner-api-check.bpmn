@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_partner-api-check" targetNamespace="http://bpmn.io/schema/bpmn" exporter="m8flow perf-seed builder" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_partner-api-check">
+    <bpmn:participant id="Participant_partner-api-check" name="Partner API Check" processRef="partner-api-check" />
+  </bpmn:collaboration>
+  <bpmn:process id="partner-api-check" name="Partner API Check" isExecutable="true">
+    <bpmn:documentation>Calls a public echo API with GET and POST through the node-wire http connector.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_partner-api-check">
+      <bpmn:lane id="Lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>start_check</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>enter_order</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>get_status</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>post_update</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_echo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_ok</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>investigate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_mismatch</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start_check" name="Check requested">
+      <bpmn:outgoing>Flow_start_check_enter_order</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="enter_order" name="Enter order reference">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="order-reference-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="order-reference-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_check_enter_order</bpmn:incoming>
+      <bpmn:outgoing>Flow_enter_order_get_status</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="get_status" name="GET order status">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="http/GetRequestV2" resultVariable="status_response"><spiffworkflow:parameters><spiffworkflow:parameter id="url" type="any" value='"https://httpbin.org/get"' /><spiffworkflow:parameter id="params" type="any" value="{'order': order_reference}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>status_code = status_response['command_response']['http_status']</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_enter_order_get_status</bpmn:incoming>
+      <bpmn:outgoing>Flow_get_status_post_update</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="post_update" name="POST order update">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="http/PostRequestV2" resultVariable="post_response"><spiffworkflow:parameters><spiffworkflow:parameter id="url" type="any" value='"https://httpbin.org/post"' /><spiffworkflow:parameter id="data" type="any" value="{'order': order_reference, 'quantity': quantity, 'status': 'shipped'}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>echoed_order = post_response['command_response']['body']['json']['order']</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_get_status_post_update</bpmn:incoming>
+      <bpmn:outgoing>Flow_post_update_gw_echo</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="gw_echo" name="Echo matches?" default="Flow_gw_echo_investigate">
+      <bpmn:incoming>Flow_post_update_gw_echo</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_echo_end_ok</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_echo_investigate</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="end_ok" name="Partner in sync">
+      <bpmn:incoming>Flow_gw_echo_end_ok</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:manualTask id="investigate" name="Investigate mismatch">
+      <bpmn:incoming>Flow_gw_echo_investigate</bpmn:incoming>
+      <bpmn:outgoing>Flow_investigate_end_mismatch</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="end_mismatch" name="Mismatch logged">
+      <bpmn:incoming>Flow_investigate_end_mismatch</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_start_check_enter_order" sourceRef="start_check" targetRef="enter_order" />
+    <bpmn:sequenceFlow id="Flow_enter_order_get_status" sourceRef="enter_order" targetRef="get_status" />
+    <bpmn:sequenceFlow id="Flow_get_status_post_update" sourceRef="get_status" targetRef="post_update" />
+    <bpmn:sequenceFlow id="Flow_post_update_gw_echo" sourceRef="post_update" targetRef="gw_echo" />
+    <bpmn:sequenceFlow id="Flow_gw_echo_end_ok" name="match" sourceRef="gw_echo" targetRef="end_ok"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">echoed_order == order_reference and status_code == 200</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_echo_investigate" name="mismatch" sourceRef="gw_echo" targetRef="investigate" />
+    <bpmn:sequenceFlow id="Flow_investigate_end_mismatch" sourceRef="investigate" targetRef="end_mismatch" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_partner-api-check">
+    <bpmndi:BPMNPlane id="BPMNPlane_partner-api-check" bpmnElement="Collaboration_partner-api-check">
+      <bpmndi:BPMNShape id="Participant_partner-api-check_di" bpmnElement="Participant_partner-api-check" isHorizontal="true"><dc:Bounds x="120" y="60" width="1270" height="260" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="150" y="60" width="1240" height="260" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="start_check_di" bpmnElement="start_check"><dc:Bounds x="247" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="217" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="enter_order_di" bpmnElement="enter_order"><dc:Bounds x="385" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="get_status_di" bpmnElement="get_status"><dc:Bounds x="555" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="post_update_di" bpmnElement="post_update"><dc:Bounds x="725" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_echo_di" bpmnElement="gw_echo"><dc:Bounds x="920" y="100" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="890" y="154" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_ok_di" bpmnElement="end_ok"><dc:Bounds x="1097" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1067" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="investigate_di" bpmnElement="investigate"><dc:Bounds x="1065" y="215" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_mismatch_di" bpmnElement="end_mismatch"><dc:Bounds x="1267" y="237" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1237" y="277" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_check_enter_order_di" bpmnElement="Flow_start_check_enter_order"><di:waypoint x="283" y="125" /><di:waypoint x="385" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_enter_order_get_status_di" bpmnElement="Flow_enter_order_get_status"><di:waypoint x="485" y="125" /><di:waypoint x="555" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_get_status_post_update_di" bpmnElement="Flow_get_status_post_update"><di:waypoint x="655" y="125" /><di:waypoint x="725" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_post_update_gw_echo_di" bpmnElement="Flow_post_update_gw_echo"><di:waypoint x="825" y="125" /><di:waypoint x="920" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_echo_end_ok_di" bpmnElement="Flow_gw_echo_end_ok"><di:waypoint x="970" y="125" /><di:waypoint x="1097" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_echo_investigate_di" bpmnElement="Flow_gw_echo_investigate"><di:waypoint x="970" y="125" /><di:waypoint x="995" y="125" /><di:waypoint x="995" y="255" /><di:waypoint x="1065" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_investigate_end_mismatch_di" bpmnElement="Flow_investigate_end_mismatch"><di:waypoint x="1165" y="255" /><di:waypoint x="1267" y="255" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

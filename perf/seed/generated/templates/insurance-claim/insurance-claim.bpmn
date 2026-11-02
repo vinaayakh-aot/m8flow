@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_insurance_claim" targetNamespace="http://bpmn.io/schema/bpmn" exporter="m8flow perf-seed builder" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_insurance_claim">
+    <bpmn:participant id="Participant_insurance_claim" name="Insurance Claim Handling" processRef="insurance_claim" />
+  </bpmn:collaboration>
+  <bpmn:error id="Error_fraud_confirmed" name="Fraud confirmed" errorCode="FRAUD_CONFIRMED" />
+  <bpmn:escalation id="Escalation_over_authority" name="Over adjuster authority" escalationCode="OVER_AUTHORITY" />
+  <bpmn:process id="insurance_claim" name="Insurance Claim Handling" isExecutable="true">
+    <bpmn:documentation>First notice of loss through triage, investigation, authority checks and a transactional payout.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_insurance_claim">
+      <bpmn:lane id="Lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>start_claim</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>report_claim</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>triage_claim</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_triage</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_support" name="Support">
+        <bpmn:flowNodeRef>collect_information</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>assess_damage</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>review_evidence</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>investigation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_fraud</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_assessed</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>authority_check</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_over_authority</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_approvers" name="Approvers">
+        <bpmn:flowNodeRef>record_denial</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_denied</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>senior_review</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_senior</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_administrators" name="Administrators">
+        <bpmn:flowNodeRef>gw_settle</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>approve_payment</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>payout</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_payment_cancelled</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>release_reserve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_payment_failed</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>close_claim</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_paid</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start_claim" name="Loss reported">
+      <bpmn:outgoing>Flow_start_claim_report_claim</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="report_claim" name="Report claim">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="claim-report-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="claim-report-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_claim_report_claim</bpmn:incoming>
+      <bpmn:outgoing>Flow_report_claim_triage_claim</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="triage_claim" name="Triage claim">
+      <bpmn:extensionElements><spiffworkflow:calledDecisionId>claim_triage</spiffworkflow:calledDecisionId><spiffworkflow:postScript>settlement_amount = estimated_amount</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_report_claim_triage_claim</bpmn:incoming>
+      <bpmn:outgoing>Flow_triage_claim_gw_triage</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:exclusiveGateway id="gw_triage" name="Triage?" default="Flow_gw_triage_collect_information">
+      <bpmn:incoming>Flow_triage_claim_gw_triage</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_triage_gw_settle</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_triage_collect_information</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_triage_review_evidence</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="collect_information" name="Collect supporting documents">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="claim-information-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="claim-information-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Policy {{ policy_number }}: request any missing documents from the policyholder.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_triage_collect_information</bpmn:incoming>
+      <bpmn:outgoing>Flow_collect_information_assess_damage</bpmn:outgoing>
+      <bpmn:standardLoopCharacteristics loopMaximum="3"><bpmn:loopCondition xsi:type="bpmn:tFormalExpression">not documents_complete</bpmn:loopCondition></bpmn:standardLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:userTask id="assess_damage" name="Assess damage">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="damage-assessment-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="damage-assessment-uischema.json" /></spiffworkflow:properties><spiffworkflow:postScript>settlement_amount = assessed_amount</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_collect_information_assess_damage</bpmn:incoming>
+      <bpmn:outgoing>Flow_assess_damage_gw_assessed</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="review_evidence" name="Review evidence">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="fraud-investigation-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="fraud-investigation-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_triage_review_evidence</bpmn:incoming>
+      <bpmn:outgoing>Flow_review_evidence_investigation</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:subProcess id="investigation" name="Fraud ruling">
+      <bpmn:incoming>Flow_review_evidence_investigation</bpmn:incoming>
+      <bpmn:outgoing>Flow_investigation_gw_assessed</bpmn:outgoing>
+      <bpmn:startEvent id="sp_inv_start">
+        <bpmn:outgoing>Flow_sp_inv_start_record_findings</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:scriptTask id="record_findings" name="Record findings">
+        <bpmn:incoming>Flow_sp_inv_start_record_findings</bpmn:incoming>
+        <bpmn:outgoing>Flow_record_findings_gw_fraud</bpmn:outgoing>
+        <bpmn:script>fraud_score = 90 if fraud_confirmed else 10
+claim_status = 'investigated'</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:exclusiveGateway id="gw_fraud" name="Fraud?" default="Flow_gw_fraud_sp_inv_end">
+        <bpmn:incoming>Flow_record_findings_gw_fraud</bpmn:incoming>
+        <bpmn:outgoing>Flow_gw_fraud_end_fraud</bpmn:outgoing>
+        <bpmn:outgoing>Flow_gw_fraud_sp_inv_end</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:endEvent id="sp_inv_end">
+        <bpmn:incoming>Flow_gw_fraud_sp_inv_end</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:endEvent id="end_fraud" name="Fraud confirmed">
+        <bpmn:incoming>Flow_gw_fraud_end_fraud</bpmn:incoming>
+        <bpmn:errorEventDefinition errorRef="Error_fraud_confirmed" />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_sp_inv_start_record_findings" sourceRef="sp_inv_start" targetRef="record_findings" />
+      <bpmn:sequenceFlow id="Flow_record_findings_gw_fraud" sourceRef="record_findings" targetRef="gw_fraud" />
+      <bpmn:sequenceFlow id="Flow_gw_fraud_end_fraud" name="fraud" sourceRef="gw_fraud" targetRef="end_fraud"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">fraud_confirmed == True</bpmn:conditionExpression></bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_gw_fraud_sp_inv_end" name="genuine" sourceRef="gw_fraud" targetRef="sp_inv_end" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="b_fraud" name="Fraud" attachedToRef="investigation">
+      <bpmn:outgoing>Flow_b_fraud_record_denial</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="Error_fraud_confirmed" />
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="record_denial" name="Record fraud denial">
+      <bpmn:incoming>Flow_b_fraud_record_denial</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_denial_end_denied</bpmn:outgoing>
+      <bpmn:script>claim_status = 'denied_fraud'</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end_denied" name="Claim denied">
+      <bpmn:incoming>Flow_record_denial_end_denied</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="gw_assessed">
+      <bpmn:incoming>Flow_assess_damage_gw_assessed</bpmn:incoming>
+      <bpmn:incoming>Flow_investigation_gw_assessed</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_assessed_authority_check</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:subProcess id="authority_check" name="Adjuster authority check">
+      <bpmn:incoming>Flow_gw_assessed_authority_check</bpmn:incoming>
+      <bpmn:outgoing>Flow_authority_check_gw_settle</bpmn:outgoing>
+      <bpmn:startEvent id="sp_auth_start">
+        <bpmn:outgoing>Flow_sp_auth_start_gw_authority</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:exclusiveGateway id="gw_authority" name="Within authority?" default="Flow_gw_authority_sp_auth_end">
+        <bpmn:incoming>Flow_sp_auth_start_gw_authority</bpmn:incoming>
+        <bpmn:outgoing>Flow_gw_authority_end_over_authority</bpmn:outgoing>
+        <bpmn:outgoing>Flow_gw_authority_sp_auth_end</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:endEvent id="sp_auth_end">
+        <bpmn:incoming>Flow_gw_authority_sp_auth_end</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:endEvent id="end_over_authority" name="Over authority">
+        <bpmn:incoming>Flow_gw_authority_end_over_authority</bpmn:incoming>
+        <bpmn:escalationEventDefinition escalationRef="Escalation_over_authority" />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_sp_auth_start_gw_authority" sourceRef="sp_auth_start" targetRef="gw_authority" />
+      <bpmn:sequenceFlow id="Flow_gw_authority_end_over_authority" name="over limit" sourceRef="gw_authority" targetRef="end_over_authority"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">settlement_amount &gt; authority_limit</bpmn:conditionExpression></bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_gw_authority_sp_auth_end" name="within limit" sourceRef="gw_authority" targetRef="sp_auth_end" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="b_over_authority" name="Escalated" attachedToRef="authority_check">
+      <bpmn:outgoing>Flow_b_over_authority_senior_review</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Escalation_over_authority" />
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="senior_review" name="Senior adjuster review">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="senior-review-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="senior-review-uischema.json" /></spiffworkflow:properties><spiffworkflow:postScript>settlement_amount = approved_amount if outcome == 'approve' else settlement_amount</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_b_over_authority_senior_review</bpmn:incoming>
+      <bpmn:outgoing>Flow_senior_review_gw_senior</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="gw_senior" name="Senior decision?" default="Flow_gw_senior_gw_settle">
+      <bpmn:incoming>Flow_senior_review_gw_senior</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_senior_end_rejected</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_senior_gw_settle</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="end_rejected" name="Claim rejected">
+      <bpmn:incoming>Flow_gw_senior_end_rejected</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="gw_settle">
+      <bpmn:incoming>Flow_gw_triage_gw_settle</bpmn:incoming>
+      <bpmn:incoming>Flow_authority_check_gw_settle</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_senior_gw_settle</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_settle_approve_payment</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="approve_payment" name="Release payment">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="payment-release-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="payment-release-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Release ${{ settlement_amount }} for policy {{ policy_number }}.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_settle_approve_payment</bpmn:incoming>
+      <bpmn:outgoing>Flow_approve_payment_payout</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:transaction id="payout" name="Settlement payout">
+      <bpmn:incoming>Flow_approve_payment_payout</bpmn:incoming>
+      <bpmn:outgoing>Flow_payout_close_claim</bpmn:outgoing>
+      <bpmn:startEvent id="tx_start">
+        <bpmn:outgoing>Flow_tx_start_reserve_funds</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:scriptTask id="reserve_funds" name="Reserve funds">
+        <bpmn:incoming>Flow_tx_start_reserve_funds</bpmn:incoming>
+        <bpmn:outgoing>Flow_reserve_funds_execute_transfer</bpmn:outgoing>
+        <bpmn:script>reserve_id = 'RSV-' + policy_number</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:scriptTask id="execute_transfer" name="Execute bank transfer">
+        <bpmn:incoming>Flow_reserve_funds_execute_transfer</bpmn:incoming>
+        <bpmn:outgoing>Flow_execute_transfer_gw_payment</bpmn:outgoing>
+        <bpmn:script>transfer_status = 'sent' if payment_successful else 'bounced'</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:exclusiveGateway id="gw_payment" name="Paid?" default="Flow_gw_payment_tx_end">
+        <bpmn:incoming>Flow_execute_transfer_gw_payment</bpmn:incoming>
+        <bpmn:outgoing>Flow_gw_payment_tx_cancel</bpmn:outgoing>
+        <bpmn:outgoing>Flow_gw_payment_tx_end</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:endEvent id="tx_end">
+        <bpmn:incoming>Flow_gw_payment_tx_end</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:endEvent id="tx_cancel" name="Payment failed">
+        <bpmn:incoming>Flow_gw_payment_tx_cancel</bpmn:incoming>
+        <bpmn:cancelEventDefinition />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_tx_start_reserve_funds" sourceRef="tx_start" targetRef="reserve_funds" />
+      <bpmn:sequenceFlow id="Flow_reserve_funds_execute_transfer" sourceRef="reserve_funds" targetRef="execute_transfer" />
+      <bpmn:sequenceFlow id="Flow_execute_transfer_gw_payment" sourceRef="execute_transfer" targetRef="gw_payment" />
+      <bpmn:sequenceFlow id="Flow_gw_payment_tx_cancel" name="failed" sourceRef="gw_payment" targetRef="tx_cancel"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">payment_successful == False</bpmn:conditionExpression></bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_gw_payment_tx_end" name="paid" sourceRef="gw_payment" targetRef="tx_end" />
+    </bpmn:transaction>
+    <bpmn:boundaryEvent id="b_payment_cancelled" name="Cancelled" attachedToRef="payout">
+      <bpmn:outgoing>Flow_b_payment_cancelled_release_reserve</bpmn:outgoing>
+      <bpmn:cancelEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="release_reserve" name="Release reserve">
+      <bpmn:incoming>Flow_b_payment_cancelled_release_reserve</bpmn:incoming>
+      <bpmn:outgoing>Flow_release_reserve_end_payment_failed</bpmn:outgoing>
+      <bpmn:script>claim_status = 'payment_failed'</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end_payment_failed" name="Payout cancelled">
+      <bpmn:incoming>Flow_release_reserve_end_payment_failed</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:scriptTask id="close_claim" name="Close claim">
+      <bpmn:incoming>Flow_payout_close_claim</bpmn:incoming>
+      <bpmn:outgoing>Flow_close_claim_end_paid</bpmn:outgoing>
+      <bpmn:script>claim_status = 'paid'</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end_paid" name="Claim paid">
+      <bpmn:incoming>Flow_close_claim_end_paid</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_start_claim_report_claim" sourceRef="start_claim" targetRef="report_claim" />
+    <bpmn:sequenceFlow id="Flow_report_claim_triage_claim" sourceRef="report_claim" targetRef="triage_claim" />
+    <bpmn:sequenceFlow id="Flow_triage_claim_gw_triage" sourceRef="triage_claim" targetRef="gw_triage" />
+    <bpmn:sequenceFlow id="Flow_gw_triage_gw_settle" name="fast track" sourceRef="gw_triage" targetRef="gw_settle"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">triage == 'fast_track'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_triage_collect_information" name="standard" sourceRef="gw_triage" targetRef="collect_information" />
+    <bpmn:sequenceFlow id="Flow_gw_triage_review_evidence" name="investigate" sourceRef="gw_triage" targetRef="review_evidence"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">triage == 'investigate'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_collect_information_assess_damage" sourceRef="collect_information" targetRef="assess_damage" />
+    <bpmn:sequenceFlow id="Flow_assess_damage_gw_assessed" sourceRef="assess_damage" targetRef="gw_assessed" />
+    <bpmn:sequenceFlow id="Flow_review_evidence_investigation" sourceRef="review_evidence" targetRef="investigation" />
+    <bpmn:sequenceFlow id="Flow_investigation_gw_assessed" sourceRef="investigation" targetRef="gw_assessed" />
+    <bpmn:sequenceFlow id="Flow_b_fraud_record_denial" sourceRef="b_fraud" targetRef="record_denial" />
+    <bpmn:sequenceFlow id="Flow_record_denial_end_denied" sourceRef="record_denial" targetRef="end_denied" />
+    <bpmn:sequenceFlow id="Flow_gw_assessed_authority_check" sourceRef="gw_assessed" targetRef="authority_check" />
+    <bpmn:sequenceFlow id="Flow_authority_check_gw_settle" sourceRef="authority_check" targetRef="gw_settle" />
+    <bpmn:sequenceFlow id="Flow_b_over_authority_senior_review" sourceRef="b_over_authority" targetRef="senior_review" />
+    <bpmn:sequenceFlow id="Flow_senior_review_gw_senior" sourceRef="senior_review" targetRef="gw_senior" />
+    <bpmn:sequenceFlow id="Flow_gw_senior_end_rejected" name="rejected" sourceRef="gw_senior" targetRef="end_rejected"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">outcome == 'reject'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_senior_gw_settle" name="approved" sourceRef="gw_senior" targetRef="gw_settle" />
+    <bpmn:sequenceFlow id="Flow_gw_settle_approve_payment" sourceRef="gw_settle" targetRef="approve_payment" />
+    <bpmn:sequenceFlow id="Flow_approve_payment_payout" sourceRef="approve_payment" targetRef="payout" />
+    <bpmn:sequenceFlow id="Flow_b_payment_cancelled_release_reserve" sourceRef="b_payment_cancelled" targetRef="release_reserve" />
+    <bpmn:sequenceFlow id="Flow_release_reserve_end_payment_failed" sourceRef="release_reserve" targetRef="end_payment_failed" />
+    <bpmn:sequenceFlow id="Flow_payout_close_claim" sourceRef="payout" targetRef="close_claim" />
+    <bpmn:sequenceFlow id="Flow_close_claim_end_paid" sourceRef="close_claim" targetRef="end_paid" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_insurance_claim">
+    <bpmndi:BPMNPlane id="BPMNPlane_insurance_claim" bpmnElement="Collaboration_insurance_claim">
+      <bpmndi:BPMNShape id="Participant_insurance_claim_di" bpmnElement="Participant_insurance_claim" isHorizontal="true"><dc:Bounds x="120" y="60" width="3820" height="1040" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="150" y="60" width="3790" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_support_di" bpmnElement="Lane_support" isHorizontal="true"><dc:Bounds x="150" y="190" width="3790" height="390" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="150" y="580" width="3790" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_administrators_di" bpmnElement="Lane_administrators" isHorizontal="true"><dc:Bounds x="150" y="710" width="3790" height="390" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="investigation_di" bpmnElement="investigation" isExpanded="true"><dc:Bounds x="1038" y="328" width="664" height="244" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="authority_check_di" bpmnElement="authority_check" isExpanded="true"><dc:Bounds x="1888" y="198" width="494" height="244" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="payout_di" bpmnElement="payout" isExpanded="true"><dc:Bounds x="2738" y="718" width="834" height="244" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="start_claim_di" bpmnElement="start_claim"><dc:Bounds x="247" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="217" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="report_claim_di" bpmnElement="report_claim"><dc:Bounds x="385" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="triage_claim_di" bpmnElement="triage_claim"><dc:Bounds x="555" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_triage_di" bpmnElement="gw_triage"><dc:Bounds x="750" y="100" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="720" y="154" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="collect_information_di" bpmnElement="collect_information"><dc:Bounds x="895" y="215" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="assess_damage_di" bpmnElement="assess_damage"><dc:Bounds x="1065" y="215" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_evidence_di" bpmnElement="review_evidence"><dc:Bounds x="895" y="345" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_inv_start_di" bpmnElement="sp_inv_start"><dc:Bounds x="1097" y="367" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="record_findings_di" bpmnElement="record_findings"><dc:Bounds x="1235" y="345" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_fraud_di" bpmnElement="gw_fraud"><dc:Bounds x="1430" y="360" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1400" y="414" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_inv_end_di" bpmnElement="sp_inv_end"><dc:Bounds x="1607" y="367" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_fraud_di" bpmnElement="end_fraud"><dc:Bounds x="1437" y="497" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1407" y="537" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="record_denial_di" bpmnElement="record_denial"><dc:Bounds x="1065" y="605" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_denied_di" bpmnElement="end_denied"><dc:Bounds x="1267" y="627" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1237" y="667" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_assessed_di" bpmnElement="gw_assessed"><dc:Bounds x="1770" y="230" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_auth_start_di" bpmnElement="sp_auth_start"><dc:Bounds x="1947" y="237" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_authority_di" bpmnElement="gw_authority"><dc:Bounds x="2110" y="230" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="2080" y="284" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_auth_end_di" bpmnElement="sp_auth_end"><dc:Bounds x="2287" y="237" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_over_authority_di" bpmnElement="end_over_authority"><dc:Bounds x="2117" y="367" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2087" y="407" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="senior_review_di" bpmnElement="senior_review"><dc:Bounds x="1915" y="605" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_senior_di" bpmnElement="gw_senior"><dc:Bounds x="2110" y="620" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="2080" y="674" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_rejected_di" bpmnElement="end_rejected"><dc:Bounds x="2287" y="627" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2257" y="667" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_settle_di" bpmnElement="gw_settle"><dc:Bounds x="2450" y="750" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approve_payment_di" bpmnElement="approve_payment"><dc:Bounds x="2595" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="tx_start_di" bpmnElement="tx_start"><dc:Bounds x="2797" y="757" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reserve_funds_di" bpmnElement="reserve_funds"><dc:Bounds x="2935" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="execute_transfer_di" bpmnElement="execute_transfer"><dc:Bounds x="3105" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_payment_di" bpmnElement="gw_payment"><dc:Bounds x="3300" y="750" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="3270" y="804" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="tx_end_di" bpmnElement="tx_end"><dc:Bounds x="3477" y="757" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="tx_cancel_di" bpmnElement="tx_cancel"><dc:Bounds x="3307" y="887" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3277" y="927" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="release_reserve_di" bpmnElement="release_reserve"><dc:Bounds x="2765" y="995" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_payment_failed_di" bpmnElement="end_payment_failed"><dc:Bounds x="2967" y="1017" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2937" y="1057" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="close_claim_di" bpmnElement="close_claim"><dc:Bounds x="3615" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_paid_di" bpmnElement="end_paid"><dc:Bounds x="3817" y="757" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3787" y="797" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_fraud_di" bpmnElement="b_fraud"><dc:Bounds x="1052" y="554" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1022" y="594" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_over_authority_di" bpmnElement="b_over_authority"><dc:Bounds x="1902" y="424" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1872" y="464" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_payment_cancelled_di" bpmnElement="b_payment_cancelled"><dc:Bounds x="2752" y="944" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2722" y="984" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_claim_report_claim_di" bpmnElement="Flow_start_claim_report_claim"><di:waypoint x="283" y="125" /><di:waypoint x="385" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_report_claim_triage_claim_di" bpmnElement="Flow_report_claim_triage_claim"><di:waypoint x="485" y="125" /><di:waypoint x="555" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_triage_claim_gw_triage_di" bpmnElement="Flow_triage_claim_gw_triage"><di:waypoint x="655" y="125" /><di:waypoint x="750" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_triage_gw_settle_di" bpmnElement="Flow_gw_triage_gw_settle"><di:waypoint x="800" y="125" /><di:waypoint x="825" y="125" /><di:waypoint x="825" y="775" /><di:waypoint x="2450" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_triage_collect_information_di" bpmnElement="Flow_gw_triage_collect_information"><di:waypoint x="800" y="125" /><di:waypoint x="825" y="125" /><di:waypoint x="825" y="255" /><di:waypoint x="895" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_triage_review_evidence_di" bpmnElement="Flow_gw_triage_review_evidence"><di:waypoint x="800" y="125" /><di:waypoint x="825" y="125" /><di:waypoint x="825" y="385" /><di:waypoint x="895" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_collect_information_assess_damage_di" bpmnElement="Flow_collect_information_assess_damage"><di:waypoint x="995" y="255" /><di:waypoint x="1065" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_assess_damage_gw_assessed_di" bpmnElement="Flow_assess_damage_gw_assessed"><di:waypoint x="1165" y="255" /><di:waypoint x="1770" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_review_evidence_investigation_di" bpmnElement="Flow_review_evidence_investigation"><di:waypoint x="945" y="425" /><di:waypoint x="945" y="450" /><di:waypoint x="1038" y="450" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_sp_inv_start_record_findings_di" bpmnElement="Flow_sp_inv_start_record_findings"><di:waypoint x="1133" y="385" /><di:waypoint x="1235" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_record_findings_gw_fraud_di" bpmnElement="Flow_record_findings_gw_fraud"><di:waypoint x="1335" y="385" /><di:waypoint x="1430" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_fraud_end_fraud_di" bpmnElement="Flow_gw_fraud_end_fraud"><di:waypoint x="1455" y="410" /><di:waypoint x="1455" y="558" /><di:waypoint x="1455" y="558" /><di:waypoint x="1455" y="533" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_fraud_sp_inv_end_di" bpmnElement="Flow_gw_fraud_sp_inv_end"><di:waypoint x="1480" y="385" /><di:waypoint x="1607" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_investigation_gw_assessed_di" bpmnElement="Flow_investigation_gw_assessed"><di:waypoint x="1702" y="450" /><di:waypoint x="1727" y="450" /><di:waypoint x="1727" y="255" /><di:waypoint x="1770" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_fraud_record_denial_di" bpmnElement="Flow_b_fraud_record_denial"><di:waypoint x="1070" y="590" /><di:waypoint x="1070" y="605" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_record_denial_end_denied_di" bpmnElement="Flow_record_denial_end_denied"><di:waypoint x="1165" y="645" /><di:waypoint x="1267" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_assessed_authority_check_di" bpmnElement="Flow_gw_assessed_authority_check"><di:waypoint x="1820" y="255" /><di:waypoint x="1845" y="255" /><di:waypoint x="1845" y="320" /><di:waypoint x="1888" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_sp_auth_start_gw_authority_di" bpmnElement="Flow_sp_auth_start_gw_authority"><di:waypoint x="1983" y="255" /><di:waypoint x="2110" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_authority_end_over_authority_di" bpmnElement="Flow_gw_authority_end_over_authority"><di:waypoint x="2135" y="280" /><di:waypoint x="2135" y="428" /><di:waypoint x="2135" y="428" /><di:waypoint x="2135" y="403" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_authority_sp_auth_end_di" bpmnElement="Flow_gw_authority_sp_auth_end"><di:waypoint x="2160" y="255" /><di:waypoint x="2287" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_authority_check_gw_settle_di" bpmnElement="Flow_authority_check_gw_settle"><di:waypoint x="2382" y="320" /><di:waypoint x="2407" y="320" /><di:waypoint x="2407" y="775" /><di:waypoint x="2450" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_over_authority_senior_review_di" bpmnElement="Flow_b_over_authority_senior_review"><di:waypoint x="1920" y="460" /><di:waypoint x="1920" y="605" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_senior_review_gw_senior_di" bpmnElement="Flow_senior_review_gw_senior"><di:waypoint x="2015" y="645" /><di:waypoint x="2110" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_senior_end_rejected_di" bpmnElement="Flow_gw_senior_end_rejected"><di:waypoint x="2160" y="645" /><di:waypoint x="2287" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_senior_gw_settle_di" bpmnElement="Flow_gw_senior_gw_settle"><di:waypoint x="2160" y="645" /><di:waypoint x="2185" y="645" /><di:waypoint x="2185" y="775" /><di:waypoint x="2450" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_settle_approve_payment_di" bpmnElement="Flow_gw_settle_approve_payment"><di:waypoint x="2500" y="775" /><di:waypoint x="2595" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_approve_payment_payout_di" bpmnElement="Flow_approve_payment_payout"><di:waypoint x="2645" y="815" /><di:waypoint x="2645" y="840" /><di:waypoint x="2738" y="840" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_tx_start_reserve_funds_di" bpmnElement="Flow_tx_start_reserve_funds"><di:waypoint x="2833" y="775" /><di:waypoint x="2935" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_reserve_funds_execute_transfer_di" bpmnElement="Flow_reserve_funds_execute_transfer"><di:waypoint x="3035" y="775" /><di:waypoint x="3105" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_execute_transfer_gw_payment_di" bpmnElement="Flow_execute_transfer_gw_payment"><di:waypoint x="3205" y="775" /><di:waypoint x="3300" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_payment_tx_cancel_di" bpmnElement="Flow_gw_payment_tx_cancel"><di:waypoint x="3325" y="800" /><di:waypoint x="3325" y="948" /><di:waypoint x="3325" y="948" /><di:waypoint x="3325" y="923" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_payment_tx_end_di" bpmnElement="Flow_gw_payment_tx_end"><di:waypoint x="3350" y="775" /><di:waypoint x="3477" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_payment_cancelled_release_reserve_di" bpmnElement="Flow_b_payment_cancelled_release_reserve"><di:waypoint x="2770" y="980" /><di:waypoint x="2770" y="995" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_release_reserve_end_payment_failed_di" bpmnElement="Flow_release_reserve_end_payment_failed"><di:waypoint x="2865" y="1035" /><di:waypoint x="2967" y="1035" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_payout_close_claim_di" bpmnElement="Flow_payout_close_claim"><di:waypoint x="3155" y="718" /><di:waypoint x="3155" y="775" /><di:waypoint x="3615" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_close_claim_end_paid_di" bpmnElement="Flow_close_claim_end_paid"><di:waypoint x="3715" y="775" /><di:waypoint x="3817" y="775" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,51 @@
+{
+  "title": "Purchase requisition",
+  "type": "object",
+  "required": [
+    "item_description",
+    "category",
+    "quantity",
+    "unit_price",
+    "vendor_name"
+  ],
+  "properties": {
+    "item_description": {
+      "type": "string",
+      "title": "Item"
+    },
+    "category": {
+      "type": "string",
+      "title": "Category",
+      "enum": [
+        "IT Hardware",
+        "Software",
+        "Office Supplies",
+        "Marketing Services",
+        "Facilities"
+      ]
+    },
+    "quantity": {
+      "type": "integer",
+      "title": "Quantity",
+      "minimum": 1
+    },
+    "unit_price": {
+      "type": "number",
+      "title": "Unit price (USD)",
+      "minimum": 0
+    },
+    "vendor_name": {
+      "type": "string",
+      "title": "Preferred vendor"
+    },
+    "needed_by": {
+      "type": "string",
+      "format": "date",
+      "title": "Needed by"
+    },
+    "justification": {
+      "type": "string",
+      "title": "Business justification"
+    }
+  }
+}

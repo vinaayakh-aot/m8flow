@@ -1,0 +1,17 @@
+{
+  "title": "Supporting documents",
+  "type": "object",
+  "required": [
+    "documents_complete"
+  ],
+  "properties": {
+    "documents_complete": {
+      "type": "boolean",
+      "title": "All documents received"
+    },
+    "document_notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  }
+}

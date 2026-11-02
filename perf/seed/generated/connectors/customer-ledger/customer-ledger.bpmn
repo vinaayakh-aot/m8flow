@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_customer-ledger" targetNamespace="http://bpmn.io/schema/bpmn" exporter="m8flow perf-seed builder" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_customer-ledger">
+    <bpmn:participant id="Participant_customer-ledger" name="Customer Ledger Entry" processRef="customer-ledger" />
+  </bpmn:collaboration>
+  <bpmn:process id="customer-ledger" name="Customer Ledger Entry" isExecutable="true">
+    <bpmn:documentation>Records a customer payment in PostgreSQL through the node-wire postgres_v2 connector.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_customer-ledger">
+      <bpmn:lane id="Lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>start_entry</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>enter_payment</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ensure_table</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>insert_entry</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>read_balance</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_entry</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start_entry" name="Payment received">
+      <bpmn:outgoing>Flow_start_entry_enter_payment</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="enter_payment" name="Enter payment">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="ledger-entry-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="ledger-entry-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_entry_enter_payment</bpmn:incoming>
+      <bpmn:outgoing>Flow_enter_payment_ensure_table</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="ensure_table" name="Ensure ledger table">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="table_result"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'CREATE TABLE IF NOT EXISTS perf_customer_ledger (id serial PRIMARY KEY, customer text, amount numeric, invoice text, created_at timestamptz DEFAULT now())'}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator></bpmn:extensionElements>
+      <bpmn:incoming>Flow_enter_payment_ensure_table</bpmn:incoming>
+      <bpmn:outgoing>Flow_ensure_table_insert_entry</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="insert_entry" name="Insert ledger entry">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="insert_result"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'INSERT INTO perf_customer_ledger (customer, amount, invoice) VALUES (%s, %s, %s) RETURNING id', 'values': [customer, amount, invoice], 'fetch_results': True}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>entry_id = insert_result['command_response']['body']['body'][0][0]</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_ensure_table_insert_entry</bpmn:incoming>
+      <bpmn:outgoing>Flow_insert_entry_read_balance</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="read_balance" name="Read customer balance">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="balance_result"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'SELECT count(*), coalesce(sum(amount), 0)::float FROM perf_customer_ledger WHERE customer = %s', 'values': [customer], 'fetch_results': True}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>entries, balance = balance_result['command_response']['body']['body'][0]</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_insert_entry_read_balance</bpmn:incoming>
+      <bpmn:outgoing>Flow_read_balance_end_entry</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end_entry" name="Entry recorded">
+      <bpmn:incoming>Flow_read_balance_end_entry</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_start_entry_enter_payment" sourceRef="start_entry" targetRef="enter_payment" />
+    <bpmn:sequenceFlow id="Flow_enter_payment_ensure_table" sourceRef="enter_payment" targetRef="ensure_table" />
+    <bpmn:sequenceFlow id="Flow_ensure_table_insert_entry" sourceRef="ensure_table" targetRef="insert_entry" />
+    <bpmn:sequenceFlow id="Flow_insert_entry_read_balance" sourceRef="insert_entry" targetRef="read_balance" />
+    <bpmn:sequenceFlow id="Flow_read_balance_end_entry" sourceRef="read_balance" targetRef="end_entry" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_customer-ledger">
+    <bpmndi:BPMNPlane id="BPMNPlane_customer-ledger" bpmnElement="Collaboration_customer-ledger">
+      <bpmndi:BPMNShape id="Participant_customer-ledger_di" bpmnElement="Participant_customer-ledger" isHorizontal="true"><dc:Bounds x="120" y="60" width="1100" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="150" y="60" width="1070" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="start_entry_di" bpmnElement="start_entry"><dc:Bounds x="247" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="217" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="enter_payment_di" bpmnElement="enter_payment"><dc:Bounds x="385" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ensure_table_di" bpmnElement="ensure_table"><dc:Bounds x="555" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="insert_entry_di" bpmnElement="insert_entry"><dc:Bounds x="725" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="read_balance_di" bpmnElement="read_balance"><dc:Bounds x="895" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_entry_di" bpmnElement="end_entry"><dc:Bounds x="1097" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1067" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_entry_enter_payment_di" bpmnElement="Flow_start_entry_enter_payment"><di:waypoint x="283" y="125" /><di:waypoint x="385" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_enter_payment_ensure_table_di" bpmnElement="Flow_enter_payment_ensure_table"><di:waypoint x="485" y="125" /><di:waypoint x="555" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ensure_table_insert_entry_di" bpmnElement="Flow_ensure_table_insert_entry"><di:waypoint x="655" y="125" /><di:waypoint x="725" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_insert_entry_read_balance_di" bpmnElement="Flow_insert_entry_read_balance"><di:waypoint x="825" y="125" /><di:waypoint x="895" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_read_balance_end_entry_di" bpmnElement="Flow_read_balance_end_entry"><di:waypoint x="995" y="125" /><di:waypoint x="1097" y="125" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

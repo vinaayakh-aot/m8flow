@@ -1,0 +1,17 @@
+{
+  "title": "Verify documents",
+  "type": "object",
+  "required": [
+    "documents_verified"
+  ],
+  "properties": {
+    "documents_verified": {
+      "type": "boolean",
+      "title": "Documents verified"
+    },
+    "hr_notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "title": "Approval decision",
+  "type": "object",
+  "required": [
+    "outcome"
+  ],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "title": "Decision",
+      "enum": [
+        "approve",
+        "reject"
+      ]
+    },
+    "comments": {
+      "type": "string",
+      "title": "Comments"
+    }
+  }
+}

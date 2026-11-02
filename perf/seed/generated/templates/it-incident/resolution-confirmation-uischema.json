@@ -1,0 +1,13 @@
+{
+  "ui:order": [
+    "confirmed",
+    "satisfaction",
+    "feedback"
+  ],
+  "feedback": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

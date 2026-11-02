@@ -1,0 +1,18 @@
+{
+  "title": "Damage assessment",
+  "type": "object",
+  "required": [
+    "assessed_amount"
+  ],
+  "properties": {
+    "assessed_amount": {
+      "type": "number",
+      "title": "Assessed amount (USD)",
+      "minimum": 0
+    },
+    "assessment_notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  }
+}

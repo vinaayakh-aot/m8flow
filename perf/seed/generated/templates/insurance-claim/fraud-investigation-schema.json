@@ -1,0 +1,17 @@
+{
+  "title": "Fraud investigation",
+  "type": "object",
+  "required": [
+    "fraud_confirmed"
+  ],
+  "properties": {
+    "fraud_confirmed": {
+      "type": "boolean",
+      "title": "Fraud confirmed"
+    },
+    "findings": {
+      "type": "string",
+      "title": "Findings"
+    }
+  }
+}

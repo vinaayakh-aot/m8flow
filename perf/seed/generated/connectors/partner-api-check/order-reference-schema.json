@@ -1,0 +1,19 @@
+{
+  "title": "Order",
+  "type": "object",
+  "required": [
+    "order_reference",
+    "quantity"
+  ],
+  "properties": {
+    "order_reference": {
+      "type": "string",
+      "title": "Order reference"
+    },
+    "quantity": {
+      "type": "integer",
+      "title": "Quantity",
+      "minimum": 1
+    }
+  }
+}

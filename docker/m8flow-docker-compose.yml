@@ -137,10 +137,12 @@ services:
 
   keycloak-proxy:
     image: nginx:1.30.6-alpine3.24
+    environment:
+      KEYCLOAK_PROXY_PORT: "${KEYCLOAK_PROXY_PORT:-6842}"
     ports:
       - "${KEYCLOAK_PROXY_PORT:-6842}:6842"
     volumes:
-      - ./nginx-keycloak-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx-keycloak-proxy.conf:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       - keycloak
   keycloak-master-admin-init:

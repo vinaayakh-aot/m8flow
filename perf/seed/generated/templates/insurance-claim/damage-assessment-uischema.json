@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "assessed_amount",
+    "assessment_notes"
+  ],
+  "assessment_notes": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

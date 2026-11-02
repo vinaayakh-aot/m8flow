@@ -1,0 +1,18 @@
+{
+  "title": "Release payment",
+  "type": "object",
+  "required": [
+    "payment_successful"
+  ],
+  "properties": {
+    "payment_successful": {
+      "type": "boolean",
+      "title": "Payment succeeded",
+      "default": true
+    },
+    "payment_reference": {
+      "type": "string",
+      "title": "Bank reference"
+    }
+  }
+}

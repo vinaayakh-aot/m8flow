@@ -1,0 +1,7 @@
+{
+  "ui:order": [
+    "id_document_provided",
+    "tax_form_provided",
+    "bank_details_provided"
+  ]
+}

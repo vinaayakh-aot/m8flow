@@ -1,0 +1,17 @@
+{
+  "ui:order": [
+    "policy_number",
+    "claim_type",
+    "incident_date",
+    "estimated_amount",
+    "police_report_filed",
+    "prior_claims",
+    "description"
+  ],
+  "description": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

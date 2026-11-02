@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "full_name",
+    "email",
+    "department",
+    "role",
+    "employment_type",
+    "start_date",
+    "needs_laptop",
+    "needs_phone"
+  ]
+}

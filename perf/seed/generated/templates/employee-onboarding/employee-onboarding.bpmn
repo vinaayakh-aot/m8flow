@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_employee_onboarding" targetNamespace="http://bpmn.io/schema/bpmn" exporter="m8flow perf-seed builder" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_employee_onboarding">
+    <bpmn:participant id="Participant_employee_onboarding" name="Employee Onboarding" processRef="employee_onboarding" />
+  </bpmn:collaboration>
+  <bpmn:signal id="Signal_documents_submitted" name="documents_submitted" />
+  <bpmn:escalation id="Escalation_laptop_backorder" name="Laptop backorder" escalationCode="LAPTOP_BACKORDER" />
+  <bpmn:process id="employee_onboarding" name="Employee Onboarding" isExecutable="true">
+    <bpmn:documentation>HR, IT and the hiring manager prepare a new hire's first day: documents, accounts, equipment and a welcome meeting.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_employee_onboarding">
+      <bpmn:lane id="Lane_administrators" name="Administrators">
+        <bpmn:flowNodeRef>start_onboarding</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>enter_new_hire</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>plan_onboarding</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_wait_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>catch_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>timer_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>verify_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>chase_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_documents_done</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_ready</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>wait_start_date</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>mark_ready</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>catch_ready</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_approvers" name="Approvers">
+        <bpmn:flowNodeRef>welcome_meeting</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_onboarded</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_support" name="Support">
+        <bpmn:flowNodeRef>it_provisioning</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_backorder</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>order_laptop</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_laptop_ordered</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_equipment</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>issue_laptop</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>issue_phone</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>issue_badge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_equipment_join</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>submit_documents</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>throw_documents</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start_onboarding" name="Offer accepted">
+      <bpmn:outgoing>Flow_start_onboarding_enter_new_hire</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="enter_new_hire" name="Enter new hire details">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="new-hire-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="new-hire-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_onboarding_enter_new_hire</bpmn:incoming>
+      <bpmn:outgoing>Flow_enter_new_hire_plan_onboarding</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="plan_onboarding" name="Plan onboarding">
+      <bpmn:extensionElements><spiffworkflow:calledDecisionId>onboarding_plan</spiffworkflow:calledDecisionId><spiffworkflow:postScript>systems = base_systems.split(',')
+laptop_in_stock = department != 'Sales'</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_enter_new_hire_plan_onboarding</bpmn:incoming>
+      <bpmn:outgoing>Flow_plan_onboarding_gw_start</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:parallelGateway id="gw_start">
+      <bpmn:incoming>Flow_plan_onboarding_gw_start</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_start_gw_wait_documents</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_start_it_provisioning</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_start_submit_documents</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:eventBasedGateway id="gw_wait_documents" name="Documents in?">
+      <bpmn:incoming>Flow_gw_start_gw_wait_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_wait_documents_catch_documents</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_wait_documents_timer_documents</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:intermediateCatchEvent id="catch_documents" name="Documents submitted">
+      <bpmn:incoming>Flow_gw_wait_documents_catch_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_catch_documents_verify_documents</bpmn:outgoing>
+      <bpmn:signalEventDefinition signalRef="Signal_documents_submitted" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="timer_documents" name="2 days">
+      <bpmn:incoming>Flow_gw_wait_documents_timer_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_timer_documents_chase_documents</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"P2D"</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:userTask id="verify_documents" name="Verify documents">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="verify-documents-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="verify-documents-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_catch_documents_verify_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_verify_documents_gw_documents_done</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:manualTask id="chase_documents" name="Collect documents in person">
+      <bpmn:incoming>Flow_timer_documents_chase_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_chase_documents_gw_documents_done</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:exclusiveGateway id="gw_documents_done">
+      <bpmn:incoming>Flow_verify_documents_gw_documents_done</bpmn:incoming>
+      <bpmn:incoming>Flow_chase_documents_gw_documents_done</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_documents_done_gw_ready</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="submit_documents" name="Submit onboarding documents">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="new-hire-documents-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="new-hire-documents-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_start_submit_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_submit_documents_throw_documents</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:intermediateThrowEvent id="throw_documents" name="Documents submitted">
+      <bpmn:incoming>Flow_submit_documents_throw_documents</bpmn:incoming>
+      <bpmn:outgoing>Flow_throw_documents_gw_ready</bpmn:outgoing>
+      <bpmn:signalEventDefinition signalRef="Signal_documents_submitted" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:subProcess id="it_provisioning" name="IT provisioning">
+      <bpmn:incoming>Flow_gw_start_it_provisioning</bpmn:incoming>
+      <bpmn:outgoing>Flow_it_provisioning_gw_equipment</bpmn:outgoing>
+      <bpmn:startEvent id="sp_it_start">
+        <bpmn:outgoing>Flow_sp_it_start_prepare_provisioning</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:scriptTask id="prepare_provisioning" name="Prepare provisioning">
+        <bpmn:incoming>Flow_sp_it_start_prepare_provisioning</bpmn:incoming>
+        <bpmn:outgoing>Flow_prepare_provisioning_provision_accounts</bpmn:outgoing>
+        <bpmn:script>system_index = 0
+provisioned = []</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:scriptTask id="provision_accounts" name="Provision system account">
+        <bpmn:incoming>Flow_prepare_provisioning_provision_accounts</bpmn:incoming>
+        <bpmn:outgoing>Flow_provision_accounts_gw_laptop_stock</bpmn:outgoing>
+        <bpmn:standardLoopCharacteristics loopMaximum="10"><bpmn:loopCondition xsi:type="bpmn:tFormalExpression">system_index &lt; len(systems)</bpmn:loopCondition></bpmn:standardLoopCharacteristics>
+        <bpmn:script>provisioned.append(systems[system_index])
+system_index += 1</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:exclusiveGateway id="gw_laptop_stock" name="Laptop in stock?" default="Flow_gw_laptop_stock_sp_it_end">
+        <bpmn:incoming>Flow_provision_accounts_gw_laptop_stock</bpmn:incoming>
+        <bpmn:outgoing>Flow_gw_laptop_stock_sp_it_end</bpmn:outgoing>
+        <bpmn:outgoing>Flow_gw_laptop_stock_throw_backorder</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:endEvent id="sp_it_end">
+        <bpmn:incoming>Flow_gw_laptop_stock_sp_it_end</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:intermediateThrowEvent id="throw_backorder" name="Laptop backorder">
+        <bpmn:incoming>Flow_gw_laptop_stock_throw_backorder</bpmn:incoming>
+        <bpmn:outgoing>Flow_throw_backorder_sp_it_end_backorder</bpmn:outgoing>
+        <bpmn:escalationEventDefinition escalationRef="Escalation_laptop_backorder" />
+      </bpmn:intermediateThrowEvent>
+      <bpmn:endEvent id="sp_it_end_backorder">
+        <bpmn:incoming>Flow_throw_backorder_sp_it_end_backorder</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_sp_it_start_prepare_provisioning" sourceRef="sp_it_start" targetRef="prepare_provisioning" />
+      <bpmn:sequenceFlow id="Flow_prepare_provisioning_provision_accounts" sourceRef="prepare_provisioning" targetRef="provision_accounts" />
+      <bpmn:sequenceFlow id="Flow_provision_accounts_gw_laptop_stock" sourceRef="provision_accounts" targetRef="gw_laptop_stock" />
+      <bpmn:sequenceFlow id="Flow_gw_laptop_stock_sp_it_end" name="in stock" sourceRef="gw_laptop_stock" targetRef="sp_it_end" />
+      <bpmn:sequenceFlow id="Flow_gw_laptop_stock_throw_backorder" name="backorder" sourceRef="gw_laptop_stock" targetRef="throw_backorder"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">needs_laptop and not laptop_in_stock</bpmn:conditionExpression></bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_throw_backorder_sp_it_end_backorder" sourceRef="throw_backorder" targetRef="sp_it_end_backorder" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="b_backorder" name="Backorder" attachedToRef="it_provisioning" cancelActivity="false">
+      <bpmn:outgoing>Flow_b_backorder_order_laptop</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Escalation_laptop_backorder" />
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="order_laptop" name="Order replacement laptop">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="order-laptop-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="order-laptop-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
+      <bpmn:incoming>Flow_b_backorder_order_laptop</bpmn:incoming>
+      <bpmn:outgoing>Flow_order_laptop_end_laptop_ordered</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="end_laptop_ordered" name="Laptop ordered">
+      <bpmn:incoming>Flow_order_laptop_end_laptop_ordered</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:inclusiveGateway id="gw_equipment" name="Equipment needed?" default="Flow_gw_equipment_issue_badge">
+      <bpmn:incoming>Flow_it_provisioning_gw_equipment</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_equipment_issue_laptop</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_equipment_issue_phone</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_equipment_issue_badge</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:manualTask id="issue_laptop" name="Issue laptop">
+      <bpmn:incoming>Flow_gw_equipment_issue_laptop</bpmn:incoming>
+      <bpmn:outgoing>Flow_issue_laptop_gw_equipment_join</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="issue_phone" name="Issue phone">
+      <bpmn:incoming>Flow_gw_equipment_issue_phone</bpmn:incoming>
+      <bpmn:outgoing>Flow_issue_phone_gw_equipment_join</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:task id="issue_badge" name="Print access badge">
+      <bpmn:incoming>Flow_gw_equipment_issue_badge</bpmn:incoming>
+      <bpmn:outgoing>Flow_issue_badge_gw_equipment_join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:inclusiveGateway id="gw_equipment_join">
+      <bpmn:incoming>Flow_issue_laptop_gw_equipment_join</bpmn:incoming>
+      <bpmn:incoming>Flow_issue_phone_gw_equipment_join</bpmn:incoming>
+      <bpmn:incoming>Flow_issue_badge_gw_equipment_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_equipment_join_gw_ready</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:parallelGateway id="gw_ready">
+      <bpmn:incoming>Flow_gw_documents_done_gw_ready</bpmn:incoming>
+      <bpmn:incoming>Flow_throw_documents_gw_ready</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_equipment_join_gw_ready</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_ready_wait_start_date</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:intermediateCatchEvent id="wait_start_date" name="Start date">
+      <bpmn:incoming>Flow_gw_ready_wait_start_date</bpmn:incoming>
+      <bpmn:outgoing>Flow_wait_start_date_mark_ready</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:timeDate xsi:type="bpmn:tFormalExpression">start_date + 'T09:00:00+00:00'</bpmn:timeDate></bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:scriptTask id="mark_ready" name="Mark workspace ready">
+      <bpmn:incoming>Flow_wait_start_date_mark_ready</bpmn:incoming>
+      <bpmn:outgoing>Flow_mark_ready_catch_ready</bpmn:outgoing>
+      <bpmn:script>workspace_ready = len(provisioned) == len(systems)</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:intermediateCatchEvent id="catch_ready" name="Workspace ready">
+      <bpmn:incoming>Flow_mark_ready_catch_ready</bpmn:incoming>
+      <bpmn:outgoing>Flow_catch_ready_welcome_meeting</bpmn:outgoing>
+      <bpmn:conditionalEventDefinition><bpmn:condition xsi:type="bpmn:tFormalExpression">workspace_ready == True</bpmn:condition></bpmn:conditionalEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:userTask id="welcome_meeting" name="Day-one welcome meeting">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="welcome-checklist-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="welcome-checklist-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Welcome {{ full_name }} ({{ role }}, {{ department }}). Accounts: {{ provisioned }}.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_catch_ready_welcome_meeting</bpmn:incoming>
+      <bpmn:outgoing>Flow_welcome_meeting_end_onboarded</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="end_onboarded" name="Employee onboarded">
+      <bpmn:incoming>Flow_welcome_meeting_end_onboarded</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_start_onboarding_enter_new_hire" sourceRef="start_onboarding" targetRef="enter_new_hire" />
+    <bpmn:sequenceFlow id="Flow_enter_new_hire_plan_onboarding" sourceRef="enter_new_hire" targetRef="plan_onboarding" />
+    <bpmn:sequenceFlow id="Flow_plan_onboarding_gw_start" sourceRef="plan_onboarding" targetRef="gw_start" />
+    <bpmn:sequenceFlow id="Flow_gw_start_gw_wait_documents" sourceRef="gw_start" targetRef="gw_wait_documents" />
+    <bpmn:sequenceFlow id="Flow_gw_start_it_provisioning" sourceRef="gw_start" targetRef="it_provisioning" />
+    <bpmn:sequenceFlow id="Flow_gw_start_submit_documents" sourceRef="gw_start" targetRef="submit_documents" />
+    <bpmn:sequenceFlow id="Flow_gw_wait_documents_catch_documents" sourceRef="gw_wait_documents" targetRef="catch_documents" />
+    <bpmn:sequenceFlow id="Flow_gw_wait_documents_timer_documents" sourceRef="gw_wait_documents" targetRef="timer_documents" />
+    <bpmn:sequenceFlow id="Flow_catch_documents_verify_documents" sourceRef="catch_documents" targetRef="verify_documents" />
+    <bpmn:sequenceFlow id="Flow_timer_documents_chase_documents" sourceRef="timer_documents" targetRef="chase_documents" />
+    <bpmn:sequenceFlow id="Flow_verify_documents_gw_documents_done" sourceRef="verify_documents" targetRef="gw_documents_done" />
+    <bpmn:sequenceFlow id="Flow_chase_documents_gw_documents_done" sourceRef="chase_documents" targetRef="gw_documents_done" />
+    <bpmn:sequenceFlow id="Flow_gw_documents_done_gw_ready" sourceRef="gw_documents_done" targetRef="gw_ready" />
+    <bpmn:sequenceFlow id="Flow_submit_documents_throw_documents" sourceRef="submit_documents" targetRef="throw_documents" />
+    <bpmn:sequenceFlow id="Flow_throw_documents_gw_ready" sourceRef="throw_documents" targetRef="gw_ready" />
+    <bpmn:sequenceFlow id="Flow_b_backorder_order_laptop" sourceRef="b_backorder" targetRef="order_laptop" />
+    <bpmn:sequenceFlow id="Flow_order_laptop_end_laptop_ordered" sourceRef="order_laptop" targetRef="end_laptop_ordered" />
+    <bpmn:sequenceFlow id="Flow_it_provisioning_gw_equipment" sourceRef="it_provisioning" targetRef="gw_equipment" />
+    <bpmn:sequenceFlow id="Flow_gw_equipment_issue_laptop" name="laptop" sourceRef="gw_equipment" targetRef="issue_laptop"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">needs_laptop == True</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_equipment_issue_phone" name="phone" sourceRef="gw_equipment" targetRef="issue_phone"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">needs_phone == True</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_equipment_issue_badge" name="badge" sourceRef="gw_equipment" targetRef="issue_badge" />
+    <bpmn:sequenceFlow id="Flow_issue_laptop_gw_equipment_join" sourceRef="issue_laptop" targetRef="gw_equipment_join" />
+    <bpmn:sequenceFlow id="Flow_issue_phone_gw_equipment_join" sourceRef="issue_phone" targetRef="gw_equipment_join" />
+    <bpmn:sequenceFlow id="Flow_issue_badge_gw_equipment_join" sourceRef="issue_badge" targetRef="gw_equipment_join" />
+    <bpmn:sequenceFlow id="Flow_gw_equipment_join_gw_ready" sourceRef="gw_equipment_join" targetRef="gw_ready" />
+    <bpmn:sequenceFlow id="Flow_gw_ready_wait_start_date" sourceRef="gw_ready" targetRef="wait_start_date" />
+    <bpmn:sequenceFlow id="Flow_wait_start_date_mark_ready" sourceRef="wait_start_date" targetRef="mark_ready" />
+    <bpmn:sequenceFlow id="Flow_mark_ready_catch_ready" sourceRef="mark_ready" targetRef="catch_ready" />
+    <bpmn:sequenceFlow id="Flow_catch_ready_welcome_meeting" sourceRef="catch_ready" targetRef="welcome_meeting" />
+    <bpmn:sequenceFlow id="Flow_welcome_meeting_end_onboarded" sourceRef="welcome_meeting" targetRef="end_onboarded" />
+    <bpmn:textAnnotation id="note_documents"><bpmn:text>The new hire's submission throws documents_submitted, releasing HR's event gateway</bpmn:text></bpmn:textAnnotation>
+    <bpmn:association id="Association_note_documents" sourceRef="submit_documents" targetRef="note_documents" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_employee_onboarding">
+    <bpmndi:BPMNPlane id="BPMNPlane_employee_onboarding" bpmnElement="Collaboration_employee_onboarding">
+      <bpmndi:BPMNShape id="Participant_employee_onboarding_di" bpmnElement="Participant_employee_onboarding" isHorizontal="true"><dc:Bounds x="120" y="60" width="3140" height="910" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_administrators_di" bpmnElement="Lane_administrators" isHorizontal="true"><dc:Bounds x="150" y="60" width="3110" height="260" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="150" y="320" width="3110" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_support_di" bpmnElement="Lane_support" isHorizontal="true"><dc:Bounds x="150" y="450" width="3110" height="390" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="150" y="840" width="3110" height="130" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="it_provisioning_di" bpmnElement="it_provisioning" isExpanded="true"><dc:Bounds x="868" y="458" width="834" height="244" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="start_onboarding_di" bpmnElement="start_onboarding"><dc:Bounds x="247" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="217" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="enter_new_hire_di" bpmnElement="enter_new_hire"><dc:Bounds x="385" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="plan_onboarding_di" bpmnElement="plan_onboarding"><dc:Bounds x="555" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_start_di" bpmnElement="gw_start"><dc:Bounds x="750" y="100" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_wait_documents_di" bpmnElement="gw_wait_documents"><dc:Bounds x="920" y="100" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="890" y="154" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_documents_di" bpmnElement="catch_documents"><dc:Bounds x="1097" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1067" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timer_documents_di" bpmnElement="timer_documents"><dc:Bounds x="1097" y="237" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1067" y="277" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="verify_documents_di" bpmnElement="verify_documents"><dc:Bounds x="1235" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="chase_documents_di" bpmnElement="chase_documents"><dc:Bounds x="1235" y="215" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_documents_done_di" bpmnElement="gw_documents_done"><dc:Bounds x="1430" y="100" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="submit_documents_di" bpmnElement="submit_documents"><dc:Bounds x="895" y="865" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throw_documents_di" bpmnElement="throw_documents"><dc:Bounds x="1097" y="887" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1067" y="927" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_it_start_di" bpmnElement="sp_it_start"><dc:Bounds x="927" y="497" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="prepare_provisioning_di" bpmnElement="prepare_provisioning"><dc:Bounds x="1065" y="475" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="provision_accounts_di" bpmnElement="provision_accounts"><dc:Bounds x="1235" y="475" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_laptop_stock_di" bpmnElement="gw_laptop_stock"><dc:Bounds x="1430" y="490" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1400" y="544" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_it_end_di" bpmnElement="sp_it_end"><dc:Bounds x="1607" y="497" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throw_backorder_di" bpmnElement="throw_backorder"><dc:Bounds x="1437" y="627" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1407" y="667" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sp_it_end_backorder_di" bpmnElement="sp_it_end_backorder"><dc:Bounds x="1607" y="627" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="order_laptop_di" bpmnElement="order_laptop"><dc:Bounds x="1065" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_laptop_ordered_di" bpmnElement="end_laptop_ordered"><dc:Bounds x="1267" y="757" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1237" y="797" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_equipment_di" bpmnElement="gw_equipment"><dc:Bounds x="1770" y="490" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1740" y="544" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="issue_laptop_di" bpmnElement="issue_laptop"><dc:Bounds x="1915" y="475" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="issue_phone_di" bpmnElement="issue_phone"><dc:Bounds x="1915" y="605" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="issue_badge_di" bpmnElement="issue_badge"><dc:Bounds x="1915" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_equipment_join_di" bpmnElement="gw_equipment_join"><dc:Bounds x="2110" y="490" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_ready_di" bpmnElement="gw_ready"><dc:Bounds x="2280" y="100" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="wait_start_date_di" bpmnElement="wait_start_date"><dc:Bounds x="2457" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2427" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="mark_ready_di" bpmnElement="mark_ready"><dc:Bounds x="2595" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_ready_di" bpmnElement="catch_ready"><dc:Bounds x="2797" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2767" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="welcome_meeting_di" bpmnElement="welcome_meeting"><dc:Bounds x="2935" y="345" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_onboarded_di" bpmnElement="end_onboarded"><dc:Bounds x="3137" y="367" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3107" y="407" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_backorder_di" bpmnElement="b_backorder"><dc:Bounds x="882" y="684" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="852" y="724" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="note_documents_di" bpmnElement="note_documents"><dc:Bounds x="525" y="875" width="160" height="60" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_onboarding_enter_new_hire_di" bpmnElement="Flow_start_onboarding_enter_new_hire"><di:waypoint x="283" y="125" /><di:waypoint x="385" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_enter_new_hire_plan_onboarding_di" bpmnElement="Flow_enter_new_hire_plan_onboarding"><di:waypoint x="485" y="125" /><di:waypoint x="555" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_plan_onboarding_gw_start_di" bpmnElement="Flow_plan_onboarding_gw_start"><di:waypoint x="655" y="125" /><di:waypoint x="750" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_start_gw_wait_documents_di" bpmnElement="Flow_gw_start_gw_wait_documents"><di:waypoint x="800" y="125" /><di:waypoint x="920" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_start_it_provisioning_di" bpmnElement="Flow_gw_start_it_provisioning"><di:waypoint x="800" y="125" /><di:waypoint x="825" y="125" /><di:waypoint x="825" y="580" /><di:waypoint x="868" y="580" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_start_submit_documents_di" bpmnElement="Flow_gw_start_submit_documents"><di:waypoint x="800" y="125" /><di:waypoint x="825" y="125" /><di:waypoint x="825" y="905" /><di:waypoint x="895" y="905" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_wait_documents_catch_documents_di" bpmnElement="Flow_gw_wait_documents_catch_documents"><di:waypoint x="970" y="125" /><di:waypoint x="1097" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_wait_documents_timer_documents_di" bpmnElement="Flow_gw_wait_documents_timer_documents"><di:waypoint x="970" y="125" /><di:waypoint x="995" y="125" /><di:waypoint x="995" y="255" /><di:waypoint x="1097" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_catch_documents_verify_documents_di" bpmnElement="Flow_catch_documents_verify_documents"><di:waypoint x="1133" y="125" /><di:waypoint x="1235" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_timer_documents_chase_documents_di" bpmnElement="Flow_timer_documents_chase_documents"><di:waypoint x="1133" y="255" /><di:waypoint x="1235" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_verify_documents_gw_documents_done_di" bpmnElement="Flow_verify_documents_gw_documents_done"><di:waypoint x="1335" y="125" /><di:waypoint x="1430" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_chase_documents_gw_documents_done_di" bpmnElement="Flow_chase_documents_gw_documents_done"><di:waypoint x="1335" y="255" /><di:waypoint x="1360" y="255" /><di:waypoint x="1360" y="125" /><di:waypoint x="1430" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_documents_done_gw_ready_di" bpmnElement="Flow_gw_documents_done_gw_ready"><di:waypoint x="1480" y="125" /><di:waypoint x="2280" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_submit_documents_throw_documents_di" bpmnElement="Flow_submit_documents_throw_documents"><di:waypoint x="995" y="905" /><di:waypoint x="1097" y="905" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_throw_documents_gw_ready_di" bpmnElement="Flow_throw_documents_gw_ready"><di:waypoint x="1133" y="905" /><di:waypoint x="1158" y="905" /><di:waypoint x="1158" y="125" /><di:waypoint x="2280" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_sp_it_start_prepare_provisioning_di" bpmnElement="Flow_sp_it_start_prepare_provisioning"><di:waypoint x="963" y="515" /><di:waypoint x="1065" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_prepare_provisioning_provision_accounts_di" bpmnElement="Flow_prepare_provisioning_provision_accounts"><di:waypoint x="1165" y="515" /><di:waypoint x="1235" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_provision_accounts_gw_laptop_stock_di" bpmnElement="Flow_provision_accounts_gw_laptop_stock"><di:waypoint x="1335" y="515" /><di:waypoint x="1430" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_laptop_stock_sp_it_end_di" bpmnElement="Flow_gw_laptop_stock_sp_it_end"><di:waypoint x="1480" y="515" /><di:waypoint x="1607" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_laptop_stock_throw_backorder_di" bpmnElement="Flow_gw_laptop_stock_throw_backorder"><di:waypoint x="1455" y="540" /><di:waypoint x="1455" y="688" /><di:waypoint x="1455" y="688" /><di:waypoint x="1455" y="663" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_throw_backorder_sp_it_end_backorder_di" bpmnElement="Flow_throw_backorder_sp_it_end_backorder"><di:waypoint x="1473" y="645" /><di:waypoint x="1607" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_backorder_order_laptop_di" bpmnElement="Flow_b_backorder_order_laptop"><di:waypoint x="900" y="720" /><di:waypoint x="900" y="775" /><di:waypoint x="1065" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_order_laptop_end_laptop_ordered_di" bpmnElement="Flow_order_laptop_end_laptop_ordered"><di:waypoint x="1165" y="775" /><di:waypoint x="1267" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_it_provisioning_gw_equipment_di" bpmnElement="Flow_it_provisioning_gw_equipment"><di:waypoint x="1702" y="580" /><di:waypoint x="1727" y="580" /><di:waypoint x="1727" y="515" /><di:waypoint x="1770" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_equipment_issue_laptop_di" bpmnElement="Flow_gw_equipment_issue_laptop"><di:waypoint x="1820" y="515" /><di:waypoint x="1915" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_equipment_issue_phone_di" bpmnElement="Flow_gw_equipment_issue_phone"><di:waypoint x="1820" y="515" /><di:waypoint x="1845" y="515" /><di:waypoint x="1845" y="645" /><di:waypoint x="1915" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_equipment_issue_badge_di" bpmnElement="Flow_gw_equipment_issue_badge"><di:waypoint x="1820" y="515" /><di:waypoint x="1845" y="515" /><di:waypoint x="1845" y="775" /><di:waypoint x="1915" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_issue_laptop_gw_equipment_join_di" bpmnElement="Flow_issue_laptop_gw_equipment_join"><di:waypoint x="2015" y="515" /><di:waypoint x="2110" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_issue_phone_gw_equipment_join_di" bpmnElement="Flow_issue_phone_gw_equipment_join"><di:waypoint x="2015" y="645" /><di:waypoint x="2040" y="645" /><di:waypoint x="2040" y="515" /><di:waypoint x="2110" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_issue_badge_gw_equipment_join_di" bpmnElement="Flow_issue_badge_gw_equipment_join"><di:waypoint x="2015" y="775" /><di:waypoint x="2040" y="775" /><di:waypoint x="2040" y="515" /><di:waypoint x="2110" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_equipment_join_gw_ready_di" bpmnElement="Flow_gw_equipment_join_gw_ready"><di:waypoint x="2160" y="515" /><di:waypoint x="2185" y="515" /><di:waypoint x="2185" y="125" /><di:waypoint x="2280" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_ready_wait_start_date_di" bpmnElement="Flow_gw_ready_wait_start_date"><di:waypoint x="2330" y="125" /><di:waypoint x="2457" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_wait_start_date_mark_ready_di" bpmnElement="Flow_wait_start_date_mark_ready"><di:waypoint x="2493" y="125" /><di:waypoint x="2595" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_mark_ready_catch_ready_di" bpmnElement="Flow_mark_ready_catch_ready"><di:waypoint x="2695" y="125" /><di:waypoint x="2797" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_catch_ready_welcome_meeting_di" bpmnElement="Flow_catch_ready_welcome_meeting"><di:waypoint x="2833" y="125" /><di:waypoint x="2858" y="125" /><di:waypoint x="2858" y="385" /><di:waypoint x="2935" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_welcome_meeting_end_onboarded_di" bpmnElement="Flow_welcome_meeting_end_onboarded"><di:waypoint x="3035" y="385" /><di:waypoint x="3137" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_note_documents_di" bpmnElement="Association_note_documents"><di:waypoint x="945" y="865" /><di:waypoint x="525" y="905" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

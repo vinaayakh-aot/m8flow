@@ -1,0 +1,60 @@
+{
+  "title": "New hire",
+  "type": "object",
+  "required": [
+    "full_name",
+    "department",
+    "role",
+    "employment_type",
+    "start_date"
+  ],
+  "properties": {
+    "full_name": {
+      "type": "string",
+      "title": "Full name"
+    },
+    "email": {
+      "type": "string",
+      "title": "Personal email",
+      "format": "email"
+    },
+    "department": {
+      "type": "string",
+      "title": "Department",
+      "enum": [
+        "Engineering",
+        "Sales",
+        "Marketing",
+        "Finance",
+        "Operations"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "title": "Job title"
+    },
+    "employment_type": {
+      "type": "string",
+      "title": "Employment type",
+      "enum": [
+        "Full-time",
+        "Contractor"
+      ]
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Start date"
+    },
+    "needs_laptop": {
+      "type": "boolean",
+      "title": "Needs a laptop",
+      "default": true
+    },
+    "needs_phone": {
+      "type": "boolean",
+      "title": "Needs a phone",
+      "default": false
+    }
+  }
+}

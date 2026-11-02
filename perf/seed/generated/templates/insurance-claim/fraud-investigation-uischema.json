@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "fraud_confirmed",
+    "findings"
+  ],
+  "findings": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

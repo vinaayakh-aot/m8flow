@@ -1,0 +1,50 @@
+{
+  "title": "Report a claim",
+  "type": "object",
+  "required": [
+    "policy_number",
+    "claim_type",
+    "incident_date",
+    "estimated_amount",
+    "prior_claims"
+  ],
+  "properties": {
+    "policy_number": {
+      "type": "string",
+      "title": "Policy number"
+    },
+    "claim_type": {
+      "type": "string",
+      "title": "Claim type",
+      "enum": [
+        "Auto",
+        "Property"
+      ]
+    },
+    "incident_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Incident date"
+    },
+    "estimated_amount": {
+      "type": "number",
+      "title": "Estimated loss (USD)",
+      "minimum": 0
+    },
+    "police_report_filed": {
+      "type": "boolean",
+      "title": "Police report filed",
+      "default": false
+    },
+    "prior_claims": {
+      "type": "integer",
+      "title": "Claims in the last 3 years",
+      "minimum": 0,
+      "default": 0
+    },
+    "description": {
+      "type": "string",
+      "title": "What happened?"
+    }
+  }
+}

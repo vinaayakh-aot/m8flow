@@ -1,0 +1,17 @@
+{
+  "ui:order": [
+    "item_description",
+    "category",
+    "quantity",
+    "unit_price",
+    "vendor_name",
+    "needed_by",
+    "justification"
+  ],
+  "justification": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

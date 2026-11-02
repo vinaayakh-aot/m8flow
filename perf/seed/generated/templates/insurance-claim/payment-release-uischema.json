@@ -1,0 +1,6 @@
+{
+  "ui:order": [
+    "payment_successful",
+    "payment_reference"
+  ]
+}

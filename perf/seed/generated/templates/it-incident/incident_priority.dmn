@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="Definitions_incident_priority" name="Incident priority" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="incident_priority" name="Incident priority">
+    <decisionTable id="DecisionTable_incident_priority" hitPolicy="UNIQUE">
+      <input id="Input_1" label="Impact">
+        <inputExpression id="InputExpression_1" typeRef="string" expressionLanguage="python"><text>impact</text></inputExpression>
+      </input>
+      <input id="Input_2" label="Urgency">
+        <inputExpression id="InputExpression_2" typeRef="string" expressionLanguage="python"><text>urgency</text></inputExpression>
+      </input>
+      <output id="Output_1" label="Priority" name="priority" typeRef="string" />
+      <output id="Output_2" label="SLA hours" name="sla_hours" typeRef="integer" />
+      <rule id="Rule_1">
+        <description>Critical</description>
+        <inputEntry id="Rule_1_in_1"><text>"High"</text></inputEntry>
+        <inputEntry id="Rule_1_in_2"><text>"High"</text></inputEntry>
+        <outputEntry id="Rule_1_out_1"><text>"P1"</text></outputEntry>
+        <outputEntry id="Rule_1_out_2"><text>4</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <description>High</description>
+        <inputEntry id="Rule_2_in_1"><text>"High"</text></inputEntry>
+        <inputEntry id="Rule_2_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_2_out_1"><text>"P2"</text></outputEntry>
+        <outputEntry id="Rule_2_out_2"><text>8</text></outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <description>High urgency</description>
+        <inputEntry id="Rule_3_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_3_in_2"><text>"High"</text></inputEntry>
+        <outputEntry id="Rule_3_out_1"><text>"P2"</text></outputEntry>
+        <outputEntry id="Rule_3_out_2"><text>8</text></outputEntry>
+      </rule>
+      <rule id="Rule_4">
+        <description>Medium</description>
+        <inputEntry id="Rule_4_in_1"><text>"Medium"</text></inputEntry>
+        <inputEntry id="Rule_4_in_2"><text>"Medium"</text></inputEntry>
+        <outputEntry id="Rule_4_out_1"><text>"P3"</text></outputEntry>
+        <outputEntry id="Rule_4_out_2"><text>24</text></outputEntry>
+      </rule>
+      <rule id="Rule_5">
+        <description>Low</description>
+        <inputEntry id="Rule_5_in_1"><text></text></inputEntry>
+        <inputEntry id="Rule_5_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_5_out_1"><text>"P4"</text></outputEntry>
+        <outputEntry id="Rule_5_out_2"><text>72</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape dmnElementRef="incident_priority"><dc:Bounds height="80" width="180" x="160" y="100" /></dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

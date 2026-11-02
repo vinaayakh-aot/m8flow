@@ -113,6 +113,14 @@ discovery.relabel "docker_logs" {
     regex         = "/(.*)"
     target_label  = "container"
   }
+
+  // Keeps stacks apart when several compose projects run side by side
+  // (e.g. the dev stack "m8flow" and the perf reference stack "m8flow-perf").
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "(.+)"
+    target_label  = "compose_project"
+  }
 }
 
 loki.source.docker "containers" {

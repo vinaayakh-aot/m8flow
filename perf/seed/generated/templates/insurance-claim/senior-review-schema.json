@@ -1,0 +1,27 @@
+{
+  "title": "Senior adjuster review",
+  "type": "object",
+  "required": [
+    "outcome",
+    "approved_amount"
+  ],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "title": "Decision",
+      "enum": [
+        "approve",
+        "reject"
+      ]
+    },
+    "approved_amount": {
+      "type": "number",
+      "title": "Approved amount (USD)",
+      "minimum": 0
+    },
+    "comments": {
+      "type": "string",
+      "title": "Comments"
+    }
+  }
+}

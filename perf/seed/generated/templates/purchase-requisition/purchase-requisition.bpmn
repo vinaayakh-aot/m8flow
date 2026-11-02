@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_purchase_requisition" targetNamespace="http://bpmn.io/schema/bpmn" exporter="m8flow perf-seed builder" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_purchase_requisition">
+    <bpmn:participant id="Participant_purchase_requisition" name="Purchase Requisition to Purchase Order" processRef="purchase_requisition" />
+    <bpmn:participant id="Participant_supplier" name="Supplier" processRef="Process_Participant_supplier_external" />
+    <bpmn:messageFlow id="MessageFlow_po" name="Purchase order" sourceRef="send_po" targetRef="Participant_supplier" messageRef="Message_purchase_order" />
+    <bpmn:messageFlow id="MessageFlow_delivery" name="Delivery note" sourceRef="Participant_supplier" targetRef="receive_goods" />
+  </bpmn:collaboration>
+  <bpmn:message id="Message_purchase_order" name="purchase_order" />
+  <bpmn:category id="Category_group_checks"><bpmn:categoryValue id="CategoryValue_group_checks" value="Budget control" /></bpmn:category>
+  <bpmn:process id="purchase_requisition" name="Purchase Requisition to Purchase Order" isExecutable="true">
+    <bpmn:documentation>Procure-to-pay: an employee requests goods, approvals are routed by a DMN policy, budget is checked and committed in parallel, and a purchase order is sent to the supplier.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_purchase_requisition">
+      <bpmn:lane id="Lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>start_requisition</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>submit_requisition</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>prepare_requisition</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>determine_approval_route</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_approval_level</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_approved</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_approvers" name="Approvers">
+        <bpmn:flowNodeRef>manager_approval</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_manager_reminder</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>b_manager_overdue</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>remind_manager</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_reminder</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_manager_decision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_director_merge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>director_approval</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_director_decision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_rejected</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>record_rejection</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_administrators" name="Administrators">
+        <bpmn:flowNodeRef>gw_checks</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>check_budget</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ensure_ledger</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>record_commitment</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_checks_join</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>create_po</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>send_po</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>receive_goods</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_received</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start_requisition" name="Purchase needed">
+      <bpmn:outgoing>Flow_start_requisition_submit_requisition</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="submit_requisition" name="Submit purchase requisition">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="purchase-requisition-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="purchase-requisition-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Describe what you need. Requests up to $500 are approved automatically.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_requisition_submit_requisition</bpmn:incoming>
+      <bpmn:outgoing>Flow_submit_requisition_prepare_requisition</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:scriptTask id="prepare_requisition" name="Prepare requisition record">
+      <bpmn:incoming>Flow_submit_requisition_prepare_requisition</bpmn:incoming>
+      <bpmn:outgoing>Flow_prepare_requisition_determine_approval_route</bpmn:outgoing>
+      <bpmn:dataOutputAssociation id="DataOut_prepare_requisition_requisition"><bpmn:targetRef>requisition_ref</bpmn:targetRef></bpmn:dataOutputAssociation>
+      <bpmn:script>total = round(float(quantity) * float(unit_price), 2)
+requisition = {'item': item_description, 'category': category, 'quantity': quantity, 'unit_price': unit_price, 'total': total, 'vendor': vendor_name}
+requisition_status = 'submitted'
+reminders_sent = 0</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:businessRuleTask id="determine_approval_route" name="Determine approval route">
+      <bpmn:extensionElements><spiffworkflow:calledDecisionId>approval_route</spiffworkflow:calledDecisionId></bpmn:extensionElements>
+      <bpmn:incoming>Flow_prepare_requisition_determine_approval_route</bpmn:incoming>
+      <bpmn:outgoing>Flow_determine_approval_route_gw_approval_level</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:exclusiveGateway id="gw_approval_level" name="Approval level?" default="Flow_gw_approval_level_gw_approved">
+      <bpmn:incoming>Flow_determine_approval_route_gw_approval_level</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_approval_level_gw_approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_approval_level_manager_approval</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="manager_approval" name="Manager approval">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="approval-decision-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="approval-decision-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Requisition for {{ quantity }} x {{ item_description }} from {{ vendor_name }}: ${{ total }} ({{ category }}).</spiffworkflow:instructionsForEndUser><spiffworkflow:postScript>manager_outcome = outcome</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_approval_level_manager_approval</bpmn:incoming>
+      <bpmn:outgoing>Flow_manager_approval_gw_manager_decision</bpmn:outgoing>
+      <bpmn:dataInputAssociation id="DataIn_manager_approval_requisition"><bpmn:sourceRef>requisition_ref</bpmn:sourceRef></bpmn:dataInputAssociation>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="b_manager_reminder" name="Every 12h" attachedToRef="manager_approval" cancelActivity="false">
+      <bpmn:outgoing>Flow_b_manager_reminder_remind_manager</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R2/PT12H"</bpmn:timeCycle></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b_manager_overdue" name="3 days" attachedToRef="manager_approval">
+      <bpmn:outgoing>Flow_b_manager_overdue_gw_director_merge</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"P3D"</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="remind_manager" name="Log approval reminder">
+      <bpmn:incoming>Flow_b_manager_reminder_remind_manager</bpmn:incoming>
+      <bpmn:outgoing>Flow_remind_manager_end_reminder</bpmn:outgoing>
+      <bpmn:script>reminders_sent += 1</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end_reminder" name="Reminder logged">
+      <bpmn:incoming>Flow_remind_manager_end_reminder</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="gw_manager_decision" name="Manager decision?" default="Flow_gw_manager_decision_gw_approved">
+      <bpmn:incoming>Flow_manager_approval_gw_manager_decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_manager_decision_gw_rejected</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_manager_decision_gw_director_merge</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_manager_decision_gw_approved</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="gw_director_merge">
+      <bpmn:incoming>Flow_b_manager_overdue_gw_director_merge</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_manager_decision_gw_director_merge</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_director_merge_director_approval</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="director_approval" name="Director approval">
+      <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="approval-decision-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="approval-decision-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>High-value or overdue requisition: ${{ total }} for {{ item_description }}.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_director_merge_director_approval</bpmn:incoming>
+      <bpmn:outgoing>Flow_director_approval_gw_director_decision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="gw_director_decision" name="Director decision?" default="Flow_gw_director_decision_gw_approved">
+      <bpmn:incoming>Flow_director_approval_gw_director_decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_director_decision_gw_rejected</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_director_decision_gw_approved</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="gw_rejected">
+      <bpmn:incoming>Flow_gw_manager_decision_gw_rejected</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_director_decision_gw_rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_rejected_record_rejection</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:scriptTask id="record_rejection" name="Record rejection">
+      <bpmn:incoming>Flow_gw_rejected_record_rejection</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_rejection_end_rejected</bpmn:outgoing>
+      <bpmn:script>requisition_status = 'rejected'</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end_rejected" name="Requisition rejected">
+      <bpmn:incoming>Flow_record_rejection_end_rejected</bpmn:incoming>
+      <bpmn:terminateEventDefinition />
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="gw_approved" name="Approved">
+      <bpmn:incoming>Flow_gw_approval_level_gw_approved</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_manager_decision_gw_approved</bpmn:incoming>
+      <bpmn:incoming>Flow_gw_director_decision_gw_approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_approved_gw_checks</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:parallelGateway id="gw_checks">
+      <bpmn:incoming>Flow_gw_approved_gw_checks</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_checks_check_budget</bpmn:outgoing>
+      <bpmn:outgoing>Flow_gw_checks_ensure_ledger</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:scriptTask id="check_budget" name="Check departmental budget">
+      <bpmn:incoming>Flow_gw_checks_check_budget</bpmn:incoming>
+      <bpmn:outgoing>Flow_check_budget_gw_checks_join</bpmn:outgoing>
+      <bpmn:script>budget_remaining = 250000
+budget_ok = total &lt;= budget_remaining</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:serviceTask id="ensure_ledger" name="Ensure commitment ledger">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="ledger_ready"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'CREATE TABLE IF NOT EXISTS perf_purchase_commitments (id serial PRIMARY KEY, item text, category text, total numeric, created_at timestamptz DEFAULT now())'}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator></bpmn:extensionElements>
+      <bpmn:incoming>Flow_gw_checks_ensure_ledger</bpmn:incoming>
+      <bpmn:outgoing>Flow_ensure_ledger_record_commitment</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="record_commitment" name="Record budget commitment">
+      <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="commitment"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'INSERT INTO perf_purchase_commitments (item, category, total) VALUES (%s, %s, %s) RETURNING id', 'values': [item_description, category, total], 'fetch_results': True}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>commitment_id = commitment['command_response']['body']['body'][0][0]</spiffworkflow:postScript></bpmn:extensionElements>
+      <bpmn:incoming>Flow_ensure_ledger_record_commitment</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_commitment_gw_checks_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:parallelGateway id="gw_checks_join">
+      <bpmn:incoming>Flow_check_budget_gw_checks_join</bpmn:incoming>
+      <bpmn:incoming>Flow_record_commitment_gw_checks_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_gw_checks_join_create_po</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:scriptTask id="create_po" name="Create purchase order">
+      <bpmn:incoming>Flow_gw_checks_join_create_po</bpmn:incoming>
+      <bpmn:outgoing>Flow_create_po_send_po</bpmn:outgoing>
+      <bpmn:script>po_number = 'PO-' + str(commitment_id).zfill(6)
+requisition_status = 'ordered'</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sendTask id="send_po" name="Send PO to supplier" messageRef="Message_purchase_order">
+      <bpmn:incoming>Flow_create_po_send_po</bpmn:incoming>
+      <bpmn:outgoing>Flow_send_po_receive_goods</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:manualTask id="receive_goods" name="Receive goods">
+      <bpmn:extensionElements><spiffworkflow:instructionsForEndUser>Confirm {{ quantity }} x {{ item_description }} arrived for {{ po_number }}.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements>
+      <bpmn:incoming>Flow_send_po_receive_goods</bpmn:incoming>
+      <bpmn:outgoing>Flow_receive_goods_end_received</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="end_received" name="Goods received">
+      <bpmn:incoming>Flow_receive_goods_end_received</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:dataObject id="requisition" />
+    <bpmn:dataObjectReference id="requisition_ref" name="Requisition" dataObjectRef="requisition" />
+    <bpmn:sequenceFlow id="Flow_start_requisition_submit_requisition" sourceRef="start_requisition" targetRef="submit_requisition" />
+    <bpmn:sequenceFlow id="Flow_submit_requisition_prepare_requisition" sourceRef="submit_requisition" targetRef="prepare_requisition" />
+    <bpmn:sequenceFlow id="Flow_prepare_requisition_determine_approval_route" sourceRef="prepare_requisition" targetRef="determine_approval_route" />
+    <bpmn:sequenceFlow id="Flow_determine_approval_route_gw_approval_level" sourceRef="determine_approval_route" targetRef="gw_approval_level" />
+    <bpmn:sequenceFlow id="Flow_gw_approval_level_gw_approved" name="auto" sourceRef="gw_approval_level" targetRef="gw_approved" />
+    <bpmn:sequenceFlow id="Flow_gw_approval_level_manager_approval" name="needs approval" sourceRef="gw_approval_level" targetRef="manager_approval"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">approval_level != 'auto'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_b_manager_reminder_remind_manager" sourceRef="b_manager_reminder" targetRef="remind_manager" />
+    <bpmn:sequenceFlow id="Flow_remind_manager_end_reminder" sourceRef="remind_manager" targetRef="end_reminder" />
+    <bpmn:sequenceFlow id="Flow_b_manager_overdue_gw_director_merge" name="overdue" sourceRef="b_manager_overdue" targetRef="gw_director_merge" />
+    <bpmn:sequenceFlow id="Flow_manager_approval_gw_manager_decision" sourceRef="manager_approval" targetRef="gw_manager_decision" />
+    <bpmn:sequenceFlow id="Flow_gw_manager_decision_gw_rejected" name="rejected" sourceRef="gw_manager_decision" targetRef="gw_rejected"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">outcome == 'reject'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_manager_decision_gw_director_merge" name="director" sourceRef="gw_manager_decision" targetRef="gw_director_merge"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">approval_level == 'director'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_manager_decision_gw_approved" name="approved" sourceRef="gw_manager_decision" targetRef="gw_approved" />
+    <bpmn:sequenceFlow id="Flow_gw_director_merge_director_approval" sourceRef="gw_director_merge" targetRef="director_approval" />
+    <bpmn:sequenceFlow id="Flow_director_approval_gw_director_decision" sourceRef="director_approval" targetRef="gw_director_decision" />
+    <bpmn:sequenceFlow id="Flow_gw_director_decision_gw_rejected" name="rejected" sourceRef="gw_director_decision" targetRef="gw_rejected"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">outcome == 'reject'</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_gw_director_decision_gw_approved" name="approved" sourceRef="gw_director_decision" targetRef="gw_approved" />
+    <bpmn:sequenceFlow id="Flow_gw_rejected_record_rejection" sourceRef="gw_rejected" targetRef="record_rejection" />
+    <bpmn:sequenceFlow id="Flow_record_rejection_end_rejected" sourceRef="record_rejection" targetRef="end_rejected" />
+    <bpmn:sequenceFlow id="Flow_gw_approved_gw_checks" sourceRef="gw_approved" targetRef="gw_checks" />
+    <bpmn:sequenceFlow id="Flow_gw_checks_check_budget" sourceRef="gw_checks" targetRef="check_budget" />
+    <bpmn:sequenceFlow id="Flow_gw_checks_ensure_ledger" sourceRef="gw_checks" targetRef="ensure_ledger" />
+    <bpmn:sequenceFlow id="Flow_ensure_ledger_record_commitment" sourceRef="ensure_ledger" targetRef="record_commitment" />
+    <bpmn:sequenceFlow id="Flow_check_budget_gw_checks_join" sourceRef="check_budget" targetRef="gw_checks_join" />
+    <bpmn:sequenceFlow id="Flow_record_commitment_gw_checks_join" sourceRef="record_commitment" targetRef="gw_checks_join" />
+    <bpmn:sequenceFlow id="Flow_gw_checks_join_create_po" sourceRef="gw_checks_join" targetRef="create_po" />
+    <bpmn:sequenceFlow id="Flow_create_po_send_po" sourceRef="create_po" targetRef="send_po" />
+    <bpmn:sequenceFlow id="Flow_send_po_receive_goods" sourceRef="send_po" targetRef="receive_goods" />
+    <bpmn:sequenceFlow id="Flow_receive_goods_end_received" sourceRef="receive_goods" targetRef="end_received" />
+    <bpmn:textAnnotation id="note_policy"><bpmn:text>approval_route.dmn: total and category decide auto / manager / director</bpmn:text></bpmn:textAnnotation>
+    <bpmn:association id="Association_note_policy" sourceRef="determine_approval_route" targetRef="note_policy" />
+    <bpmn:group id="group_checks" categoryValueRef="CategoryValue_group_checks" />
+  </bpmn:process>
+  <bpmn:process id="Process_Participant_supplier_external" isExecutable="false" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_purchase_requisition">
+    <bpmndi:BPMNPlane id="BPMNPlane_purchase_requisition" bpmnElement="Collaboration_purchase_requisition">
+      <bpmndi:BPMNShape id="Participant_purchase_requisition_di" bpmnElement="Participant_purchase_requisition" isHorizontal="true"><dc:Bounds x="120" y="60" width="3310" height="910" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="150" y="60" width="3280" height="260" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="150" y="320" width="3280" height="390" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_administrators_di" bpmnElement="Lane_administrators" isHorizontal="true"><dc:Bounds x="150" y="710" width="3280" height="260" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_supplier_di" bpmnElement="Participant_supplier" isHorizontal="true"><dc:Bounds x="120" y="1030" width="3310" height="100" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="group_checks_di" bpmnElement="group_checks"><dc:Bounds x="2052" y="712" width="676" height="256" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="start_requisition_di" bpmnElement="start_requisition"><dc:Bounds x="247" y="107" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="217" y="147" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="submit_requisition_di" bpmnElement="submit_requisition"><dc:Bounds x="385" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="prepare_requisition_di" bpmnElement="prepare_requisition"><dc:Bounds x="555" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="determine_approval_route_di" bpmnElement="determine_approval_route"><dc:Bounds x="725" y="85" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_approval_level_di" bpmnElement="gw_approval_level"><dc:Bounds x="920" y="100" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="890" y="154" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="manager_approval_di" bpmnElement="manager_approval"><dc:Bounds x="1065" y="345" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="remind_manager_di" bpmnElement="remind_manager"><dc:Bounds x="1065" y="605" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_reminder_di" bpmnElement="end_reminder"><dc:Bounds x="1267" y="627" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1237" y="667" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_manager_decision_di" bpmnElement="gw_manager_decision"><dc:Bounds x="1260" y="360" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1230" y="414" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_director_merge_di" bpmnElement="gw_director_merge"><dc:Bounds x="1430" y="490" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="director_approval_di" bpmnElement="director_approval"><dc:Bounds x="1575" y="475" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_director_decision_di" bpmnElement="gw_director_decision"><dc:Bounds x="1770" y="490" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1740" y="544" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_rejected_di" bpmnElement="gw_rejected"><dc:Bounds x="1770" y="360" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="record_rejection_di" bpmnElement="record_rejection"><dc:Bounds x="1915" y="345" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_rejected_di" bpmnElement="end_rejected"><dc:Bounds x="2117" y="367" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2087" y="407" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_approved_di" bpmnElement="gw_approved"><dc:Bounds x="1940" y="100" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1910" y="154" width="110" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_checks_di" bpmnElement="gw_checks"><dc:Bounds x="2110" y="750" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="check_budget_di" bpmnElement="check_budget"><dc:Bounds x="2255" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ensure_ledger_di" bpmnElement="ensure_ledger"><dc:Bounds x="2255" y="865" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="record_commitment_di" bpmnElement="record_commitment"><dc:Bounds x="2425" y="865" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_checks_join_di" bpmnElement="gw_checks_join"><dc:Bounds x="2620" y="750" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="create_po_di" bpmnElement="create_po"><dc:Bounds x="2765" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="send_po_di" bpmnElement="send_po"><dc:Bounds x="2935" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="receive_goods_di" bpmnElement="receive_goods"><dc:Bounds x="3105" y="735" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_received_di" bpmnElement="end_received"><dc:Bounds x="3307" y="757" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3277" y="797" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_manager_reminder_di" bpmnElement="b_manager_reminder"><dc:Bounds x="1079" y="407" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1049" y="447" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_manager_overdue_di" bpmnElement="b_manager_overdue"><dc:Bounds x="1123" y="407" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1093" y="447" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="requisition_ref_di" bpmnElement="requisition_ref"><dc:Bounds x="587" y="230" width="36" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="557" y="284" width="96" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="note_policy_di" bpmnElement="note_policy"><dc:Bounds x="695" y="225" width="160" height="60" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_start_requisition_submit_requisition_di" bpmnElement="Flow_start_requisition_submit_requisition"><di:waypoint x="283" y="125" /><di:waypoint x="385" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_submit_requisition_prepare_requisition_di" bpmnElement="Flow_submit_requisition_prepare_requisition"><di:waypoint x="485" y="125" /><di:waypoint x="555" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_prepare_requisition_determine_approval_route_di" bpmnElement="Flow_prepare_requisition_determine_approval_route"><di:waypoint x="655" y="125" /><di:waypoint x="725" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_determine_approval_route_gw_approval_level_di" bpmnElement="Flow_determine_approval_route_gw_approval_level"><di:waypoint x="825" y="125" /><di:waypoint x="920" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_approval_level_gw_approved_di" bpmnElement="Flow_gw_approval_level_gw_approved"><di:waypoint x="970" y="125" /><di:waypoint x="1940" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_approval_level_manager_approval_di" bpmnElement="Flow_gw_approval_level_manager_approval"><di:waypoint x="970" y="125" /><di:waypoint x="995" y="125" /><di:waypoint x="995" y="385" /><di:waypoint x="1065" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_manager_reminder_remind_manager_di" bpmnElement="Flow_b_manager_reminder_remind_manager"><di:waypoint x="1097" y="443" /><di:waypoint x="1097" y="605" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_remind_manager_end_reminder_di" bpmnElement="Flow_remind_manager_end_reminder"><di:waypoint x="1165" y="645" /><di:waypoint x="1267" y="645" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_b_manager_overdue_gw_director_merge_di" bpmnElement="Flow_b_manager_overdue_gw_director_merge"><di:waypoint x="1141" y="443" /><di:waypoint x="1141" y="515" /><di:waypoint x="1430" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_manager_approval_gw_manager_decision_di" bpmnElement="Flow_manager_approval_gw_manager_decision"><di:waypoint x="1165" y="385" /><di:waypoint x="1260" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_manager_decision_gw_rejected_di" bpmnElement="Flow_gw_manager_decision_gw_rejected"><di:waypoint x="1310" y="385" /><di:waypoint x="1770" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_manager_decision_gw_director_merge_di" bpmnElement="Flow_gw_manager_decision_gw_director_merge"><di:waypoint x="1310" y="385" /><di:waypoint x="1335" y="385" /><di:waypoint x="1335" y="515" /><di:waypoint x="1430" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_manager_decision_gw_approved_di" bpmnElement="Flow_gw_manager_decision_gw_approved"><di:waypoint x="1310" y="385" /><di:waypoint x="1335" y="385" /><di:waypoint x="1335" y="125" /><di:waypoint x="1940" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_director_merge_director_approval_di" bpmnElement="Flow_gw_director_merge_director_approval"><di:waypoint x="1480" y="515" /><di:waypoint x="1575" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_director_approval_gw_director_decision_di" bpmnElement="Flow_director_approval_gw_director_decision"><di:waypoint x="1675" y="515" /><di:waypoint x="1770" y="515" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_director_decision_gw_rejected_di" bpmnElement="Flow_gw_director_decision_gw_rejected"><di:waypoint x="1795" y="540" /><di:waypoint x="1795" y="565" /><di:waypoint x="1795" y="565" /><di:waypoint x="1795" y="410" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_director_decision_gw_approved_di" bpmnElement="Flow_gw_director_decision_gw_approved"><di:waypoint x="1820" y="515" /><di:waypoint x="1845" y="515" /><di:waypoint x="1845" y="125" /><di:waypoint x="1940" y="125" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_rejected_record_rejection_di" bpmnElement="Flow_gw_rejected_record_rejection"><di:waypoint x="1820" y="385" /><di:waypoint x="1915" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_record_rejection_end_rejected_di" bpmnElement="Flow_record_rejection_end_rejected"><di:waypoint x="2015" y="385" /><di:waypoint x="2117" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_approved_gw_checks_di" bpmnElement="Flow_gw_approved_gw_checks"><di:waypoint x="1990" y="125" /><di:waypoint x="2015" y="125" /><di:waypoint x="2015" y="775" /><di:waypoint x="2110" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_checks_check_budget_di" bpmnElement="Flow_gw_checks_check_budget"><di:waypoint x="2160" y="775" /><di:waypoint x="2255" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_checks_ensure_ledger_di" bpmnElement="Flow_gw_checks_ensure_ledger"><di:waypoint x="2160" y="775" /><di:waypoint x="2185" y="775" /><di:waypoint x="2185" y="905" /><di:waypoint x="2255" y="905" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ensure_ledger_record_commitment_di" bpmnElement="Flow_ensure_ledger_record_commitment"><di:waypoint x="2355" y="905" /><di:waypoint x="2425" y="905" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_check_budget_gw_checks_join_di" bpmnElement="Flow_check_budget_gw_checks_join"><di:waypoint x="2355" y="775" /><di:waypoint x="2620" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_record_commitment_gw_checks_join_di" bpmnElement="Flow_record_commitment_gw_checks_join"><di:waypoint x="2525" y="905" /><di:waypoint x="2550" y="905" /><di:waypoint x="2550" y="775" /><di:waypoint x="2620" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_gw_checks_join_create_po_di" bpmnElement="Flow_gw_checks_join_create_po"><di:waypoint x="2670" y="775" /><di:waypoint x="2765" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_create_po_send_po_di" bpmnElement="Flow_create_po_send_po"><di:waypoint x="2865" y="775" /><di:waypoint x="2935" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_send_po_receive_goods_di" bpmnElement="Flow_send_po_receive_goods"><di:waypoint x="3035" y="775" /><di:waypoint x="3105" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_receive_goods_end_received_di" bpmnElement="Flow_receive_goods_end_received"><di:waypoint x="3205" y="775" /><di:waypoint x="3307" y="775" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DataOut_prepare_requisition_requisition_di" bpmnElement="DataOut_prepare_requisition_requisition"><di:waypoint x="605" y="125" /><di:waypoint x="605" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DataIn_manager_approval_requisition_di" bpmnElement="DataIn_manager_approval_requisition"><di:waypoint x="605" y="255" /><di:waypoint x="1115" y="385" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_note_policy_di" bpmnElement="Association_note_policy"><di:waypoint x="775" y="85" /><di:waypoint x="695" y="255" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MessageFlow_po_di" bpmnElement="MessageFlow_po"><di:waypoint x="2985" y="815" /><di:waypoint x="2985" y="1030" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MessageFlow_delivery_di" bpmnElement="MessageFlow_delivery"><di:waypoint x="3155" y="1030" /><di:waypoint x="3155" y="815" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

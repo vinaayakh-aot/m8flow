@@ -1,0 +1,6 @@
+{
+  "ui:order": [
+    "order_reference",
+    "quantity"
+  ]
+}

@@ -59,3 +59,9 @@ pmd*.zip
 
 # Staged node-wire binary wheels (regenerate via m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh)
 m8flow-node-wire-proxy/vendor/wheels/*.whl
+
+# Perf-seed stack snapshots: full database dumps (perf/snapshot.sh)
+perf/snapshots/
+# Generated env and data of the perf reference stack (perf/stack/up.sh)
+perf/stack/.env.perf
+perf/stack/data/

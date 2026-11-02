@@ -1,0 +1,6 @@
+{
+  "ui:order": [
+    "laptop_vendor",
+    "laptop_eta_days"
+  ]
+}

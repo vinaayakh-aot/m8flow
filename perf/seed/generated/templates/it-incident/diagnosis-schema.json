@@ -1,0 +1,23 @@
+{
+  "title": "Diagnosis",
+  "type": "object",
+  "required": [
+    "root_cause",
+    "resolution_type"
+  ],
+  "properties": {
+    "root_cause": {
+      "type": "string",
+      "title": "Root cause"
+    },
+    "resolution_type": {
+      "type": "string",
+      "title": "Resolution",
+      "enum": [
+        "fix",
+        "workaround",
+        "change_required"
+      ]
+    }
+  }
+}

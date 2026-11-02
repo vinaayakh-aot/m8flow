@@ -1,0 +1,9 @@
+{
+  "ui:order": [
+    "summary",
+    "service",
+    "impact",
+    "urgency",
+    "affected_users"
+  ]
+}

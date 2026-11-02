@@ -1,0 +1,228 @@
+{
+  "$comment": "Northwind Traders perf tenant. Users get password = username unless PERF_SEED_PASSWORD is set. 'count' is multiplied by seed.py --scale. 'paths' restricts which scenarios.py paths load.py runs for a model (default: all, weighted).",
+  "tenant": {
+    "slug": "northwind",
+    "name": "Northwind Traders"
+  },
+  "email_domain": "northwind.example.test",
+  "users": [
+    {
+      "prefix": "nw-admin",
+      "count": 1,
+      "groups": [
+        "Administrators"
+      ],
+      "first_name": "Nora",
+      "last_name": "Admin"
+    },
+    {
+      "prefix": "nw-designer",
+      "count": 1,
+      "groups": [
+        "Designers"
+      ],
+      "first_name": "Dev",
+      "last_name": "Designer"
+    },
+    {
+      "prefix": "nw-viewer",
+      "count": 1,
+      "groups": [
+        "Viewers"
+      ],
+      "first_name": "Vic",
+      "last_name": "Viewer"
+    },
+    {
+      "prefix": "nw-requester",
+      "count": 6,
+      "groups": [
+        "Submitters"
+      ],
+      "first_name": "Riley",
+      "last_name": "Requester"
+    },
+    {
+      "prefix": "nw-approver",
+      "count": 4,
+      "groups": [
+        "Approvers"
+      ],
+      "first_name": "Alex",
+      "last_name": "Approver"
+    },
+    {
+      "prefix": "nw-agent",
+      "count": 4,
+      "groups": [
+        "Support"
+      ],
+      "first_name": "Sam",
+      "last_name": "Agent"
+    },
+    {
+      "prefix": "nw-finance",
+      "count": 2,
+      "groups": [
+        "Administrators"
+      ],
+      "first_name": "Fin",
+      "last_name": "Controller"
+    }
+  ],
+  "group_roles": [
+    {
+      "group": "Support",
+      "role": "reviewer",
+      "why": "Support maps to the integrator role, which may not list or submit tasks; the support desk works Support-lane tasks, so the tenant admin also grants reviewer"
+    }
+  ],
+  "connector_profiles": [
+    {
+      "connector_type": "postgres_v2",
+      "profile_name": "default",
+      "display_name": "Perf ledger database",
+      "description": "Stack database used by the perf-seed ledger tasks",
+      "config_env": {
+        "database_connection_str": "PERF_SEED_PG_DSN"
+      },
+      "$comment": "Defaults to the stack database built from POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB in .env (host m8flow-db, as the connector proxy sees it)."
+    }
+  ],
+  "process_groups": [
+    {
+      "id": "procurement",
+      "display_name": "Procurement",
+      "description": "Purchase requisitions and orders"
+    },
+    {
+      "id": "human-resources",
+      "display_name": "Human Resources",
+      "description": "Hiring and onboarding"
+    },
+    {
+      "id": "claims",
+      "display_name": "Claims",
+      "description": "Insurance claim handling"
+    },
+    {
+      "id": "it-service-management",
+      "display_name": "IT Service Management",
+      "description": "Incidents and changes"
+    },
+    {
+      "id": "integrations",
+      "display_name": "Integrations",
+      "description": "node-wire connector scenarios"
+    }
+  ],
+  "template_models": [
+    {
+      "template": "purchase-requisition",
+      "group": "procurement",
+      "id": "it-hardware-requisitions",
+      "display_name": "IT Hardware Requisitions",
+      "paths": [
+        "director-approved hardware",
+        "manager-rejected marketing"
+      ]
+    },
+    {
+      "template": "purchase-requisition",
+      "group": "procurement",
+      "id": "office-supplies-requisitions",
+      "display_name": "Office Supplies Requisitions",
+      "paths": [
+        "auto-approved office supplies"
+      ]
+    },
+    {
+      "template": "purchase-requisition",
+      "group": "procurement",
+      "id": "marketing-services-requisitions",
+      "display_name": "Marketing Services Requisitions",
+      "paths": [
+        "manager-approved software",
+        "manager-rejected marketing"
+      ]
+    },
+    {
+      "template": "employee-onboarding",
+      "group": "human-resources",
+      "id": "engineering-onboarding",
+      "display_name": "Engineering Onboarding",
+      "paths": [
+        "engineering full-time"
+      ]
+    },
+    {
+      "template": "employee-onboarding",
+      "group": "human-resources",
+      "id": "sales-onboarding",
+      "display_name": "Sales Onboarding",
+      "paths": [
+        "sales laptop backorder"
+      ]
+    },
+    {
+      "template": "employee-onboarding",
+      "group": "human-resources",
+      "id": "contractor-onboarding",
+      "display_name": "Contractor Onboarding",
+      "paths": [
+        "contractor badge only"
+      ]
+    },
+    {
+      "template": "insurance-claim",
+      "group": "claims",
+      "id": "auto-claims",
+      "display_name": "Auto Claims"
+    },
+    {
+      "template": "insurance-claim",
+      "group": "claims",
+      "id": "property-claims",
+      "display_name": "Property Claims",
+      "paths": [
+        "over authority, senior approves",
+        "over authority, senior rejects",
+        "standard claim with document loop"
+      ]
+    },
+    {
+      "template": "it-incident",
+      "group": "it-service-management",
+      "id": "service-desk-incidents",
+      "display_name": "Service Desk Incidents",
+      "paths": [
+        "P2 fixed",
+        "P3 change rejected, workaround"
+      ]
+    },
+    {
+      "template": "it-incident",
+      "group": "it-service-management",
+      "id": "infrastructure-incidents",
+      "display_name": "Infrastructure Incidents",
+      "paths": [
+        "P1 emergency change approved",
+        "P2 fixed"
+      ]
+    }
+  ],
+  "connector_models": [
+    {
+      "source": "customer-ledger",
+      "group": "integrations"
+    },
+    {
+      "source": "db-heartbeat",
+      "group": "integrations"
+    },
+    {
+      "source": "partner-api-check",
+      "group": "integrations"
+    }
+  ]
+}

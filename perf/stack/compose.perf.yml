@@ -1,0 +1,83 @@
+# Overlay that runs a second, isolated m8flow stack (compose project m8flow-perf)
+# beside the dev stack, wired into the observability stack. Used by perf/stack/up.sh:
+#
+#   docker compose -p m8flow-perf --env-file perf/stack/.env.perf \
+#     -f docker/m8flow-docker-compose.yml -f perf/stack/compose.perf.yml ...
+#
+# Relative paths resolve from docker/ (the first compose file's directory).
+# Volumes and the default network are project-scoped already; this file only
+# re-points what the base file hard-codes: the env file, the process-model bind
+# mount, fixed container names and the designer image (its backend URL is baked
+# in at build time).
+#
+# env_file is overridden on each service directly: a YAML merge key (<<) drops
+# the !override tag, and the base file's ../.env would silently load first.
+
+x-perf-networks: &perf-networks
+  networks:
+    - default
+    - observability
+
+services:
+  m8flow-backend:
+    <<: *perf-networks
+    env_file: !override [../perf/stack/.env.perf]
+    volumes: !override
+      - type: bind
+        source: ../perf/stack/data/process_models
+        target: /app/data/process_models
+      - templates_cache:/app/data/templates
+      - ../perf/stack/.env.perf:/app/.env:ro
+
+  m8flow-celery-worker:
+    <<: *perf-networks
+    env_file: !override [../perf/stack/.env.perf]
+    volumes: !override
+      - type: bind
+        source: ../perf/stack/data/process_models
+        target: /data/process_models
+      - ../perf/stack/.env.perf:/app/.env:ro
+      - celery_worker_state:/var/lib/m8flow/celery
+
+  m8flow-celery-flower:
+    <<: *perf-networks
+    env_file: !override [../perf/stack/.env.perf]
+    volumes: !override
+      - type: bind
+        source: ../perf/stack/data/process_models
+        target: /data/process_models
+
+  m8flow-notification-worker:
+    <<: *perf-networks
+    env_file: !override [../perf/stack/.env.perf]
+    container_name: !override m8flow-perf-notification-worker
+    volumes: !override
+      - type: bind
+        source: ../perf/stack/data/process_models
+        target: /data/process_models
+
+  m8flow-nats-consumer:
+    env_file: !override [../perf/stack/.env.perf]
+    container_name: !override m8flow-perf-nats-consumer
+    volumes: !override
+      - type: bind
+        source: ../perf/stack/data/process_models
+        target: /data/process_models
+      - ../perf/stack/data/m8flow_nats_consumer:/data/m8flow_nats_consumer
+
+  m8flow-node-wire-proxy:
+    <<: *perf-networks
+    env_file: !override [../perf/stack/.env.perf]
+    container_name: !override m8flow-perf-node-wire-proxy
+
+  m8flow-designer:
+    env_file: !override [../perf/stack/.env.perf]
+    image: !override m8flow-designer:perf
+
+networks:
+  # Created by docker/m8flow-observability-docker-compose.yml; gives the app
+  # services a route to m8flow-alloy:4317 (OTLP). Keycloak and the databases
+  # stay off it so their service names never shadow the dev stack's scrape targets.
+  observability:
+    external: true
+    name: m8flow-observability-stack_default

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" id="Definitions_approval_route" name="Approval route" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="approval_route" name="Approval route">
+    <decisionTable id="DecisionTable_approval_route" hitPolicy="UNIQUE">
+      <input id="Input_1" label="Total">
+        <inputExpression id="InputExpression_1" typeRef="number" expressionLanguage="python"><text>total</text></inputExpression>
+      </input>
+      <input id="Input_2" label="Category">
+        <inputExpression id="InputExpression_2" typeRef="string" expressionLanguage="python"><text>category</text></inputExpression>
+      </input>
+      <output id="Output_1" label="Approval level" name="approval_level" typeRef="string" />
+      <output id="Output_2" label="Budget code" name="budget_code" typeRef="string" />
+      <rule id="Rule_1">
+        <description>Small purchases are auto-approved</description>
+        <inputEntry id="Rule_1_in_1"><text>? &lt;= 500</text></inputEntry>
+        <inputEntry id="Rule_1_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_1_out_1"><text>"auto"</text></outputEntry>
+        <outputEntry id="Rule_1_out_2"><text>"OPEX-GEN"</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <description>Hardware above 500 needs a director</description>
+        <inputEntry id="Rule_2_in_1"><text>? &gt; 500</text></inputEntry>
+        <inputEntry id="Rule_2_in_2"><text>"IT Hardware"</text></inputEntry>
+        <outputEntry id="Rule_2_out_1"><text>"director"</text></outputEntry>
+        <outputEntry id="Rule_2_out_2"><text>"CAPEX-IT"</text></outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <description>Large purchases need a director</description>
+        <inputEntry id="Rule_3_in_1"><text>? &gt; 10000</text></inputEntry>
+        <inputEntry id="Rule_3_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_3_out_1"><text>"director"</text></outputEntry>
+        <outputEntry id="Rule_3_out_2"><text>"CAPEX-GEN"</text></outputEntry>
+      </rule>
+      <rule id="Rule_4">
+        <description>Everything else goes to the manager</description>
+        <inputEntry id="Rule_4_in_1"><text>500 &lt; ? &lt;= 10000</text></inputEntry>
+        <inputEntry id="Rule_4_in_2"><text></text></inputEntry>
+        <outputEntry id="Rule_4_out_1"><text>"manager"</text></outputEntry>
+        <outputEntry id="Rule_4_out_2"><text>"OPEX-GEN"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram>
+      <dmndi:DMNShape dmnElementRef="approval_route"><dc:Bounds height="80" width="180" x="160" y="100" /></dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

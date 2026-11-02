@@ -1,0 +1,17 @@
+{
+  "title": "Welcome checklist",
+  "type": "object",
+  "required": [
+    "buddy_assigned"
+  ],
+  "properties": {
+    "buddy_assigned": {
+      "type": "boolean",
+      "title": "Buddy assigned"
+    },
+    "first_week_plan": {
+      "type": "string",
+      "title": "First-week plan"
+    }
+  }
+}

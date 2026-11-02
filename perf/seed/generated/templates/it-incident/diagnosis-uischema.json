@@ -1,0 +1,6 @@
+{
+  "ui:order": [
+    "root_cause",
+    "resolution_type"
+  ]
+}

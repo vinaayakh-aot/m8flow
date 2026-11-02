@@ -1,0 +1,12 @@
+{
+  "ui:order": [
+    "buddy_assigned",
+    "first_week_plan"
+  ],
+  "first_week_plan": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 3
+    }
+  }
+}

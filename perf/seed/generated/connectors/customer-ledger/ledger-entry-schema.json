@@ -1,0 +1,24 @@
+{
+  "title": "Ledger entry",
+  "type": "object",
+  "required": [
+    "customer",
+    "amount",
+    "invoice"
+  ],
+  "properties": {
+    "customer": {
+      "type": "string",
+      "title": "Customer"
+    },
+    "amount": {
+      "type": "number",
+      "title": "Amount (USD)",
+      "minimum": 0
+    },
+    "invoice": {
+      "type": "string",
+      "title": "Invoice number"
+    }
+  }
+}
