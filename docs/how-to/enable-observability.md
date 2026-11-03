@@ -73,6 +73,10 @@ Replace `<request-id>` with the request ID from an error response or log line.
 Celery, the connector proxy, MCP, NATS, and the designer's nginx write plain
 text. Don't add `| json` to queries for those services.
 
+Each log line also carries a `compose_project` label. When more than one m8flow
+stack runs on the same Docker host, filter on it, for example
+`{service_name="m8flow-backend", compose_project="m8flow-perf"}`.
+
 ## Tune slow-query logging
 
 The backend logs a `sql query slow` line for any statement slower than

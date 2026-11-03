@@ -4,6 +4,8 @@ A reproducible, realistic tenant for performance testing an m8flow stack. It is
 separate from the Playwright e2e suite: it uses its own tenant and users and never
 touches the `m8flow` tenant.
 
+The seed creates the following:
+
 | What | Contents |
 |---|---|
 | Tenant | `northwind` (Northwind Traders) |
@@ -43,7 +45,10 @@ perf/stack/up.sh down        # stop (data kept)
 perf/stack/up.sh destroy     # stop and delete its volumes and process models
 python3 perf/load.py  --env-file perf/stack/.env.perf --instances 200 --concurrency 10
 python3 perf/reset.py --env-file perf/stack/.env.perf
+python3 perf/suite.py --env-file perf/stack/.env.perf   # full functional suite + timer checks
 ```
+
+The reference stack serves the following URLs:
 
 | Service | URL |
 |---|---|
@@ -73,9 +78,11 @@ In Grafana you can separate the two stacks:
 
 ## Layout
 
+The `perf/` folder holds the following files:
+
 | Path | Purpose |
 |---|---|
-| `seed/templates.py` | The four templates: diagrams, DMN decision tables and form schemas |
+| `seed/templates.py` | The four templates: diagrams, Decision Model and Notation (DMN) decision tables, and form schemas |
 | `seed/connectors.py` | The stand-alone node-wire connector models |
 | `seed/bpmn_builder.py` | Small builder that renders those definitions to BPMN XML with diagram layout |
 | `seed/build.py` | Writes `seed/generated/` (files plus importable template ZIPs). Re-run after editing the sources |
@@ -85,20 +92,23 @@ In Grafana you can separate the two stacks:
 | `seed/validate.py` | Runs every path in-process on the same engine m8flow-core uses, and prints the coverage matrix |
 | `seed/seed.py` | Seeds a running stack through the Keycloak admin API and the backend API |
 | `load.py` | Load driver: starts instances and completes their tasks as the right users |
+| `suite.py` | Runs every scenario path on every seeded model, then the timer-only paths and a heartbeat schedule check; writes `perf/reports/suite-<timestamp>.md` |
 | `reset.py` | Terminates and deletes every perf-tenant instance and empties the `perf_*` ledger tables; the seed stays |
 | `snapshot.sh` | Saves and restores both databases, process models and template storage |
 
 ## The scenario
 
 Each human task sits in a lane named after a default group, so any member of that
-group can complete it.
+group can complete it. The four templates model the following processes:
 
 | Template | Lanes | What it models |
 |---|---|---|
-| Purchase Requisition to Purchase Order | Submitters, Approvers, Administrators | A DMN decides the approval route (auto, manager or director). Approvals have SLA timers. Budget control runs in parallel, with a PostgreSQL ledger through node-wire. The purchase order is sent to a Supplier pool |
+| Purchase Requisition to Purchase Order | Submitters, Approvers, Administrators | A DMN decides the approval route (auto, manager or director). Approvals have service-level (SLA) timers. Budget control runs in parallel, with a PostgreSQL ledger through node-wire. The purchase order is sent to a Supplier pool |
 | Employee Onboarding | Administrators, Approvers, Support, Submitters | HR, IT and the new hire work in parallel. A signal triggers an event-based gateway. IT provisioning is a looping sub-process that escalates a laptop backorder. Equipment is routed through an inclusive gateway. A timer waits for the start date and a conditional event waits for the workspace |
 | Insurance Claim Handling | Submitters, Support, Approvers, Administrators | A DMN triages the claim. Supporting documents are requested in a loop. A fraud ruling ends in an error event. Claims over the adjuster's authority escalate to a senior adjuster. Payout is a transaction that cancels on payment failure |
 | IT Incident Management | Submitters, Support, Approvers | A DMN sets the priority. An SLA race runs on an event-based gateway. Diagnosis has reminder timers. Emergency changes need approval. The process declares data inputs and outputs |
+
+The seed builds the following process models from them:
 
 | Process group | Process models (template) |
 |---|---|
@@ -114,11 +124,13 @@ backorder.
 
 ### Node-wire connector scenarios
 
+The `integrations` group holds three connector scenarios:
+
 | Model | Connector | Notes |
 |---|---|---|
 | `customer-ledger` | `postgres_v2/DoSQL` (create table, insert, aggregate) | Works offline with no credentials (uses the `default` profile) |
-| `db-heartbeat` | Timer start event and `postgres_v2/DoSQL` | Seeded as **draft**. Publish it to start a probe every 15 minutes |
-| `partner-api-check` | `http/GetRequestV2` and `http/PostRequestV2` to httpbin.org | Needs internet access, because the proxy's SSRF guard blocks every in-stack host. `load.py` skips it unless you pass `--include-internet` |
+| `db-heartbeat` | Timer start event (every minute) and `postgres_v2/DoSQL` | Seeded as **draft** until m8flow-core fixes cycle timer starts (finding 8) |
+| `partner-api-check` | `http/GetRequestV2` and `http/PostRequestV2` to httpbin.org | Needs internet access, because the proxy's server-side request forgery (SSRF) guard blocks every in-stack host. `load.py` skips it unless you pass `--include-internet` |
 
 The purchase-requisition template also writes to PostgreSQL. The ledger tables
 (`perf_purchase_commitments`, `perf_customer_ledger`) live in the m8flow database,
@@ -155,6 +167,8 @@ These are left out on purpose:
 
 ## Load driver
 
+To drive load, run commands like the following:
+
 ```sh
 python3 perf/load.py --instances 500 --concurrency 20 --seed 42 --report run.json
 python3 perf/load.py --models auto-claims,property-claims --instances 100
@@ -174,9 +188,11 @@ task as one of the users the task is waiting for, using the answers in
 It prints p50, p95, p99 and max for each, and `--report` writes them as JSON.
 
 Before measuring, it runs one unmeasured instance per model. Without that warm-up,
-two concurrent first starts of a model collide (see below). A failed instance is
-terminated so it doesn't linger. Paths that only a long timer can finish (3-day
-approval overdue, 2-day document chase, SLA breach) are modelled but never driven.
+two concurrent first starts of a model collide (finding 4 in
+[Platform behaviour this seed works around](#platform-behaviour-this-seed-works-around)). A failed instance is
+terminated so it doesn't linger. Paths that only a timer can finish (overdue
+approval, document chase, SLA breach, future start time) are in `TIMER_PATHS` and
+run by `suite.py`, not by the load mix.
 
 ## Recreating quickly
 
@@ -191,6 +207,24 @@ To change a template, edit `seed/templates.py`, then run `seed/build.py`,
 `seed/validate.py` (with the backend virtualenv) and `seed/seed.py --refresh`. Refresh imports a new template
 version and overwrites the model files, keeping each model's own process id.
 
+## Timers
+
+Every timer in the templates is short, so timer paths finish in under a minute:
+
+| Model | Timer | Duration |
+|---|---|---|
+| Purchase requisition | Approval reminder (non-interrupting cycle) | every 15 s, twice |
+| Purchase requisition | Approval overdue, escalates to director | 45 s |
+| Employee onboarding | Documents not submitted, chase in person | 30 s |
+| Employee onboarding | Wait for the start time (`start_at` form field) | the time entered |
+| IT incident | SLA (from the DMN: P1 30 s, P2 60 s, P3 120 s, P4 300 s) | per priority |
+| IT incident | Diagnosis reminder (non-interrupting cycle) | every 10 s, three times |
+| Database heartbeat | Timer start event (draft, see finding 8) | every minute |
+
+Timers fire through Celery beat (`m8flow-celery-beat` in the compose file), which
+sends the scheduler poll every `M8FLOW_SCHEDULER_POLL_SECONDS` (default 10), so a
+timer fires up to one poll interval late.
+
 ## Platform behaviour this seed works around
 
 The seed hit these behaviours in the platform. Each one is worth tracking on its own.
@@ -203,7 +237,7 @@ The seed hit these behaviours in the platform. Each one is worth tracking on its
    `m8flow` tenant's stock `integrator` user behaves the same way. The seed grants
    the perf tenant's Support group the `reviewer` role (`group_roles` in
    `scenario.json`) so the support desk can work Support-lane tasks.
-3. **Human tasks inside sub-processes are never offered.** See *BPMN coverage* above.
+3. **Human tasks inside sub-processes are never offered.** See [BPMN coverage](#bpmn-coverage).
 4. **First-start race.** Two concurrent first starts of a never-run model fail with a
    500 (unique violation on `m8f_task_definition_tenant_process_key`).
 5. **Deadlocks under concurrent task traffic.** With about 6 concurrent workers,
@@ -213,3 +247,13 @@ The seed hit these behaviours in the platform. Each one is worth tracking on its
    Expect this to show up in error counts at higher concurrency.
 6. **Standard-loop iterations are named `<bpmn id> [child]`** in task lists.
    `load.py` strips the suffix.
+7. **Timers behind an event-based gateway are never scheduled.** m8flow-core creates
+   timer jobs only for waiting tasks that are themselves timers; behind an event-based
+   gateway the waiting task is the gateway. The timer fires only when something else
+   advances the instance after it is due. Needs a fix in m8flow-core.
+8. **A cycle timer start event replays every cycle since 1970.** When core runs a
+   timer-start job it sets the timer's next time to `1970-01-01`; SpiffWorkflow then
+   fires once per missed interval until it catches up. For `R/PT1M` that is about 29
+   million runs in one transaction: the scheduler worker never finishes and no timer
+   in any tenant fires. Needs a fix in m8flow-core; until then keep models with a
+   cycle timer start unpublished.

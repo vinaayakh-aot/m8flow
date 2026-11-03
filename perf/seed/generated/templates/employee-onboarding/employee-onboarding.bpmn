@@ -74,10 +74,10 @@ laptop_in_stock = department != 'Sales'</spiffworkflow:postScript></bpmn:extensi
       <bpmn:outgoing>Flow_catch_documents_verify_documents</bpmn:outgoing>
       <bpmn:signalEventDefinition signalRef="Signal_documents_submitted" />
     </bpmn:intermediateCatchEvent>
-    <bpmn:intermediateCatchEvent id="timer_documents" name="2 days">
+    <bpmn:intermediateCatchEvent id="timer_documents" name="30 s">
       <bpmn:incoming>Flow_gw_wait_documents_timer_documents</bpmn:incoming>
       <bpmn:outgoing>Flow_timer_documents_chase_documents</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"P2D"</bpmn:timeDuration></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"PT30S"</bpmn:timeDuration></bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:userTask id="verify_documents" name="Verify documents">
       <bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="verify-documents-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="verify-documents-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements>
@@ -187,10 +187,10 @@ system_index += 1</bpmn:script>
       <bpmn:incoming>Flow_gw_equipment_join_gw_ready</bpmn:incoming>
       <bpmn:outgoing>Flow_gw_ready_wait_start_date</bpmn:outgoing>
     </bpmn:parallelGateway>
-    <bpmn:intermediateCatchEvent id="wait_start_date" name="Start date">
+    <bpmn:intermediateCatchEvent id="wait_start_date" name="Start time">
       <bpmn:incoming>Flow_gw_ready_wait_start_date</bpmn:incoming>
       <bpmn:outgoing>Flow_wait_start_date_mark_ready</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeDate xsi:type="bpmn:tFormalExpression">start_date + 'T09:00:00+00:00'</bpmn:timeDate></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeDate xsi:type="bpmn:tFormalExpression">start_at</bpmn:timeDate></bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:scriptTask id="mark_ready" name="Mark workspace ready">
       <bpmn:incoming>Flow_wait_start_date_mark_ready</bpmn:incoming>

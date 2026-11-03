@@ -6,7 +6,7 @@
     "department",
     "role",
     "employment_type",
-    "start_date"
+    "start_at"
   ],
   "properties": {
     "full_name": {
@@ -41,10 +41,10 @@
         "Contractor"
       ]
     },
-    "start_date": {
+    "start_at": {
       "type": "string",
-      "format": "date",
-      "title": "Start date"
+      "title": "Start (date and time, ISO 8601)",
+      "format": "date-time"
     },
     "needs_laptop": {
       "type": "boolean",

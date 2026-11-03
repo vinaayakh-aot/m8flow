@@ -16,6 +16,7 @@ A default Compose stack runs the following components:
 | `m8flow-backend` | HTTP host. Connexion 3 and Flask, served as an ASGI app. Runs the engine in process. |
 | `m8flow-core` | Engine wheel, installed into the backend. Not a separate service. |
 | `m8flow-celery-worker` | Celery worker for background jobs, including the scheduler task that runs due timers. |
+| `m8flow-celery-beat` | Celery beat. Sends the scheduler task to the worker every `M8FLOW_SCHEDULER_POLL_SECONDS`. |
 | `m8flow-celery-flower` | Celery monitoring UI. |
 | `m8flow-node-wire-proxy` | Runs HTTP service-task requests for the backend. |
 | `m8flow-notification-worker` | Emails external-form links. Also subscribes to NATS when NATS is on. |
@@ -53,7 +54,7 @@ The backend groups its behavior into eight host modules under
 | `workflow` | Starting, advancing, suspending, resuming, and terminating process instances. Every engine write goes through this module. |
 | `catalog` | Process groups, process models, and their files on disk, per tenant. Rejects BPMN constructs the engine doesn't support. |
 | `human_task` | Human tasks: candidates, claim, forms, draft data, and completion. |
-| `scheduler` | Timer jobs. Runs due jobs once per active tenant. |
+| `scheduler` | Timer jobs. Runs due jobs once per active tenant, one job per transaction, and retries a failed job later. |
 | `identity` | Tenants, users, groups, and memberships. |
 | `auth` | Token verification, local user records, and binding each request to a tenant. |
 | `authorization` | The permission policy and the `permissions-check` answers the designer uses. |

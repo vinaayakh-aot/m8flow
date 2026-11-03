@@ -334,6 +334,14 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
         status=payload.get("status") if "status" in payload else None,
     )
+    if "status" in payload or "primary_file_name" in payload:
+        # Publishing schedules timer start events; unpublishing removes them.
+        workflow.sync_timer_start_schedule(
+            g.db_session,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            process_model_identifier=process_model_identifier,
+        )
     return success_response(identity, 200)
 
 
@@ -812,6 +820,13 @@ def delete_process_model(modified_process_model_identifier: str):
             409,
         )
 
+    workflow.sync_timer_start_schedule(
+        session,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        process_model_identifier=process_model_identifier,
+        removing=True,
+    )
     catalog.delete_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )

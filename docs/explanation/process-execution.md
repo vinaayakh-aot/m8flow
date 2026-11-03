@@ -107,14 +107,27 @@ Each change is recorded as a process instance event, listed on the
 
 ## Timers
 
-Timer events don't run inside a web request. When an instance reaches a timer,
-the engine stores a scheduler job with a due time. The Celery task
-`m8flow_backend.scheduler.poll_due_task` finds due jobs and advances their
-instances. It runs on the `m8flow-run-due` beat schedule, every
-`M8FLOW_SCHEDULER_POLL_SECONDS` (10 by default).
+Timer events don't run inside a web request. When an instance reaches a timer
+that isn't due yet, the engine stores a scheduler job with a due time. The
+`m8flow-celery-beat` service sends the Celery task
+`m8flow_backend.scheduler.poll_due_task` on the `m8flow-run-due` schedule,
+every `M8FLOW_SCHEDULER_POLL_SECONDS` (10 by default), and a Celery worker runs
+it. A timer therefore fires up to one poll interval after it's due. Without
+beat, only timers that are already due when the instance reaches them fire.
 
 The poll runs once per active tenant, with that tenant bound for row-level
-security, so a job only ever sees its own tenant's instances.
+security, so a job only ever sees its own tenant's instances. Each job runs in
+its own transaction. When a job fails, the poll logs the error and retries the
+job after `M8FLOW_SCHEDULER_FAILED_JOB_BACKOFF_SECONDS` (300 by default); the
+jobs due after it still run.
+
+A timer start event is scheduled only while its process model is published.
+Publishing the model schedules it, and saving a new version of the published
+model reschedules it. Moving the model back to draft, or deleting it, removes
+the schedule.
+
+Some timers don't fire as modeled. See
+[Known limitations](../reference/bpmn-support.md#known-limitations).
 
 ## Service tasks
 

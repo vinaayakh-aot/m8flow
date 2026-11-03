@@ -130,26 +130,95 @@ def test_poll_due_jobs_with_no_tenants_does_not_call_run_due(monkeypatch, db_ses
     assert called == []
 
 
-def test_poll_due_jobs_shares_remaining_limit_across_tenants(monkeypatch, db_session):
+def test_poll_due_jobs_shares_the_attempt_budget_across_tenants(monkeypatch, db_session):
     ensure_tenant(db_session, tenant_id="t1", slug="t1")
     ensure_tenant(db_session, tenant_id="t2", slug="t2")
     ensure_tenant(db_session, tenant_id="t3", slug="t3")
     db_session.commit()
 
-    seen_limits: list[int] = []
+    due = {"t1": 80, "t2": 30, "t3": 5}
+    calls: list[tuple[str, int]] = []
 
     def fake_run_due(session, **kwargs):
-        seen_limits.append(kwargs["limit"])
         tenant_id = kwargs["tenant_id"]
-        if tenant_id == "t1":
-            return 80
-        if tenant_id == "t2":
-            return 20
+        calls.append((tenant_id, kwargs["limit"]))
+        if due[tenant_id] == 0:
+            return 0
+        due[tenant_id] -= 1
         return 1
 
     monkeypatch.setattr("m8flow_backend.workflow.run_due", fake_run_due)
     assert poll_due_jobs(limit=100, worker_id="test-worker") == 100
-    assert seen_limits == [100, 20]
+    # One job per transaction, so one failure never rolls back another job.
+    assert {limit for _, limit in calls} == {1}
+    # t1 runs all 80 of its jobs, t2 the 20 left in the budget, t3 none.
+    assert due == {"t1": 0, "t2": 10, "t3": 5}
+    assert all(tenant != "t3" for tenant, _ in calls)
+
+
+def _scheduler_job(session, *, tenant_id: str, job_key: str, run_at):
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    job = SchedulerJobModel(
+        m8f_tenant_id=tenant_id, job_key=job_key, job_type="intermediate_timer", run_at=run_at,
+        payload_json={}, created_at=run_at, updated_at=run_at,
+    )
+    session.add(job)
+    return job
+
+
+def test_failing_job_is_postponed_and_the_jobs_behind_it_still_run(monkeypatch, db_session):
+    """Core raises after a batch if any job failed; the host must not let one bad job
+    roll back or starve the others, nor retry it on every tick."""
+    from datetime import datetime, timedelta, timezone
+
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    ensure_tenant(db_session, tenant_id="t-fail", slug="t-fail")
+    past = datetime.now(timezone.utc) - timedelta(minutes=5)
+    _scheduler_job(db_session, tenant_id="t-fail", job_key="bad", run_at=past)
+    _scheduler_job(db_session, tenant_id="t-fail", job_key="good", run_at=past + timedelta(seconds=1))
+    db_session.commit()
+
+    outcomes = iter([RuntimeError("service task failed"), 1, 0])
+
+    def fake_run_due(session, **kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setenv("M8FLOW_SCHEDULER_FAILED_JOB_BACKOFF_SECONDS", "600")
+    monkeypatch.setattr("m8flow_backend.workflow.run_due", fake_run_due)
+    before = datetime.now(timezone.utc)
+    assert poll_due_jobs(limit=10, worker_id="test-worker") == 1
+
+    db_session.expire_all()
+    jobs = {j.job_key: j for j in db_session.query(SchedulerJobModel).filter_by(m8f_tenant_id="t-fail")}
+
+    def aware(value):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    assert aware(jobs["bad"].run_at) >= before + timedelta(seconds=590)
+    assert aware(jobs["good"].run_at) == aware(past + timedelta(seconds=1))
+
+
+def test_worker_process_installs_the_host_engine_hooks():
+    """The worker never calls ``create_app()``. Without the host's core hooks every
+    service task a scheduled job runs fails: empty registry, no proxy API key."""
+    probe = (
+        "import m8flow_backend.scheduler\n"
+        "from m8flow_core.services import authorization, connector_proxy_service_tasks, service_tasks\n"
+        "from m8flow_backend.authorization import HostAuthorizationPolicy\n"
+        "from m8flow_backend.secrets import build_host_service_task_registry\n"
+        "assert service_tasks._DEFAULT_SERVICE_TASK_REGISTRY_FACTORY is build_host_service_task_registry\n"
+        "assert authorization._DEFAULT_POLICY_FACTORY is HostAuthorizationPolicy\n"
+        "assert connector_proxy_service_tasks._connector_proxy_json_request.__name__ == '_with_api_key'\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[4] / "src")
+    env["M8FLOW_CONNECTOR_PROXY_API_KEY"] = "test-key"
+    subprocess.run([sys.executable, "-c", probe], check=True, env=env)
 
 
 def test_worker_process_installs_postgres_rls_hook():

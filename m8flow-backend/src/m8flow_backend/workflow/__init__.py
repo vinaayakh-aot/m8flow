@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -2472,6 +2473,79 @@ def _definition_id_for_start(
     # import stands on its own -- it is the model as published on disk.
     session.commit()
     return definition.id
+
+
+_TIMER_START_RE = re.compile(
+    r"<(?:\w+:)?startEvent\b(?:(?!</(?:\w+:)?startEvent>).)*?timerEventDefinition", re.DOTALL
+)
+
+
+def sync_timer_start_schedule(
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: int,
+    process_model_identifier: str,
+    removing: bool = False,
+) -> None:
+    """Keep a model's timer-start jobs in step with its publish status.
+
+    Core schedules a definition's timer start events whenever that definition is
+    imported -- and catalog.save imports on every BPMN save, drafts included -- and
+    nothing removes the job when the model is unpublished, edited or deleted, so
+    drafts and deleted models kept starting instances. Here: a published model
+    with a timer start event is (re)imported, which upserts its definition and
+    re-syncs exactly that definition's jobs; every other definition of the model
+    loses its timer-start jobs, and all of them do when the model is not published
+    or is being deleted (``removing``).
+    """
+    from m8flow_backend import catalog
+    from m8flow_core.models.bpmn_process_definition import (
+        PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
+        BpmnProcessDefinitionModel,
+    )
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    keep_definition_id = None
+    if not removing and catalog.process_model_status(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    ) == "published":
+        found = catalog.read_primary_bpmn(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+        if found is not None and _TIMER_START_RE.search(found[1]):
+            file_name, xml = found
+            with api.authorization_policy_scope(_StartImportPolicy()):
+                definition = import_definition(
+                    session,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    bpmn_identifier=process_model_identifier,
+                    source_bpmn_xml=xml,
+                    source_dmn_xml=catalog.model_dmn_xml(
+                        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+                    ),
+                    bpmn_name=file_name,
+                )
+            keep_definition_id = definition.id
+
+    # process_model_identifier is a Python property over this properties_json key
+    # (set by every host import), so it cannot be compared in SQL directly.
+    model_definitions = select(BpmnProcessDefinitionModel.id).where(
+        BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+        BpmnProcessDefinitionModel.properties_json[PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY].as_string()
+        == process_model_identifier,
+    )
+    stale = select(SchedulerJobModel).where(
+        SchedulerJobModel.m8f_tenant_id == tenant_id,
+        SchedulerJobModel.job_type == "timer_start",
+        SchedulerJobModel.bpmn_process_definition_id.in_(model_definitions),
+    )
+    if keep_definition_id is not None:
+        stale = stale.where(SchedulerJobModel.bpmn_process_definition_id != keep_definition_id)
+    for job in session.scalars(stale).all():
+        session.delete(job)
+    session.flush()
 
 
 # `process_instance_metadata.value` is a bounded varchar in core. Read the width from the

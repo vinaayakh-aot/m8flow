@@ -1,7 +1,8 @@
 """Simple node-wire connector scenarios, seeded as stand-alone process models.
 
 * customer-ledger   postgres_v2/DoSQL against the stack's own database (offline, no credentials)
-* db-heartbeat      timer start event + postgres_v2/DoSQL (left in draft so it adds no background load)
+* db-heartbeat      timer start event (every minute) + postgres_v2/DoSQL; left in draft until the
+                    m8flow-core cycle catch-up bug is fixed (publishing it wedges the scheduler)
 * partner-api-check http/GetRequestV2 + http/PostRequestV2 against httpbin.org (needs internet egress;
                     the proxy's SSRF guard blocks every in-stack host)
 """
@@ -71,8 +72,8 @@ def customer_ledger() -> ConnectorModel:
 
 def db_heartbeat() -> ConnectorModel:
     d = Diagram("db-heartbeat", "Database Heartbeat",
-                documentation="Scheduled health probe: every 15 minutes, run SELECT 1 through the postgres connector.")
-    d.start("start_heartbeat", "Every 15 minutes", 0, 0, timer=("cycle", py("R/PT15M")))
+                documentation="Scheduled health probe: every minute, run SELECT 1 through the postgres connector.")
+    d.start("start_heartbeat", "Every minute", 0, 0, timer=("cycle", py("R/PT1M")))
     d.service("probe_db", "Probe database", 1, 0, "postgres_v2/DoSQL",
               _pg("SELECT 1, now()::text", fetch=True), "probe_result",
               post="db_ok = probe_result['command_response']['http_status'] == 200")
@@ -80,7 +81,8 @@ def db_heartbeat() -> ConnectorModel:
     d.flow("start_heartbeat", "probe_db")
     d.flow("probe_db", "end_heartbeat")
     return ConnectorModel("db-heartbeat", "Database Heartbeat",
-                          "Timer start event + postgres connector. Seeded as draft: publish it to start the schedule.",
+                          "Timer start event (every minute) + postgres connector. Left in draft: see perf/README.md "
+                          "(m8flow-core replays every missed cycle since 1970 when a cycle timer start fires).",
                           d, publish=False)
 
 

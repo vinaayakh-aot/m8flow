@@ -91,18 +91,26 @@ stays on port 6840.
 To point the designer at a different backend, set `VITE_BACKEND_BASE_URL`
 before you run `npm run dev`.
 
-## Start a Celery worker
+## Start the Celery worker and beat
 
-Timers and other background jobs need a Celery worker. To start one, run the
-following command from the repository root:
+Background jobs need a Celery worker. Timers also need Celery beat, which tells
+the worker every `M8FLOW_SCHEDULER_POLL_SECONDS` to run the timers that are
+due. To start both, run each of the following commands from the repository
+root, in its own terminal:
 
 ```bash
 ./m8flow-backend/bin/run_m8flow_celery_worker.sh
+./m8flow-backend/bin/run_m8flow_celery_worker.sh beat
 ```
 
-On Windows, run `.\m8flow-backend\bin\run_m8flow_celery_worker.ps1` instead.
+On Windows, run `.\m8flow-backend\bin\run_m8flow_celery_worker.ps1` and
+`.\m8flow-backend\bin\run_m8flow_celery_worker.ps1 -Mode beat` instead.
 
-To run the worker in Docker instead, start the `m8flow-celery-worker` service.
+Run one beat only. Every beat sends its own poll, so a second beat doubles the
+polling.
+
+To run them in Docker instead, start the `m8flow-celery-worker` and
+`m8flow-celery-beat` services.
 The local backend and the containerized worker read the same process models,
 because Compose bind-mounts `data/process_models` from the repository.
 

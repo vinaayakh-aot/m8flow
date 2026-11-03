@@ -65,3 +65,5 @@ perf/snapshots/
 # Generated env and data of the perf reference stack (perf/stack/up.sh)
 perf/stack/.env.perf
 perf/stack/data/
+# Perf suite reports (perf/suite.py)
+perf/reports/

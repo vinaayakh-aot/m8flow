@@ -78,13 +78,13 @@ reminders_sent = 0</bpmn:script>
       <bpmn:outgoing>Flow_manager_approval_gw_manager_decision</bpmn:outgoing>
       <bpmn:dataInputAssociation id="DataIn_manager_approval_requisition"><bpmn:sourceRef>requisition_ref</bpmn:sourceRef></bpmn:dataInputAssociation>
     </bpmn:userTask>
-    <bpmn:boundaryEvent id="b_manager_reminder" name="Every 12h" attachedToRef="manager_approval" cancelActivity="false">
+    <bpmn:boundaryEvent id="b_manager_reminder" name="Every 15 s" attachedToRef="manager_approval" cancelActivity="false">
       <bpmn:outgoing>Flow_b_manager_reminder_remind_manager</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R2/PT12H"</bpmn:timeCycle></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R2/PT15S"</bpmn:timeCycle></bpmn:timerEventDefinition>
     </bpmn:boundaryEvent>
-    <bpmn:boundaryEvent id="b_manager_overdue" name="3 days" attachedToRef="manager_approval">
+    <bpmn:boundaryEvent id="b_manager_overdue" name="45 s" attachedToRef="manager_approval">
       <bpmn:outgoing>Flow_b_manager_overdue_gw_director_merge</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"P3D"</bpmn:timeDuration></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"PT45S"</bpmn:timeDuration></bpmn:timerEventDefinition>
     </bpmn:boundaryEvent>
     <bpmn:scriptTask id="remind_manager" name="Log approval reminder">
       <bpmn:incoming>Flow_b_manager_reminder_remind_manager</bpmn:incoming>

@@ -4,10 +4,10 @@
     <bpmn:participant id="Participant_db-heartbeat" name="Database Heartbeat" processRef="db-heartbeat" />
   </bpmn:collaboration>
   <bpmn:process id="db-heartbeat" name="Database Heartbeat" isExecutable="true">
-    <bpmn:documentation>Scheduled health probe: every 15 minutes, run SELECT 1 through the postgres connector.</bpmn:documentation>
-    <bpmn:startEvent id="start_heartbeat" name="Every 15 minutes">
+    <bpmn:documentation>Scheduled health probe: every minute, run SELECT 1 through the postgres connector.</bpmn:documentation>
+    <bpmn:startEvent id="start_heartbeat" name="Every minute">
       <bpmn:outgoing>Flow_start_heartbeat_probe_db</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R/PT15M"</bpmn:timeCycle></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R/PT1M"</bpmn:timeCycle></bpmn:timerEventDefinition>
     </bpmn:startEvent>
     <bpmn:serviceTask id="probe_db" name="Probe database">
       <bpmn:extensionElements><spiffworkflow:serviceTaskOperator id="postgres_v2/DoSQL" resultVariable="probe_result"><spiffworkflow:parameters><spiffworkflow:parameter id="m8flow_profile" type="any" value='"default"' /><spiffworkflow:parameter id="database_connection_str" type="any" /><spiffworkflow:parameter id="schema" type="any" value="{'sql': 'SELECT 1, now()::text', 'fetch_results': True}" /></spiffworkflow:parameters></spiffworkflow:serviceTaskOperator><spiffworkflow:postScript>db_ok = probe_result['command_response']['http_status'] == 200</spiffworkflow:postScript></bpmn:extensionElements>

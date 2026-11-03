@@ -161,10 +161,10 @@ def purchase_requisition() -> Template:
                         "${{ total }} ({{ category }}).",
            post="manager_outcome = outcome")
     d.data_input("manager_approval", "requisition")
-    d.boundary("b_manager_reminder", "Every 12h", "manager_approval", kind="timer",
-               timer=("cycle", py("R2/PT12H")), interrupting=False, slot=0)
-    d.boundary("b_manager_overdue", "3 days", "manager_approval", kind="timer",
-               timer=("duration", py("P3D")), slot=1)
+    d.boundary("b_manager_reminder", "Every 15 s", "manager_approval", kind="timer",
+               timer=("cycle", py("R2/PT15S")), interrupting=False, slot=0)
+    d.boundary("b_manager_overdue", "45 s", "manager_approval", kind="timer",
+               timer=("duration", py("PT45S")), slot=1)
     d.script("remind_manager", "Log approval reminder", 5, 4,
              "reminders_sent += 1")
     d.end("end_reminder", "Reminder logged", 6, 4)
@@ -294,7 +294,7 @@ def employee_onboarding() -> Template:
     # HR waits for the new hire's documents (signal) or chases them after two days.
     d.gateway("gw_wait_documents", "Documents in?", 4, 0, kind="eventBased")
     d.catch("catch_documents", "Documents submitted", 5, 0, kind="signal", ref=docs_signal)
-    d.catch("timer_documents", "2 days", 5, 1, kind="timer", timer=("duration", py("P2D")))
+    d.catch("timer_documents", "30 s", 5, 1, kind="timer", timer=("duration", py("PT30S")))
     d.user("verify_documents", "Verify documents", 6, 0, form="verify-documents")
     d.manual("chase_documents", "Collect documents in person", 6, 1)
     d.gateway("gw_documents_done", None, 7, 0)
@@ -329,8 +329,7 @@ def employee_onboarding() -> Template:
     d.gateway("gw_equipment_join", None, 11, 3, kind="inclusive")
 
     d.gateway("gw_ready", None, 12, 0, kind="parallel")
-    d.catch("wait_start_date", "Start date", 13, 0, kind="timer",
-            timer=("date", "start_date + 'T09:00:00+00:00'"))
+    d.catch("wait_start_date", "Start time", 13, 0, kind="timer", timer=("date", "start_at"))
     d.script("mark_ready", "Mark workspace ready", 14, 0, "workspace_ready = len(provisioned) == len(systems)")
     d.catch("catch_ready", "Workspace ready", 15, 0, kind="conditional", condition="workspace_ready == True")
     d.user("welcome_meeting", "Day-one welcome meeting", 16, 2, form="welcome-checklist",
@@ -396,11 +395,11 @@ def employee_onboarding() -> Template:
                 "department": enum("Department", ["Engineering", "Sales", "Marketing", "Finance", "Operations"]),
                 "role": text("Job title"),
                 "employment_type": enum("Employment type", ["Full-time", "Contractor"]),
-                "start_date": date("Start date"),
+                "start_at": text("Start (date and time, ISO 8601)", format="date-time"),
                 "needs_laptop": boolean("Needs a laptop", default=True),
                 "needs_phone": boolean("Needs a phone", default=False),
             },
-            ["full_name", "department", "role", "employment_type", "start_date"],
+            ["full_name", "department", "role", "employment_type", "start_at"],
         ),
         "new-hire-documents": form(
             "Onboarding documents",
@@ -630,13 +629,13 @@ def it_incident() -> Template:
 
     d.gateway("gw_await", "Resolved or SLA?", 4, 0, kind="eventBased")
     d.catch("catch_resolved", "Incident resolved", 5, 0, kind="signal", ref=resolved)
-    d.catch("timer_sla", "SLA elapsed", 5, 1, kind="timer", timer=("duration", "'PT' + str(sla_hours) + 'H'"))
+    d.catch("timer_sla", "SLA elapsed", 5, 1, kind="timer", timer=("duration", "'PT' + str(sla_seconds) + 'S'"))
     d.script("post_sla_breach", "Post SLA breach notice", 6, 1, "sla_breached = True")
     d.gateway("gw_comms", None, 7, 0)
 
     d.user("diagnose", "Diagnose incident", 4, 2, form="diagnosis",
            instructions="{{ priority }} incident on {{ service }}: {{ summary }} ({{ affected_users }} users).")
-    d.boundary("b_sla_reminder", "Every 30 min", "diagnose", kind="timer", timer=("cycle", py("R3/PT30M")),
+    d.boundary("b_sla_reminder", "Every 10 s", "diagnose", kind="timer", timer=("cycle", py("R3/PT10S")),
                interrupting=False)
     d.script("remind_assignee", "Remind assignee", 4, 3, "sla_reminders += 1")
     d.end("end_reminded", "Reminder sent", 5, 3)
@@ -691,13 +690,13 @@ def it_incident() -> Template:
     decision = dmn(
         "incident_priority", "Incident priority",
         inputs=[("Impact", "impact", "string"), ("Urgency", "urgency", "string")],
-        outputs=[("Priority", "priority", "string"), ("SLA hours", "sla_hours", "integer")],
+        outputs=[("Priority", "priority", "string"), ("SLA seconds", "sla_seconds", "integer")],
         rules=[
-            ("Critical", ['"High"', '"High"'], ['"P1"', "4"]),
-            ("High", ['"High"', ""], ['"P2"', "8"]),
-            ("High urgency", ["", '"High"'], ['"P2"', "8"]),
-            ("Medium", ['"Medium"', '"Medium"'], ['"P3"', "24"]),
-            ("Low", ["", ""], ['"P4"', "72"]),
+            ("Critical", ['"High"', '"High"'], ['"P1"', "30"]),
+            ("High", ['"High"', ""], ['"P2"', "60"]),
+            ("High urgency", ["", '"High"'], ['"P2"', "60"]),
+            ("Medium", ['"Medium"', '"Medium"'], ['"P3"', "120"]),
+            ("Low", ["", ""], ['"P4"', "300"]),
         ],
     )
     forms = {

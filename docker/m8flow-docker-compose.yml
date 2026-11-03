@@ -455,6 +455,34 @@ services:
       minio:
         condition: service_started
 
+  # Celery beat: sends the scheduler poll (m8flow_backend.scheduler.poll_due_task)
+  # every M8FLOW_SCHEDULER_POLL_SECONDS. Timer start events, intermediate and
+  # boundary timers only fire through it. Exactly one beat per deployment. Its
+  # schedule file (last-run times of that one interval task) stays in /tmp: losing
+  # it on restart only means the first poll runs right away.
+  m8flow-celery-beat:
+    image: m8flow-backend
+    pull_policy: never
+    user: "0"
+    command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh", "beat"]
+    env_file: ../.env
+    environment:
+      <<: *otel-environment
+      OTEL_SERVICE_NAME: m8flow-celery-beat
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+      M8FLOW_BACKEND_UPGRADE_DB: "false"
+      M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+    volumes:
+      - ../.env:/app/.env:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      m8flow-celery-worker:
+        condition: service_started
+
   m8flow-celery-flower:
     image: m8flow-backend
     pull_policy: never

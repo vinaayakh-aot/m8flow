@@ -124,7 +124,7 @@ def save(
     phantom {leaf}.bpmn alongside the real file for every non-default-named
     model."""
     _reject_unsupported_constructs(xml)
-    source_dmn_xml = _model_dmn_xml(
+    source_dmn_xml = model_dmn_xml(
         tenant_id=tenant_id,
         process_model_identifier=path,
     )
@@ -146,6 +146,11 @@ def save(
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
     # bytes must remain byte-for-byte identical after the BPMN re-import.
     disk_path.write_bytes(xml.encode("utf-8"))
+    # The import above scheduled any timer start event even for a draft; let the
+    # model's publish status decide (needs the file on disk, so after the write).
+    workflow.sync_timer_start_schedule(
+        session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=path
+    )
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:
@@ -854,7 +859,7 @@ def copy_process_model(
                 user_id=user_id,
                 bpmn_identifier=dest_id,
                 source_bpmn_xml=xml,
-                source_dmn_xml=_model_dmn_xml(
+                source_dmn_xml=model_dmn_xml(
                     tenant_id=tenant_id,
                     process_model_identifier=dest_id,
                 ),
@@ -948,7 +953,7 @@ def create_model_file(
             user_id=user_id,
             bpmn_identifier=process_model_identifier,
             source_bpmn_xml=xml,
-            source_dmn_xml=_model_dmn_xml(
+            source_dmn_xml=model_dmn_xml(
                 tenant_id=tenant_id,
                 process_model_identifier=process_model_identifier,
             ),
@@ -1002,7 +1007,7 @@ def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
     return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
 
 
-def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | None:
+def model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | None:
     """Read the model DMN source used by the core definition import.
 
     The core runtime accepts one DMN document alongside a BPMN definition.

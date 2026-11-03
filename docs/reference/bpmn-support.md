@@ -25,12 +25,27 @@ The engine runs the following elements:
 
 | Category | Elements |
 |---|---|
-| Events | Start event, end event, intermediate catch and throw events, boundary events |
-| Event definitions | Timer, signal, escalation, error, link |
-| Tasks | Task, user task, manual task, script task, service task, business rule task |
-| Gateways | Exclusive, parallel, inclusive |
-| Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
-| Data | Data objects, data stores |
+| Events | Start event, end event, intermediate catch and throw events, boundary events (interrupting and non-interrupting) |
+| Event definitions | Timer (date, duration, and cycle), signal, escalation, error, conditional, terminate, cancel |
+| Tasks | Task, user task, manual task, script task, service task, business rule task, send task |
+| Gateways | Exclusive, parallel, inclusive, event-based |
+| Structure | Embedded subprocess, transaction, standard loop, pools, lanes, sequence flows with conditions |
+| Data | Data objects, process data inputs and outputs |
+
+## Known limitations
+
+The following constructs pass the save check but don't run as modeled:
+
+| Construct | What happens | Workaround |
+|---|---|---|
+| A user task, manual task, or plain task inside an embedded subprocess or transaction | Nobody is offered the task, so the instance waits forever. | Put human tasks at the top level of the process. Use subprocesses for automated steps. |
+| A timer behind an event-based gateway | No timer job is scheduled. The timer fires only when something else advances the instance after it's due. | Use a boundary timer on the task that waits instead. |
+| A repeating timer start event (a cycle such as `R/PT1M`) | When the schedule fires, the engine replays every cycle since 1970 in one run. The scheduler worker never finishes, and no timer in any tenant fires. | Don't publish a process model with a repeating timer start event. |
+| Link events | The instance stops at the link throw event. | Use sequence flows. |
+| Data stores | The engine has no data store implementation, so the task fails. | Use data objects, or a service task that reads and writes the data. |
+
+Timers fire through Celery beat, up to `M8FLOW_SCHEDULER_POLL_SECONDS` after
+they're due. See [About process execution](../explanation/process-execution.md#timers).
 
 ## Tasks in m8flow
 

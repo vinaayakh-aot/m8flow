@@ -18,6 +18,7 @@ The repository contains the following folders:
 | `m8flow-telemetry/` | Shared OpenTelemetry metrics helpers |
 | `keycloak-extensions/` | The Keycloak realm-info-mapper that adds tenant claims to tokens |
 | `docker/` | Compose files, Dockerfiles, Keycloak bootstrap scripts, and the observability stack |
+| `perf/` | Performance testing: a seeded demo tenant, a load driver, a functional suite, and snapshot scripts. See [Performance seed](../../perf/README.md). |
 | `bin/` | Developer helper scripts |
 | `.github/` | CI workflows and pull request templates |
 

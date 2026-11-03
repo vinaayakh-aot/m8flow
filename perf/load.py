@@ -25,6 +25,7 @@ import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -164,6 +165,8 @@ def _drive_instance(sessions: Sessions, metrics: Metrics, mix_item, users: dict,
     instance_id = created["id"]
     started.append(instance_id)
     occurrences: dict[str, int] = defaultdict(int)
+    seen: set[str] = set()
+    first_seen: dict[int, float] = {}
     deadline = time.time() + timeout
     while True:
         pending = metrics.timed("pending_tasks", sessions.call, starter, "GET",
@@ -176,16 +179,23 @@ def _drive_instance(sessions: Sessions, metrics: Metrics, mix_item, users: dict,
             status = instance.get("status")
             if status in DONE:
                 metrics.samples["instance_end_to_end"].append((time.perf_counter() - began) * 1000)
+                _check_outcome(sessions, starter, instance_id, path, seen)
                 return "completed"
             if status in FAILED:
                 raise RuntimeError(f"instance {instance_id} ({route_id}, {path.name}) ended {status}")
             if time.time() > deadline:
-                raise TimeoutError(f"instance {instance_id} ({route_id}) still {status} after {timeout}s")
-            time.sleep(poll)  # waiting on a timer / the scheduler
+                raise TimeoutError(f"instance {instance_id} still {status} with no open task after {timeout}s "
+                                   f"(waiting on a timer or the scheduler)")
+            time.sleep(poll)
             continue
+        submitted = 0
         for task in pending:
             # standard-loop iterations are reported as "<bpmn id> [child]"
             name = task["task_name"].removesuffix(" [child]")
+            seen.add(name)
+            first_seen.setdefault(task["id"], time.time())
+            if _held(path, name, seen, time.time() - first_seen[task["id"]]):
+                continue
             answer = path.answers.get(name)
             if answer is None:
                 raise RuntimeError(f"no answer for task {name!r} on path {path.name!r} ({route_id})")
@@ -195,11 +205,57 @@ def _drive_instance(sessions: Sessions, metrics: Metrics, mix_item, users: dict,
             user = pick_completer(task, starter, users["by_group"], users["known"], rng)
             try:
                 metrics.timed("submit_task", sessions.call, user, "POST",
-                              f"/v1.0/m8flow/task-review/{task['id']}/submit", json_body=answer)
+                              f"/v1.0/m8flow/task-review/{task['id']}/submit", json_body=_resolve(answer))
+                submitted += 1
             except HttpError as exc:
                 if exc.status != 409:  # 409: already completed (raced another poll)
                     raise RuntimeError(f"submit {name} (lane {task.get('lane_name')}) as {user}: "
                                        f"{exc.status} {exc.body[:200]}") from None
+        if not submitted:
+            if time.time() > deadline:
+                held = sorted({t["task_name"] for t in pending})
+                raise TimeoutError(f"instance {instance_id} still waiting after {timeout}s; open tasks {held} "
+                                   f"(the timer meant to release them never fired)")
+            time.sleep(poll)
+
+
+def _held(path, name: str, seen: set[str], pending_for: float) -> bool:
+    rule = path.hold.get(name)
+    if not rule:
+        return False
+    kind, _, arg = rule.partition(":")
+    if kind == "seen":
+        return arg not in seen
+    if kind == "after":
+        return pending_for < float(arg)
+    raise ValueError(f"unknown hold rule {rule!r}")
+
+
+def _resolve(answer: dict) -> dict:
+    """Replace "@now+<n>s" values with an ISO-8601 UTC timestamp n seconds ahead."""
+    out = {}
+    for key, value in answer.items():
+        if isinstance(value, str) and value.startswith("@now+") and value.endswith("s"):
+            at = datetime.now(UTC) + timedelta(seconds=float(value[5:-1]))
+            value = at.isoformat(timespec="seconds")
+        out[key] = value
+    return out
+
+
+def _check_outcome(sessions: Sessions, user: str, instance_id: int, path, seen: set[str]) -> None:
+    """The path's tasks were all offered, and its end events and expected elements completed."""
+    missing_tasks = set(path.answers) - seen
+    events = sessions.call(user, "GET", f"/v1.0/m8flow/process-instances/{instance_id}/events?per_page=500")
+    rows = events["results"] if isinstance(events, dict) else events
+    completed = {r.get("task_identifier") for r in rows if r.get("event_type") == "task_completed"}
+    missing = sorted((set(path.expect_end) | set(path.expect_completed)) - completed)
+    problems = []
+    if missing_tasks:
+        problems.append(f"tasks never offered: {sorted(missing_tasks)}")
+    if missing:
+        problems.append(f"never completed: {missing}")
+    if problems:
+        raise RuntimeError(f"instance {instance_id} completed the wrong way: " + "; ".join(problems))
 
 
 def main() -> int:

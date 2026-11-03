@@ -75,7 +75,9 @@ every value in the following table:
 | `M8FLOW_BACKEND_CELERY_BROKER_URL` | `redis://redis:6379/0` | Celery broker. Read before the older `M8FLOW_CELERY_BROKER_URL` and `SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL`, so the worker, Flower, and the **Celery** page reach the same Redis. |
 | `M8FLOW_BACKEND_CELERY_RESULT_BACKEND` | `redis://redis:6379/0` | Celery result store |
 | `M8FLOW_BACKEND_CELERY_AUTOSCALE_MIN`, `M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX` | `2`, `4` | Worker pool size range |
-| `M8FLOW_SCHEDULER_POLL_SECONDS` | `10` | How often the scheduler looks for due timers |
+| `M8FLOW_SCHEDULER_POLL_SECONDS` | `10` | How often Celery beat sends the scheduler poll that looks for due timers |
+| `M8FLOW_SCHEDULER_FAILED_JOB_BACKOFF_SECONDS` | `300` | How long the scheduler waits before it retries a job that failed. The jobs due after it still run. |
+| `M8FLOW_BACKEND_CELERY_BEAT_SCHEDULE_FILE` | `/tmp/celerybeat-schedule` | File where Celery beat keeps the last run time of the scheduler poll |
 | `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_ENABLED` | Turns on the API behind the super-admin **Celery** page |
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Whether workers record task history for the **Celery** page. A recording failure never fails a task. |
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS` | `7` | How long task-history rows are kept. `0` keeps them forever. |

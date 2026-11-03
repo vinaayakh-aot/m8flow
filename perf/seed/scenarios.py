@@ -7,13 +7,15 @@ the end event(s) it must reach, so the same data drives:
 * validate.py -- runs each path in-process on the m8flow-core engine, and
 * load.py     -- starts real instances over HTTP and completes their tasks.
 
-Timer-only branches (3-day overdue approval, 2-day document chase, SLA breach)
-are deliberately not on any path: they would make a run take days.
+Branches only a timer can reach (overdue approval, document chase, SLA breach,
+a future start time) live in TIMER_PATHS; suite.py runs them on the seeded
+models. The templates use timers of seconds, so these paths take under a
+minute. Answer values "@now+<n>s" become an ISO timestamp when submitted.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,11 @@ class Path:
     answers: dict[str, dict | list[dict]]
     expect_end: tuple[str, ...]
     weight: int = 1  # relative frequency in a load mix
+    # Leave a task open: "seen:<task id>" until that task has appeared, or
+    # "after:<seconds>" once it has been pending that long. Lets a timer win a race.
+    hold: dict[str, str] = field(default_factory=dict)
+    # BPMN element ids (events, scripts, ...) that must have completed.
+    expect_completed: tuple[str, ...] = ()
 
 
 APPROVE = {"outcome": "approve", "comments": "Looks good"}
@@ -56,7 +63,7 @@ PURCHASE_REQUISITION = [
 EMPLOYEE_ONBOARDING = [
     Path("engineering full-time", {
         "enter_new_hire": {"full_name": "Ada Byron", "email": "ada@example.test", "department": "Engineering",
-                           "role": "Backend Engineer", "employment_type": "Full-time", "start_date": "2026-01-05",
+                           "role": "Backend Engineer", "employment_type": "Full-time", "start_at": "2026-01-05T09:00:00+00:00",
                            "needs_laptop": True, "needs_phone": True},
         "submit_documents": {"id_document_provided": True, "tax_form_provided": True, "bank_details_provided": True},
         "verify_documents": {"documents_verified": True},
@@ -65,7 +72,7 @@ EMPLOYEE_ONBOARDING = [
     }, ("end_onboarded",), weight=3),
     Path("sales laptop backorder", {
         "enter_new_hire": {"full_name": "Sam Seller", "email": "sam@example.test", "department": "Sales",
-                           "role": "Account Executive", "employment_type": "Full-time", "start_date": "2026-01-05",
+                           "role": "Account Executive", "employment_type": "Full-time", "start_at": "2026-01-05T09:00:00+00:00",
                            "needs_laptop": True, "needs_phone": False},
         "submit_documents": {"id_document_provided": True, "tax_form_provided": True, "bank_details_provided": True},
         "verify_documents": {"documents_verified": True},
@@ -75,7 +82,7 @@ EMPLOYEE_ONBOARDING = [
     }, ("end_onboarded", "end_laptop_ordered"), weight=2),
     Path("contractor badge only", {
         "enter_new_hire": {"full_name": "Casey Contract", "email": "casey@example.test", "department": "Operations",
-                           "role": "Consultant", "employment_type": "Contractor", "start_date": "2026-01-05",
+                           "role": "Consultant", "employment_type": "Contractor", "start_at": "2026-01-05T09:00:00+00:00",
                            "needs_laptop": False, "needs_phone": False},
         "submit_documents": {"id_document_provided": True, "tax_form_provided": True, "bank_details_provided": True},
         "verify_documents": {"documents_verified": True},
@@ -166,4 +173,52 @@ BY_KEY: dict[str, list[Path]] = {
     "it-incident": IT_INCIDENT,
     "customer-ledger": CUSTOMER_LEDGER,
     "partner-api-check": PARTNER_API_CHECK,
+}
+
+
+# --------------------------------------------------------------------------- timer paths
+# Each path leaves a task open (hold) so the timer wins the race it models.
+TIMER_PATHS: dict[str, list[Path]] = {
+    "purchase-requisition": [
+        Path("approval overdue escalates to director (boundary timers)", {
+            "submit_requisition": {"item_description": "Design tool licence", "category": "Software", "quantity": 3,
+                                   "unit_price": 400, "vendor_name": "SoftSupply"},
+            "director_approval": APPROVE,
+            "receive_goods": {},
+        }, ("end_received", "end_reminder"),
+            hold={"manager_approval": "seen:director_approval"},
+            expect_completed=("b_manager_reminder", "remind_manager", "b_manager_overdue")),
+    ],
+    "employee-onboarding": [
+        Path("documents chased after timeout (event-based gateway timer)", {
+            "enter_new_hire": {"full_name": "Tim Ing", "email": "tim@example.test", "department": "Engineering",
+                               "role": "SRE", "employment_type": "Full-time", "start_at": "2026-01-05T09:00:00+00:00", "needs_laptop": True, "needs_phone": False},
+            "chase_documents": {},
+            "submit_documents": {"id_document_provided": True, "tax_form_provided": True,
+                                 "bank_details_provided": True},
+            "issue_laptop": {},
+            "welcome_meeting": {"buddy_assigned": True},
+        }, ("end_onboarded",),
+            hold={"submit_documents": "seen:chase_documents"},
+            expect_completed=("timer_documents", "chase_documents")),
+        Path("start date in the future (timer date)", {
+            "enter_new_hire": {"full_name": "Fu Ture", "email": "fu@example.test", "department": "Sales",
+                               "role": "AE", "employment_type": "Contractor", "start_at": "@now+20s", "needs_laptop": False, "needs_phone": False},
+            "submit_documents": {"id_document_provided": True, "tax_form_provided": True,
+                                 "bank_details_provided": True},
+            "verify_documents": {"documents_verified": True},
+            "issue_badge": {},
+            "welcome_meeting": {"buddy_assigned": False},
+        }, ("end_onboarded",), expect_completed=("wait_start_date", "catch_ready")),
+    ],
+    "it-incident": [
+        Path("SLA breached before diagnosis (event-based gateway + cycle boundary)", {
+            "report_incident": {**_INCIDENT, "impact": "High", "urgency": "High"},
+            "diagnose": {"root_cause": "Gateway firmware", "resolution_type": "fix"},
+            "implement_fix": {},
+            "confirm_resolution": CONFIRMED,
+        }, ("end_closed", "end_reminded"),
+            hold={"diagnose": "after:45"},
+            expect_completed=("timer_sla", "post_sla_breach", "b_sla_reminder", "remind_assignee")),
+    ],
 }

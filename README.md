@@ -183,7 +183,7 @@ m8flow is a set of services around one Python backend:
   in process and owns sign-in, tenancy, permissions, secrets, and scheduling.
 - **`m8flow-designer`** is the web UI, built with Vite, React, and TypeScript.
 - **Keycloak** handles identity, **PostgreSQL** stores state, and **Redis**
-  feeds the **Celery** workers that fire timers.
+  carries jobs to the **Celery** worker. Celery beat polls for due timers.
 - **`m8flow-node-wire-proxy`** runs connector calls, and the optional
   **NATS** consumer and **MCP** server add event triggers and AI access.
 

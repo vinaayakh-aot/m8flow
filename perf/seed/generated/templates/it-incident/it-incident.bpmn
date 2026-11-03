@@ -76,7 +76,7 @@ sla_breached = False</spiffworkflow:postScript></bpmn:extensionElements>
     <bpmn:intermediateCatchEvent id="timer_sla" name="SLA elapsed">
       <bpmn:incoming>Flow_gw_await_timer_sla</bpmn:incoming>
       <bpmn:outgoing>Flow_timer_sla_post_sla_breach</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">'PT' + str(sla_hours) + 'H'</bpmn:timeDuration></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">'PT' + str(sla_seconds) + 'S'</bpmn:timeDuration></bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:scriptTask id="post_sla_breach" name="Post SLA breach notice">
       <bpmn:incoming>Flow_timer_sla_post_sla_breach</bpmn:incoming>
@@ -93,9 +93,9 @@ sla_breached = False</spiffworkflow:postScript></bpmn:extensionElements>
       <bpmn:incoming>Flow_gw_fanout_diagnose</bpmn:incoming>
       <bpmn:outgoing>Flow_diagnose_gw_resolution</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:boundaryEvent id="b_sla_reminder" name="Every 30 min" attachedToRef="diagnose" cancelActivity="false">
+    <bpmn:boundaryEvent id="b_sla_reminder" name="Every 10 s" attachedToRef="diagnose" cancelActivity="false">
       <bpmn:outgoing>Flow_b_sla_reminder_remind_assignee</bpmn:outgoing>
-      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R3/PT30M"</bpmn:timeCycle></bpmn:timerEventDefinition>
+      <bpmn:timerEventDefinition><bpmn:timeCycle xsi:type="bpmn:tFormalExpression">"R3/PT10S"</bpmn:timeCycle></bpmn:timerEventDefinition>
     </bpmn:boundaryEvent>
     <bpmn:scriptTask id="remind_assignee" name="Remind assignee">
       <bpmn:incoming>Flow_b_sla_reminder_remind_assignee</bpmn:incoming>

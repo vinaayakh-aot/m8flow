@@ -11,16 +11,10 @@ from connexion.resolver import Resolver
 from flask import g
 from starlette.middleware.cors import CORSMiddleware
 
-from m8flow_backend.authorization import install_default_policy
 from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.config import nats_enabled, nats_trigger_signing_salt
-from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
+from m8flow_backend.db import create_all, get_session_factory
 from m8flow_backend.observability.request_context import install_request_id_middleware
-from m8flow_backend.secrets import install_registry_at_boot
-from m8flow_backend.connectors.proxy_auth import install_connector_proxy_client_auth
-from m8flow_backend.workflow.service_task_params import (
-    install_service_task_literal_fallback,
-)
 from m8flow_backend.auth import install_tenant_runtime
 from m8flow_backend.startup.error_handlers import (
     register_connexion_error_handlers,
@@ -32,6 +26,7 @@ from m8flow_backend.startup.telemetry_setup import install_telemetry
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.startup.env_var_mapper import apply_m8flow_env_mapping
+from m8flow_backend.startup.engine_hooks import install_host_engine_hooks
 from m8flow_backend.startup.routes import (
     register_process_model_file_fallback_routes,
     register_root_route,
@@ -80,11 +75,7 @@ def create_app() -> FlaskApp:
     install_process_level_error_guards()
     apply_m8flow_env_mapping()
     harden_logging()
-    install_default_policy()
-    install_connector_proxy_client_auth()
-    install_registry_at_boot()
-    install_service_task_literal_fallback()
-    attach_host_timestamp_listeners()
+    install_host_engine_hooks()
 
     # Connexion 3.x is an ASGI app that routes + validates the api.yml operations
     # at the middleware layer and dispatches into the wrapped Flask app. Host

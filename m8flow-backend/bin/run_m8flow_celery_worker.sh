@@ -67,7 +67,7 @@ normalize_bpmn_spec_dir() {
 }
 
 mode="${1:-worker}"
-if [[ "$mode" == "worker" || "$mode" == "flower" ]]; then
+if [[ "$mode" == "worker" || "$mode" == "flower" || "$mode" == "beat" ]]; then
   shift
 fi
 
@@ -187,6 +187,18 @@ if [[ "$mode" == "worker" ]]; then
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${worker_args[@]}" "$@"
 fi
 
+if [[ "$mode" == "beat" ]]; then
+  # Celery beat sends m8flow_backend.scheduler.poll_due_task every
+  # M8FLOW_SCHEDULER_POLL_SECONDS (default 10); a worker runs it. Without beat no
+  # timer fires unless it is already due when reached. Run exactly one beat.
+  beat_schedule="${M8FLOW_BACKEND_CELERY_BEAT_SCHEDULE_FILE:-/tmp/celerybeat-schedule}"
+  beat_args=(beat --loglevel "$log_level" --schedule "$beat_schedule")
+  if [[ "$use_uv_runner" == "true" ]]; then
+    cd "$repo_root/m8flow-backend"
+    exec_uv_python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${beat_args[@]}" "$@"
+  fi
+  exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${beat_args[@]}" "$@"
+fi
 if [[ "$mode" == "flower" ]]; then
   flower_port="${M8FLOW_BACKEND_CELERY_FLOWER_PORT:-5555}"
   flower_address="${M8FLOW_BACKEND_CELERY_FLOWER_ADDRESS:-0.0.0.0}"
@@ -221,5 +233,5 @@ if [[ "$mode" == "flower" ]]; then
   exec python -m celery -A m8flow_backend.background_processing.celery_worker:celery_app "${flower_args[@]}" "$@"
 fi
 
-echo "Unknown mode '$mode'. Expected 'worker' or 'flower'." >&2
+echo "Unknown mode '$mode'. Expected 'worker', 'beat' or 'flower'." >&2
 exit 1

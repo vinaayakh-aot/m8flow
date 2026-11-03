@@ -20,6 +20,7 @@ The main stack is defined in `docker/m8flow-docker-compose.yml`.
 | `minio` | Object storage API and console | 6846, 6847 | `MINIO_API_PORT`, `MINIO_CONSOLE_PORT` |
 | `redis` | Celery broker | 6848 | `REDIS_HOST_PORT` |
 | `m8flow-celery-worker` | Background jobs | Not published | Not applicable |
+| `m8flow-celery-beat` | Sends the scheduler poll that fires timers. Run one only. | Not published | Not applicable |
 | `m8flow-celery-flower` | Celery monitoring UI | 6850 | `M8FLOW_BACKEND_CELERY_FLOWER_PORT` |
 | `m8flow-notification-worker` | Sends external-form emails | Not published | Not applicable |
 

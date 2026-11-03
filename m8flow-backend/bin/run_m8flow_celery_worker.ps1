@@ -1,7 +1,7 @@
 #requires -Version 5.1
 
 param(
-  [ValidateSet("worker", "flower")]
+  [ValidateSet("worker", "beat", "flower")]
   [string]$Mode = "worker",
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$PassthroughArgs
@@ -175,6 +175,17 @@ if ($Mode -eq "worker") {
   }
 
   $celeryArgs = @("-m", "celery", "-A", "m8flow_backend.background_processing.celery_worker:celery_app") + $workerArgs
+  if ($PassthroughArgs) { $celeryArgs += $PassthroughArgs }
+  Invoke-UvPython $celeryArgs
+  exit $LASTEXITCODE
+}
+
+if ($Mode -eq "beat") {
+  # Celery beat sends m8flow_backend.scheduler.poll_due_task every
+  # M8FLOW_SCHEDULER_POLL_SECONDS (default 10); a worker runs it. Run exactly one.
+  $beatSchedule = $env:M8FLOW_BACKEND_CELERY_BEAT_SCHEDULE_FILE
+  if (-not $beatSchedule) { $beatSchedule = Join-Path ([System.IO.Path]::GetTempPath()) "celerybeat-schedule" }
+  $celeryArgs = @("-m", "celery", "-A", "m8flow_backend.background_processing.celery_worker:celery_app", "beat", "--loglevel", $logLevel, "--schedule", $beatSchedule)
   if ($PassthroughArgs) { $celeryArgs += $PassthroughArgs }
   Invoke-UvPython $celeryArgs
   exit $LASTEXITCODE
